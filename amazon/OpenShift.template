@@ -72,7 +72,7 @@
       "Properties" : {
         "HostedZoneName" : { "Fn::Join" : [ "", [{"Ref" : "HostedZone"}, "." ]]},
         "Comment" : "Named DNS Name",
-        "Name" : { "Fn::Join" : [ "", ["ns", ".", {"Ref" : "Prefix"}, ".", {"Ref" : "HostedZone"}, "."]]},
+        "Name" : { "Fn::Join" : [ "", ["ns1", ".", {"Ref" : "Prefix"}, ".", {"Ref" : "HostedZone"}, "."]]},
         "Type" : "A",
         "TTL" : "30",
         "ResourceRecords" : [ {"Fn::GetAtt" : [ "NamedInstance", "PublicIp" ]} ]
@@ -87,7 +87,7 @@
         "Name" : { "Fn::Join" : [ "", ["apps", ".", {"Ref" : "Prefix"}, ".", {"Ref" : "HostedZone"}, "."]]},
         "Type" : "NS",
         "TTL" : "30",
-        "ResourceRecords" : [ { "Fn::Join" : [ "", ["ns", ".", {"Ref" : "Prefix"}, ".", {"Ref" : "HostedZone"}, "."]]} ]
+        "ResourceRecords" : [ { "Fn::Join" : [ "", ["ns1", ".", {"Ref" : "Prefix"}, ".", {"Ref" : "HostedZone"}, "."]]} ]
       }
     },
 
