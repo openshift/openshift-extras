@@ -2,6 +2,7 @@
 
 CONF_PREFIX="${CONF_PREFIX:-demo}"
 CONF_DOMAIN="${CONF_PREFIX}.cloudydemo.com"
+CONF_APPS_DOMAIN="apps.${CONF_PREFIX}.cloudydemo.com"
 
 CONF_NO_NTP=true
 # During a kickstart you can tail the log file showing %post execution
