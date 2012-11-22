@@ -546,13 +546,13 @@ plugin.psk=unset
 connector = stomp
 plugin.stomp.host = ${activemq_hostname}
 plugin.stomp.port = 61613
-plugin.stomp.user = mcollective
-plugin.stomp.password = marionette
+plugin.stomp.user = ${mcollective_user}
+plugin.stomp.password = ${mcollective_password}
 EOF
 }
 
 
-# Configure mcollective on the broker to use qpid.
+# Configure mcollective on the node to use ActiveMQ.
 configure_mcollective_for_activemq_on_node()
 {
   yum install -y mcollective openshift-origin-msg-node-mcollective
@@ -575,8 +575,8 @@ plugin.psk = unset
 connector = stomp
 plugin.stomp.host = ${activemq_hostname}
 plugin.stomp.port = 61613
-plugin.stomp.user = mcollective
-plugin.stomp.password = marionette
+plugin.stomp.user = ${mcollective_user}
+plugin.stomp.password = ${mcollective_password}
 
 # Facts
 factsource = yaml
@@ -692,8 +692,8 @@ configure_activemq()
           <statisticsBrokerPlugin/>
           <simpleAuthenticationPlugin>
              <users>
-               <authenticationUser username="mcollective" password="marionette" groups="mcollective,everyone"/>
-               <authenticationUser username="admin" password="secret" groups="mcollective,admin,everyone"/>
+               <authenticationUser username="${mcollective_user}" password="${mcollective_password}" groups="mcollective,everyone"/>
+               <authenticationUser username="admin" password="${activemq_admin_password}" groups="mcollective,admin,everyone"/>
              </users>
           </simpleAuthenticationPlugin>
           <authorizationPlugin>
@@ -768,6 +768,12 @@ configure_activemq()
 </beans>
 <!-- END SNIPPET: example -->
 EOF
+
+  # secure the ActiveMQ console
+  sed -i -e '/name="authenticate"/s/false/true/' /etc/activemq/jetty.xml
+  sed -i -e '/name="port"/a<property name="host" value="127.0.0.1" />' /etc/activemq/jetty.xml
+  sed -i -e "/admin:/s/admin,/${activemq_admin_password},/" /etc/activemq/jetty-realm.properties
+
 
   # Allow connections to ActiveMQ.
   lokkit --nostart --port=61613:tcp
@@ -973,9 +979,11 @@ configure_controller()
     sed -i -e "s/^MONGO_HOST_PORT=.*$/MONGO_HOST_PORT=\"${datastore_hostname}:27017\"/" /etc/openshift/broker.conf
   fi
 
-  # When you change the MongoDB password of "mooo" to something else, be
-  # sure to edit and enable the following line:
-  #sed -i -e '/MONGO_PASSWORD/s/mooo/<password>/' /etc/openshift/broker.conf
+  # configure MongoDB access
+  sed -i -e "s/MONGO_PASSWORD=.*$/MONGO_PASSWORD=\"${mongodb_password}\"/
+            s/MONGO_USER=.*$/MONGO_USER=\"${mongodb_user}\"/
+            s/MONGO_DB=.*$/MONGO_DB=\"${mongodb_name}\"/" \
+      /etc/openshift/broker.conf
 
   # Configure the broker service to start on boot.
   chkconfig openshift-broker on
@@ -997,7 +1005,7 @@ configure_mongo_password()
   done
   echo "MongoDB is ready! ($(date +%H:%M:%S))"
 
-  mongo openshift_broker_dev --eval 'db.addUser("openshift", "mooo")'
+  mongo $mongodb_name --eval "db.addUser(\"${mongodb_user}\", \"${mongodb_password}\")"
 }
 
 # Configure the broker to use the remote-user authentication plugin.
@@ -1046,7 +1054,7 @@ configure_mongo_auth_plugin()
   hashed_salted_password="$(printf '%s' "$hashed_password$broker_auth_salt" | md5sum | cut -d' ' -f1)"
 
   # Add user "admin" with password "admin" for oo-register-user.
-  mongo openshift_broker_dev $mongo_opts --eval 'db.auth_user.update({"_id":"admin"}, {"_id":"admin","user":"admin","password":"'"$hashed_salted_password"'"}, true)'
+  mongo $mongodb_name $mongo_opts --eval 'db.auth_user.update({"_id":"admin"}, {"_id":"admin","user":"admin","password":"'"$hashed_salted_password"'"}, true)'
 }
 
 configure_messaging_plugin()
@@ -1093,13 +1101,14 @@ configure_httpd_auth()
      /var/www/openshift/console/httpd/conf.d/openshift-origin-auth-remote-user.conf
 
   # The above configuration file configures Apache to use
-  # /etc/openshift/htpasswd for its password file.  Use the following
-  # command to add users:
+  # /etc/openshift/htpasswd for its password file.
   #
-  #  htpasswd -c /etc/openshift/htpasswd username
+  # Here we create a test user:
+  htpasswd -bc /etc/openshift/htpasswd "$openshift_user1" "$openshift_password1"
   #
-  # Here we create a test user
-  htpasswd -bc /etc/openshift/htpasswd demo changeme
+  # Use the following command to add more users:
+  #
+  #  htpasswd /etc/openshift/htpasswd username
 
   # TODO: In the future, we will want to edit
   # /etc/openshift/plugins.d/openshift-origin-auth-remote-user.conf to
@@ -1415,7 +1424,30 @@ set_defaults()
   [ "x$CONF_BIND_KEY" != x ] && bind_key="$CONF_BIND_KEY"
 
   # Generate a random salt for the broker authentication.
-  broker && broker_auth_salt="${CONF_BROKER_AUTH_SALT:-$(openssl rand -base64 20)}"
+  randomized=$(openssl rand -base64 20)
+  broker && broker_auth_salt="${CONF_BROKER_AUTH_SALT:-${randomized}}"
+
+  # Set default passwords
+  #
+  #   This is the admin password for the ActiveMQ admin console, which is not needed
+  #   by OpenShift but might be useful in troubleshooting.
+  activemq && activemq_admin_password="${CONF_ACTIVEMQ_ADMIN_PASSWORD:-${randomized//[![:alnum:]]}}"
+
+  #   This is the user and password shared between broker and node for communicating over
+  #   the mcollective topic channels in ActiveMQ. Must be the same on all broker and node hosts.
+  mcollective_user="${CONF_MCOLLECTIVE_USER:-mcollective}"
+  mcollective_password="${CONF_MCOLLECTIVE_PASSWORD:-marionette}"
+
+  #   This is the user and password that are created for connecting to the MongoDB datastore.
+  #   The broker application's MongoDB plugin is also configured with these values.
+  mongodb_user="${CONF_MONGODB_USER:-openshift}"
+  mongodb_password="${CONF_MONGODB_PASSWORD:-mongopass}"
+  mongodb_name="${CONF_MONGODB_NAME:-openshift_broker}"
+
+  #   This user and password are entered in the /etc/openshift/htpasswd file as a demo/test user.
+  #   You will likely want to remove it after installation (or just use a different auth method).
+  broker && openshift_user1="${CONF_OPENSHIFT_USER1:-demo}"
+  broker && openshift_password1="${CONF_OPENSHIFT_PASSWORD1:-changeme}"
 }
 
 
