@@ -669,6 +669,8 @@ plugin.qpid.timeout = 5
 factsource = yaml
 plugin.yaml = /etc/mcollective/facts.yaml
 EOF
+
+chown root:apache /var/log/mcollective-client.log
 }
 
 
@@ -727,6 +729,8 @@ plugin.stomp.port = 61613
 plugin.stomp.user = ${mcollective_user}
 plugin.stomp.password = ${mcollective_password}
 EOF
+
+chown root:apache /var/log/mcollective-client.log
 }
 
 
