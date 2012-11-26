@@ -42,7 +42,10 @@ class OSEDiag
   end
 
   def run_tests
-    (self.class.instance_methods - Object.instance_methods).select {|m| m.to_s.start_with? "test_"}.each {|m| send m}
+    (self.class.instance_methods - Object.instance_methods).select {|m| m.to_s.start_with? "test_"}.each do |m|
+      verbose "running: #{m}"
+      send m
+    end
     return [@warns, @errors]
   end
 
@@ -109,7 +112,18 @@ class OSEDiag
     end
   end
 
-######## PREREQS #############
+  def run_script(script)
+    verbose "running #{script}"
+    output = `#{script} 2>&1`
+    rc = $?.exitstatus
+    if rc == 0
+      verbose "#{script} ran without error:\n--BEGIN OUTPUT--\n#{output}\n--END #{script} OUTPUT--"
+    else
+      do_fail "#{script} had errors:\n--BEGIN OUTPUT--\n#{output}\n--END #{script} OUTPUT--"
+    end
+  end
+
+######## SETUP #############
 
   def load_rpm_list
     `rpm -qa --qf '%{NAME}|%{VERSION}|%{RELEASE}\n'`.split.each do |rpm|
@@ -270,6 +284,24 @@ class OSEDiag
     #
     # do_fail "The broker's list of cartridges does not match what is available on the node hosts. Either node hosts do not all have the same cartridges installed or the broker has cached an old list."
   end
+
+  def test_util_scripts
+    if @is_broker
+      if @rpms["openshift-origin-broker-util"]
+        run_script("oo-accept-broker")
+      else
+        do_warn "openshift-origin-broker-util is not installed; you really should install it"
+      end
+    end
+    if @is_node
+      if @rpms["openshift-origin-node-util"]
+        run_script("oo-accept-node")
+      else
+        do_warn "openshift-origin-node-util is not installed; you really should install it"
+      end
+    end
+  end
+
 end
 
 ############ EXECUTION ##########
