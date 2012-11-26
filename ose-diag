@@ -302,7 +302,67 @@ class OSEDiag
     end
   end
 
-end
+  def expect_log_error(pattern, tmpfile)
+    out = `grep '#{pattern}' #{tmpfile}`
+    verbose "broker error_log: this message is normal for now:\n  #{out}" unless out.empty?
+  end
+
+  def test_broker_httpd_error_log
+    return unless @is_broker
+    #
+    # create a tmp file with all of the unique error log statements after the most recent openshift-broker start
+    #
+    tmpfile = "/tmp/osediag-log-#{$$}"
+    system %Q[sed -n 'H; /configured -- resuming normal operations/h; ${g;p;}' /var/www/openshift/broker/httpd/logs/error_log | sort -u > #{tmpfile}]
+    #
+    # info about Passenger prespawn errors
+    expect_log_error 'Cannot execute.*prespawn.*Permission denied (13)', tmpfile
+    #
+    # info about mcollective client log error
+    expect_log_error 'Could not start logger: Errno::EACCES', tmpfile
+    #
+    # look for real Passenger startup problems
+    out = `grep 'Passenger could not be initialized\\|Unable to start the Phusion Passenger watchdog' #{tmpfile}`
+    do_fail <<-"ERR" unless out.empty?
+      broker error_log: serious problem(s) with Passenger startup:
+        #{out}
+        The broker is probably not running correctly. rhc tool output may be confusing.
+        Make sure selinux-policy is updated and check the Troubleshooting Guide for tips.
+    ERR
+    #
+    # look for Passenger errors during operation
+    out = `grep 'Unexpected error in mod_passenger' #{tmpfile}`
+    do_fail %Q[broker error_log: serious problem with Passenger operation:\n  #{out.split("\n").first}\n] unless out.empty?
+    #
+    # done with the tmp file
+    system "rm #{tmpfile}"
+  end
+
+  def test_broker_passenger_ps
+    return unless @is_broker
+    verbose "checking the broker application process tree"
+    cmd = 'pstree -A `cat /var/www/openshift/broker/httpd/run/httpd.pid`'
+    out = `#{cmd}`
+    example = <<-"PSEX"
+      Output from: #{cmd}
+      #{out}
+      Should look similar to this:
+      httpd-+-PassengerWatchd-+-PassengerHelper-+-ruby---{ruby}
+            |                 |                 `-6*[{PassengerHelpe}]
+            |                 |-PassengerLoggin---{PassengerLoggi}
+            |                 `-3*[{PassengerWatch}]
+            `-8*[httpd]
+    PSEX
+    return do_fail "Broker httpd doesn't seem to be running at all. Try 'service openshift-broker start'" unless out.index "httpd"
+    %w{PassengerWatchd PassengerHelper ruby PassengerLoggin}.find do |it|
+      return false if out.index(it) # it is there, check next
+      do_fail "pstree for broker is missing #{it}. Make sure selinux-policy RPM is up to date and check Troubleshooting guide. \n#{example}"
+      return true # stop with first thing that's missing
+    end
+  end
+
+end #class OSEDiag
+
 
 ############ EXECUTION ##########
 #
@@ -311,6 +371,9 @@ end
 
 if __FILE__ == $0
 
+  #
+  # Options parsing...
+  #
   require 'optparse'
   options = {
     :wait => 5,
@@ -328,10 +391,16 @@ if __FILE__ == $0
   }
   optparse.parse!
 
+  #
+  # execute
+  #
   o = OSEDiag.new(options)
   o.run_setup
   warns, errors = o.run_tests
 
+  #
+  # summarize
+  #
   o.wputs "#{warns} WARNINGS" if warns > 0
   if errors > 0
     o.eputs "#{errors} ERRORS"
