@@ -1,6 +1,11 @@
 #!/usr/bin/ruby
 #
-# Run with "-h" for usage
+# Run with "-h" for usage.
+# This diagnostic script checks for various commonly-encountered
+# problems on OpenShift Enterprise hosts. It is intended to
+# evolve quickly in response to actual customer problems. It does
+# not perform any function or send results anywhere; it just outputs
+# diagnostic information which may be of some use in troubleshooting.
 
 #--
 # Copyright 2012 Red Hat, Inc.
