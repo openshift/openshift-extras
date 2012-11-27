@@ -11,6 +11,7 @@ CONF_NO_NTP=true
 
 # You can use sed to extract just the %post section:
 #    sed -e '0,/^%post/d;/^%end/,$d'
+# Be sure to reboot after installation if using the %post this way.
 
 # Log the command invocations (and not merely output) in order to make
 # the log more useful.
@@ -217,8 +218,9 @@ install_cartridges()
   # Ruby Rack support running on Phusion Passenger (Ruby 1.9).
   carts="$carts openshift-origin-cartridge-ruby-1.9-scl"
 
-  # Keep things from breaking too much when testing packaging.
-  #carts="$carts --skip-broken"
+  # When dependencies are missing, e.g. JBoss subscriptions,
+  # still install as much as possible.
+  carts="$carts --skip-broken"
 
   yum install -y $carts
 }
@@ -491,6 +493,8 @@ plugin.qpid.timeout = 5
 factsource = yaml
 plugin.yaml = /etc/mcollective/facts.yaml
 EOF
+
+chown root:apache /var/log/mcollective-client.log
 }
 
 
@@ -549,6 +553,8 @@ plugin.stomp.port = 61613
 plugin.stomp.user = ${mcollective_user}
 plugin.stomp.password = ${mcollective_password}
 EOF
+
+chown root:apache /var/log/mcollective-client.log
 }
 
 
@@ -863,12 +869,6 @@ EOF
   datastore && echo "${datastore_hostname%.${domain}}			A	${cur_ip_addr}${nl}" >> $nsdb
   echo >> $nsdb
 
-  # Create a section to which hostnames for applications will be added.
-  cat <<EOF >> $nsdb
-\$ORIGIN ${apps_domain}.
-\$TTL 60 ; 1 minute
-EOF
-
   # Install the key for the OpenShift Enterprise domain.
   cat <<EOF > /var/named/${domain}.key
 key ${domain} {
@@ -969,7 +969,7 @@ configure_controller()
 
   # Configure the broker with the correct hostname, and use random salt
   # to the data store (the host running MongoDB).
-  sed -i -e "s/^CLOUD_DOMAIN=.*$/CLOUD_DOMAIN=${apps_domain}/;
+  sed -i -e "s/^CLOUD_DOMAIN=.*$/CLOUD_DOMAIN=${domain}/;
              s/^AUTH_SALT=.*/AUTH_SALT=\"${broker_auth_salt//\//\\/}\"/" \
       /etc/openshift/broker.conf
 
@@ -1156,7 +1156,7 @@ configure_hostname()
 configure_node()
 {
   sed -i -e "s/^PUBLIC_IP=.*$/PUBLIC_IP=${node_ip_addr}/;
-             s/^CLOUD_DOMAIN=.*$/CLOUD_DOMAIN=${apps_domain}/;
+             s/^CLOUD_DOMAIN=.*$/CLOUD_DOMAIN=${domain}/;
              s/^PUBLIC_HOSTNAME=.*$/PUBLIC_HOSTNAME=${hostname}/;
              s/^BROKER_HOST=.*$/BROKER_HOST=${broker_ip_addr}/" \
       /etc/openshift/node.conf
@@ -1266,16 +1266,9 @@ is_false()
 # that one host runs multiple services, in which case more than one
 # hostname will resolve to the same IP address.
 #
-# We also set the $domain and $apps_domain variables.  $domain specifies
-# the domain that will be used when configuring BIND and assigning
-# hostnames for the various hosts running the component services that
-# constitute an OpenShift PaaS.  The $apps_domain variable specifies the
-# domain under which applications running on the OpenShift PaaS will be
-# assigned hostnames.  For example, using the default values of
-# "example.com" for $domain and "apps.${domain}" for $apps_domain,
-# the broker will be assigned the hostname "broker.example.com" while an
-# application will be assigned a hostname of the form
-# "appname-namespace.apps.example.com".
+# We also set the $domain variable, which is the domain that will be
+# used when configuring BIND and assigning hostnames for the various
+# hosts in the OpenShift PaaS.
 #
 # We also set the $repos_base variable with the base URL for the yum
 # repositories that will be used to download OpenShift RPMs.  The value
@@ -1367,10 +1360,6 @@ set_defaults()
 
   # The domain name for the OpenShift Enterprise installation.
   domain="${CONF_DOMAIN:-example.com}"
-
-  # The domain name under which applications running on this OpenShift
-  # Enterprise installation will be created.
-  apps_domain="${CONF_APPS_DOMAIN:-apps.${domain}}"
 
   # hostnames to use for the components (could all resolve to same host)
   broker_hostname="${CONF_BROKER_HOSTNAME:-broker.${domain}}"
