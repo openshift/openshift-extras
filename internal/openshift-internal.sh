@@ -195,7 +195,7 @@ configure_rhel_repo()
   cat <<EOF > /etc/yum.repos.d/rhel.repo
 [rhel63]
 name=rhel63
-baseurl=http://cdn-internal.rcm-test.redhat.com/content/dist/rhel/server/6/6Server/x86_64/os/
+baseurl=http://cdn.rcm-qa.redhat.com/content/dist/rhel/server/6/6Server/x86_64/os/
 enabled=1
 gpgcheck=0
 
@@ -272,7 +272,7 @@ configure_jbosseap_subscription()
   cat <<EOF > /etc/yum.repos.d/jbosseap.repo
 [jbosseap]
 name=jbosseap
-baseurl=http://cdn-internal.rcm-test.redhat.com/content/dist/rhel/server/6/6Server/x86_64/jbeap/6/os/
+baseurl=http://cdn.rcm-qa.redhat.com/content/dist/rhel/server/6/6Server/x86_64/jbeap/6/os/
 enabled=1
 gpgcheck=0
 
@@ -289,7 +289,7 @@ configure_jbossews_subscription()
   cat <<EOF > /etc/yum.repos.d/jbossews.repo
 [jbossews]
 name=jbossews
-baseurl=http://cdn-internal.rcm-test.redhat.com/content/dist/rhel/server/6/6Server/x86_64/jbews/1/os/
+baseurl=http://cdn.rcm-qa.redhat.com/content/dist/rhel/server/6/6Server/x86_64/jbews/1/os/
 enabled=1
 gpgcheck=0
 
