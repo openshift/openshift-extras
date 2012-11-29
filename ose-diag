@@ -1,6 +1,7 @@
 #!/usr/bin/ruby
-#
+# May need to "ruby ose-diag" to use proper ruby.
 # Run with "-h" for usage.
+#
 # This diagnostic script checks for various commonly-encountered problems
 # on OpenShift hosts. It is intended to evolve quickly in response to
 # actual problems experienced. It does not perform any function or send
@@ -44,8 +45,9 @@ class OSEDiag
   def run_setup
     initialize
     load_rpm_list
-    check_is_node_or_broker
-    check_system_version
+    detect_is_node_or_broker
+    detect_project_version
+    detect_os_version
     load_broker_rails_env if @is_broker
   end
 
@@ -157,12 +159,15 @@ class OSEDiag
     return @rpms
   end
 
-  def check_is_node_or_broker
-    @is_broker=@rpms.has_key?('openshift-origin-broker') and verbose "OpenShift broker installed."
-    @is_node=@rpms.has_key?('rubygem-openshift-origin-node') and verbose "OpenShift node installed."
+  def detect_is_node_or_broker
+    @is_broker = %w[openshift-origin-broker rhc-broker].any? {|name| @rpms[name]}
+    verbose "OpenShift broker installed." if @is_broker
+    @is_node= %w[rubygem-openshift-origin-node rhc-node].any? {|name| @rpms[name]}
+    verbose "OpenShift node installed." if @is_node
+    return @is_broker, @is_node
   end
 
-  def check_system_version
+  def detect_project_version
     # These tests probably need a lot of work to be robust
     #
     @project_is = {}
@@ -174,6 +179,10 @@ class OSEDiag
     # It's OpenShift Origin otherwise...
     @project_is[:origin] = !(@project_is[:enterprise] || @project_is[:online])
 
+    return @project_is
+  end
+
+  def detect_os_version
     # looking for RHEL or Fedora version via /etc/redhat-release
     # If something else... I dunno
     release = File.read '/etc/redhat-release'
@@ -188,7 +197,7 @@ class OSEDiag
       :rhel6 => release.include?('Enterprise Linux Server release 6'),
       :rhel7 => release.include?('Enterprise Linux Server release 7'),
     }
-    return @os_is, @project_is
+    return @os_is
   end
 
   def load_broker_rails_env
@@ -462,22 +471,25 @@ class OSEDiag
     # do_fail "The broker's list of cartridges does not match what is available on the node hosts. Either node hosts do not all have the same cartridges installed or the broker has cached an old list."
   end
 
-  def test_broker_util_scripts
-    skip_test unless @is_broker
-    if @rpms["openshift-origin-broker-util"]
+  def test_broker_accept_scripts
+    skip_test unless @is_broker 
+    if @project_is[:online]
+      run_script(@rpms['rhc-devenv'] ? "rhc-accept-devenv" : "rhc-accept-broker")
+    elsif @rpms["openshift-origin-broker-util"]
       run_script("oo-accept-broker")
     else
       do_warn "openshift-origin-broker-util is not installed; you really should install it"
     end
   end
 
-  def test_node_util_scripts
+  def test_node_accept_scripts
     skip_test unless @is_node
     if @rpms["openshift-origin-node-util"]
       run_script("oo-accept-node")
     else
       do_warn "openshift-origin-node-util is not installed; you really should install it"
     end
+    run_script("rhc-accept-node") if @project_is[:online]
   end
 
   def expect_log_error(pattern, tmpfile)
@@ -540,47 +552,42 @@ class OSEDiag
   end
 
   def test_for_nonrpm_rubygems
-    if @os_is[:rhel6]
-      gemdirs = %w[
-        /usr/lib/ruby/gems/1.8/gems/*/lib
-        /opt/rh/ruby193/root/usr/share/gems/gems/*/lib
-      ].join ' '
-    elsif @os_is[:fedora]
-      gemdirs = %w[
-        /usr/share/gems/gems/*/lib
-        /usr/local/share/gems/gems/*/lib
-      ].join ' '
-    else
-      skip_test
-    end
+    # not sure if other projects will want this. uncomment to silence:
+    # skip_test unless @project_is[:enterprise]
     verbose "checking for presence of gem-installed rubygems"
 
     # list out all gem directories and find those without RPM ownership
-    disown = `ls -d #{gemdirs} | xargs -n 1 rpm -qf`.
-      split("\n").select {|line| line.end_with? "not owned by any package"}.
-      select {|line| !line.include?("1.8/gems/thread-dump")} #packaging issue
+    gemdirs = `gem environment gempath`.chomp.split(':').
+      map {|dir| dir + "/specifications"}.
+      select {|dir| File.exists? dir}.
+      map {|dir| dir + "/*.gemspec"}
+    verbose "looking in #{gemdirs.join ' '}"
+    disown = `ls #{gemdirs.join ' '} | xargs -n 1 rpm -qf`.
+      split("\n").select {|line| line.end_with? "not owned by any package"}
     return if disown.empty?
 
     do_warn <<-"NOOO"
-      The following lines indicate ruby gems that were installed from outside
+      The following lines indicate rubygems that were installed from outside
       sources rather than via yum/RPM. These are unsupported and likely to
       break OpenShift. If you see multiple versions of any gems with
       'gem list' you have likely overridden OpenShift-installed gems.
-      Please uninstall the following with 'gem uninstall <gemname>'.
+      Uninstall as necessary with 'gem uninstall <gemname> -v <version>'.
         \n#{disown.join("\n")}
     NOOO
   end
 
   def test_for_multiple_gem_versions
+    # not sure if other projects will want this. uncomment to silence:
+    # skip_test unless @project_is[:enterprise]
     verbose "checking for presence of gem-installed rubygems"
     multiples = `gem list`.split("\n").select {|gem| gem.include? ','}
     return if multiples.empty?
 
     do_warn <<-"NOOO"
       'gem list' indicates the following rubygems are installed with multiple
-      versions. OpenShift gems should be installed via yum/RPM. 
+      versions. OpenShift gems should be installed via yum/RPM.
       If you have overridden OpenShift-installed gems, expect problems.
-      Please uninstall the following with 'gem uninstall <gemname>'.
+      Uninstall as necessary with 'gem uninstall <gemname> -v <version>'.
         \n#{multiples.join("\n")}
     NOOO
   end
