@@ -678,7 +678,7 @@ factsource = yaml
 plugin.yaml = /etc/mcollective/facts.yaml
 EOF
 
-chown root:apache /var/log/mcollective-client.log
+chown apache:root /var/log/mcollective-client.log
 }
 
 
