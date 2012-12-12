@@ -5,7 +5,7 @@ cp -f $1 $2
 # set the default base url to our internal puddles
 sed -i -e '
 /repos_base_default=.*/ a\
-repos_base_default=http://buildvm-devops.usersys.redhat.com/puddle/build/OpenShiftEnterprise/1.0.x/latest
+repos_base_default=http://buildvm-devops.usersys.redhat.com/puddle/build/OpenShiftEnterprise/1.1.x/latest
 s/^gpgcheck=0/gpgcheck=0\nsslverify=false/g' $2
 
 # update the console msg with useful stuff

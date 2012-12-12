@@ -658,7 +658,7 @@ factsource = yaml
 plugin.yaml = /etc/mcollective/facts.yaml
 EOF
 
-chown root:apache /var/log/mcollective-client.log
+chown apache:root /var/log/mcollective-client.log
 }
 
 
@@ -1520,7 +1520,7 @@ set_defaults()
   # Where to find the OpenShift repositories; just the base part before
   # splitting out into Infrastructure/Node/etc.
   repos_base_default='https://mirror.openshift.com/pub/origin-server/nightly/enterprise/2012-11-15'
-repos_base_default=http://buildvm-devops.usersys.redhat.com/puddle/build/OpenShiftEnterprise/1.0.x/latest
+repos_base_default=http://buildvm-devops.usersys.redhat.com/puddle/build/OpenShiftEnterprise/1.1.x/latest
   repos_base="${CONF_REPOS_BASE:-${repos_base_default}}"
 
   # The domain name for the OpenShift Enterprise installation.
