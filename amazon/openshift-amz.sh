@@ -133,6 +133,16 @@ configure_jbossews_subscription()
   : # no-op so that this function definition is valid.
 }
 
+yum_install_or_exit()
+{
+  yum install $*
+  if [ $? -ne 0 ]
+  then
+    echo "yum install failed; aborting installation. Please ensure you have configured the relevant repos/subscriptions."
+    exit 1
+  fi
+}
+
 # Install the client tools.
 install_rhc_pkg()
 {
@@ -142,7 +152,6 @@ install_rhc_pkg()
 # Install broker-specific packages.
 install_broker_pkgs()
 {
-  # Kickstart doesn't handle line continuations.
   pkgs="openshift-origin-broker"
   pkgs="$pkgs openshift-origin-broker-util"
   pkgs="$pkgs rubygem-openshift-origin-msg-broker-mcollective"
@@ -150,21 +159,20 @@ install_broker_pkgs()
   pkgs="$pkgs rubygem-openshift-origin-dns-bind"
   pkgs="$pkgs openshift-console"
 
-  yum install -y $pkgs
+  yum_install_or_exit -y $pkgs
 }
 
 # Install node-specific packages.
 install_node_pkgs()
 {
-  # Kickstart doesn't handle line continuations.
   pkgs="rubygem-openshift-origin-node rubygem-passenger-native"
   pkgs="$pkgs openshift-origin-port-proxy"
   pkgs="$pkgs openshift-origin-node-util"
-  # We use semanage in this kickstart script, so we need to install
+  # We use semanage in this script, so we need to install
   # policycoreutils-python.
   pkgs="$pkgs policycoreutils-python"
 
-  yum install -y $pkgs
+  yum_install_or_exit -y $pkgs
 }
 
 # Install any cartridges developers may want.
@@ -377,7 +385,7 @@ configure_sshd_on_node()
 configure_datastore()
 {
   # Install MongoDB.
-  yum install -y mongodb-server
+  yum_install_or_exit -y mongodb-server
 
   # Require authentication.
   perl -p -i -e "s/^#auth = .*$/auth = true/" /etc/mongodb.conf
@@ -441,6 +449,7 @@ enable_services_on_node()
 
   chkconfig httpd on
   chkconfig network on
+  is_false "$CONF_NO_NTP" && chkconfig ntpd on
   chkconfig sshd on
   chkconfig oddjobd on
 }
@@ -462,16 +471,15 @@ enable_services_on_broker()
   is_false "$CONF_NO_NTP" && chkconfig ntpd on
   chkconfig sshd on
 
-  # The broker httpd proxy ServerName should be set in order to avoid conflicting
-  # with the default ssl.conf
-  sed -i -e "s/ServerName .*$/ServerName ${hostname}/" /etc/httpd/conf.d/000000_openshift_origin_broker_proxy.conf
+  # Remove the VirtualHost from the default ssl.conf to prevent a warning
+   sed -i '/VirtualHost/,/VirtualHost/ d' /etc/httpd/conf.d/ssl.conf
 }
 
 
 # Configure mcollective on the broker to use qpid.
 configure_mcollective_for_qpid_on_broker()
 {
-  yum install -y mcollective-client
+  yum_install_or_exit -y mcollective-client
 
   cat <<EOF > /etc/mcollective/client.cfg
 topicprefix = /topic/
@@ -501,7 +509,7 @@ chown apache:root /var/log/mcollective-client.log
 # Configure mcollective on the broker to use qpid.
 configure_mcollective_for_qpid_on_node()
 {
-  yum install -y mcollective openshift-origin-msg-node-mcollective
+  yum_install_or_exit -y mcollective openshift-origin-msg-node-mcollective
 
   cat <<EOF > /etc/mcollective/server.cfg
 topicprefix = /topic/
@@ -533,7 +541,7 @@ EOF
 # Configure mcollective on the broker to use ActiveMQ.
 configure_mcollective_for_activemq_on_broker()
 {
-  yum install -y mcollective-client
+  yum_install_or_exit -y mcollective-client
 
   cat <<EOF > /etc/mcollective/client.cfg
 topicprefix = /topic/
@@ -561,7 +569,7 @@ chown root:apache /var/log/mcollective-client.log
 # Configure mcollective on the node to use ActiveMQ.
 configure_mcollective_for_activemq_on_node()
 {
-  yum install -y mcollective openshift-origin-msg-node-mcollective
+  yum_install_or_exit -y mcollective openshift-origin-msg-node-mcollective
 
   cat <<EOF > /etc/mcollective/server.cfg
 topicprefix = /topic/
@@ -597,7 +605,7 @@ EOF
 configure_activemq()
 {
   # Install the service.
-  yum install -y activemq
+  yum_install_or_exit -y activemq
 
   cat <<EOF > /etc/activemq/activemq.xml
 <!--
@@ -810,7 +818,7 @@ configure_qpid()
 # Configure BIND.
 configure_named()
 {
-  yum install -y bind bind-utils
+  yum_install_or_exit -y bind bind-utils
 
   # $keyfile will contain a new DNSSEC key for our domain.
   keyfile=/var/named/${domain}.key
@@ -825,7 +833,7 @@ configure_named()
     popd
   fi
 
-  # Ensure we have a key for the broker to communicate with BIND.
+  # Ensure we have a key for service named status to communicate with BIND.
   rndc-confgen -a -r /dev/urandom
   restorecon /etc/rndc.* /etc/named.*
   chown root:named /etc/rndc.key
@@ -1133,6 +1141,43 @@ configure_access_keys_on_broker()
   # # rm /root/.ssh/rsync_id_rsa.pub
 }
 
+configure_wildcard_ssl_cert_on_node()
+{
+  # Generate a 2048 bit key and self-signed cert
+  cat << EOF | openssl req -new -rand /dev/urandom \
+	-newkey rsa:2048 -nodes -keyout /etc/pki/tls/private/localhost.key \
+	-x509 -days 3650 -extensions v3_req \
+	-out /etc/pki/tls/certs/localhost.crt 2> /dev/null
+XX
+SomeState
+SomeCity
+SomeOrganization
+SomeOrganizationalUnit
+*.${domain}
+root@${domain}
+EOF
+
+  # Generate a cert signing request (example)
+  #openssl req -new -in /etc/pki/tls/private/localhost.key -out /etc/pki/tls/certs/localhost.csr
+}
+
+configure_broker_ssl_cert()
+{
+  # Generate a 2048 bit key and self-signed cert
+  cat << EOF | openssl req -new -rand /dev/urandom \
+	-newkey rsa:2048 -nodes -keyout /etc/pki/tls/private/localhost.key \
+	-x509 -days 3650 -extensions v3_req \
+	-out /etc/pki/tls/certs/localhost.crt 2> /dev/null
+XX
+SomeState
+SomeCity
+SomeOrganization
+SomeOrganizationalUnit
+${broker_hostname}
+root@${domain}
+EOF
+}
+
 # Configure IP address and hostname.
 configure_network()
 {
@@ -1275,8 +1320,7 @@ is_false()
 # of this variable can be changed to use a custom repository or puddle.
 #
 # We also set the $cur_ip_addr variable to the IP address of the host
-# running this kickstart script, based on the output of the `ip addr
-# show` command.
+# running this script, based on the output of the `ip addr show` command.
 #
 # In addition, the $nameservers variable will be set to
 # a semicolon-delimited list of nameservers, suitable for use in
@@ -1511,13 +1555,18 @@ broker && configure_access_keys_on_broker
 broker && configure_messaging_plugin
 broker && configure_dns_plugin
 broker && configure_httpd_auth
+broker && configure_broker_ssl_cert
 
 datastore && configure_mongo_password
 
 node && configure_port_proxy
 node && configure_gears
 node && configure_node
+node && configure_wildcard_ssl_cert_on_node
 node && update_openshift_facts_on_node
+
+echo "Installation and configuration is complete;"
+echo "please reboot to start all services properly."
 
 
 # Configure an authorized key to provide the broker access
