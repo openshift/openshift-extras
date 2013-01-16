@@ -804,7 +804,10 @@ plugin.stomp.user = ${mcollective_user}
 plugin.stomp.password = ${mcollective_password}
 EOF
 
-chown root:apache /var/log/mcollective-client.log
+  # make sure this file is created with proper ownership.
+  # if root owns it, the broker (apache user) can't log to it.
+  touch /var/log/mcollective-client.log
+  chown apache:root /var/log/mcollective-client.log
 }
 
 
