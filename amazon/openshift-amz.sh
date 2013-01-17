@@ -428,8 +428,16 @@ configure_datastore()
   done
   echo "MongoDB is ready! ($(date +%H:%M:%S))"
 
-  # Set the administrative password for the database.
-  mongo $mongodb_name --eval "db.addUser(\"${mongodb_user}\", \"${mongodb_password}\")"
+  # Add an administrative user and a user that the broker will use.
+  mongo <<EOF
+use admin
+db.addUser("${mongodb_admin_user}", "${mongodb_admin_password}")
+
+db.auth("${mongodb_admin_user}", "${mongodb_admin_password}")
+
+use ${mongodb_name}
+db.addUser("${mongodb_broker_user}", "${mongodb_broker_password}")
+EOF
 }
 
 
@@ -1000,8 +1008,8 @@ configure_controller()
   fi
 
   # configure MongoDB access
-  sed -i -e "s/MONGO_PASSWORD=.*$/MONGO_PASSWORD=\"${mongodb_password}\"/
-            s/MONGO_USER=.*$/MONGO_USER=\"${mongodb_user}\"/
+  sed -i -e "s/MONGO_PASSWORD=.*$/MONGO_PASSWORD=\"${mongodb_broker_password}\"/
+            s/MONGO_USER=.*$/MONGO_USER=\"${mongodb_broker_user}\"/
             s/MONGO_DB=.*$/MONGO_DB=\"${mongodb_name}\"/" \
       /etc/openshift/broker.conf
 
@@ -1465,10 +1473,19 @@ set_defaults()
   mcollective_user="${CONF_MCOLLECTIVE_USER:-mcollective}"
   mcollective_password="${CONF_MCOLLECTIVE_PASSWORD:-marionette}"
 
-  #   This is the user and password that are created for connecting to the MongoDB datastore.
-  #   The broker application's MongoDB plugin is also configured with these values.
-  mongodb_user="${CONF_MONGODB_USER:-openshift}"
-  mongodb_password="${CONF_MONGODB_PASSWORD:-mongopass}"
+  #   These are the username and password of the administrative user that will be created in the
+  #   MongoDB datastore.  These credentials are not used by in this script or by OpenShift, but an
+  #   administrative user must be added to MongoDB in order for it to enforce authentication.
+  mongodb_admin_user="${CONF_MONGODB_ADMIN_USER:-admin}"
+  mongodb_admin_password="${CONF_MONGODB_ADMIN_PASSWORD:-${CONF_MONGODB_PASSWORD:-mongopass}}"
+
+  #   These are the username and password of the normal user that will be created for the broker to
+  #   connect to the MongoDB datastore.  The broker application's MongoDB plugin is also configured
+  #   with these values.
+  mongodb_broker_user="${CONF_MONGODB_BROKER_USER:-openshift}"
+  mongodb_broker_password="${CONF_MONGODB_BROKER_PASSWORD:-${CONF_MONGODB_PASSWORD:-mongopass}}"
+
+  #   This is the name of the database in MongoDB in which the broker will store data.
   mongodb_name="${CONF_MONGODB_NAME:-openshift_broker}"
 
   #   This user and password are entered in the /etc/openshift/htpasswd file as a demo/test user.
