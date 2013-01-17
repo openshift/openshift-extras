@@ -1705,16 +1705,19 @@ echo_installation_intentions
 is_false "$CONF_NO_NTP" && synchronize_clock
 is_false "$CONF_NO_SSH_KEYS" && install_ssh_keys
 
-configure_rhel_repo
-if activemq || broker || datastore
+if is_false "$CONF_NO_REPOS"
 then
-  configure_broker_repo
+  configure_rhel_repo
+  if activemq || broker || datastore
+  then
+    configure_broker_repo
+  fi
+  node && configure_node_repo
+  node && configure_jbosseap_cartridge_repo
+  node && configure_jbosseap_subscription
+  node && configure_jbossews_subscription
+  broker && configure_client_tools_repo
 fi
-node && configure_node_repo
-node && configure_jbosseap_cartridge_repo
-node && configure_jbosseap_subscription
-node && configure_jbossews_subscription
-broker && configure_client_tools_repo
 
 yum update -y
 
