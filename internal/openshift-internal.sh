@@ -606,6 +606,21 @@ configure_datastore()
 
   # Start mongod so we can perform some administration now.
   service mongod start
+
+  # The init script lies to us as of version 2.0.2-1.el6_3: The start and
+  # restart actions return before the daemon is ready to accept
+  # connections (it appears to take time to initialize the journal).  Thus
+  # we need the following to wait until the daemon is really ready.
+  echo "Waiting for MongoDB to start ($(date +%H:%M:%S))..."
+  while :
+  do
+    echo exit | mongo && break
+    sleep 5
+  done
+  echo "MongoDB is ready! ($(date +%H:%M:%S))"
+
+  # Set the administrative password for the database.
+  mongo $mongodb_name --eval "db.addUser(\"${mongodb_user}\", \"${mongodb_password}\")"
 }
 
 
@@ -1186,24 +1201,6 @@ configure_controller()
   chkconfig openshift-console on
 }
 
-# Set the administrative password for the database.
-configure_mongo_password()
-{
-  # The init script lies to us as of version 2.0.2-1.el6_3: The start and
-  # restart actions return before the daemon is ready to accept
-  # connections (it appears to take time to initialize the journal).  Thus
-  # we need the following to wait until the daemon is really ready.
-  echo "Waiting for MongoDB to start ($(date +%H:%M:%S))..."
-  while :
-  do
-    echo exit | mongo && break
-    sleep 5
-  done
-  echo "MongoDB is ready! ($(date +%H:%M:%S))"
-
-  mongo $mongodb_name --eval "db.addUser(\"${mongodb_user}\", \"${mongodb_password}\")"
-}
-
 # Configure the broker to use the remote-user authentication plugin.
 configure_remote_user_auth_plugin()
 {
@@ -1749,8 +1746,6 @@ broker && configure_messaging_plugin
 broker && configure_dns_plugin
 broker && configure_httpd_auth
 broker && configure_broker_ssl_cert
-
-datastore && configure_mongo_password
 
 node && configure_port_proxy
 node && configure_gears
