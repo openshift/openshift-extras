@@ -534,11 +534,8 @@ configure_selinux_policy_on_node()
     echo boolean -m --on allow_polyinstantiation
   ) | semanage -i -
 
-  fixfiles -R rubygem-passenger restore
-  fixfiles -R mod_passenger restore
 
   restorecon -rv /var/run
-  restorecon -rv /usr/share/rubygems/gems/passenger-* 
   restorecon -rv /usr/sbin/mcollectived /var/log/mcollective.log /var/run/mcollectived.pid
   restorecon -rv /var/lib/openshift /etc/openshift/node.conf /etc/httpd/conf.d/openshift
 }
