@@ -428,8 +428,10 @@ configure_datastore()
   done
   echo "MongoDB is ready! ($(date +%H:%M:%S))"
 
-  # Add an administrative user and a user that the broker will use.
-  mongo <<EOF
+  if is_false "$CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST"
+  then
+    # Add an administrative user and a user that the broker will use.
+    mongo <<EOF
 use admin
 db.addUser("${mongodb_admin_user}", "${mongodb_admin_password}")
 
@@ -438,6 +440,13 @@ db.auth("${mongodb_admin_user}", "${mongodb_admin_password}")
 use ${mongodb_name}
 db.addUser("${mongodb_broker_user}", "${mongodb_broker_password}")
 EOF
+  else
+    # Add a user that the broker will use.
+    mongo <<EOF
+use ${mongodb_name}
+db.addUser("${mongodb_broker_user}", "${mongodb_broker_password}")
+EOF
+  fi
 }
 
 

@@ -113,7 +113,8 @@
 #   Default: admin:mongopass
 #   These are the username and password of the administrative user that will be created in the
 #   MongoDB datastore.  These credentials are not used by in this script or by OpenShift, but an
-#   administrative user must be added to MongoDB in order for it to enforce authentication.
+#   administrative user must be added to MongoDB in order for it to enforce authentication.  Note:
+#   The administrative user will not be created if CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST is enabled.
 #
 # mongodb_broker_user / CONF_MONGODB_BROKER_USER
 # mongodb_broker_password / CONF_MONGODB_BROKER_PASSWORD
@@ -630,8 +631,10 @@ configure_datastore()
   done
   echo "MongoDB is ready! ($(date +%H:%M:%S))"
 
-  # Add an administrative user and a user that the broker will use.
-  mongo <<EOF
+  if is_false "$CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST"
+  then
+    # Add an administrative user and a user that the broker will use.
+    mongo <<EOF
 use admin
 db.addUser("${mongodb_admin_user}", "${mongodb_admin_password}")
 
@@ -640,6 +643,13 @@ db.auth("${mongodb_admin_user}", "${mongodb_admin_password}")
 use ${mongodb_name}
 db.addUser("${mongodb_broker_user}", "${mongodb_broker_password}")
 EOF
+  else
+    # Add a user that the broker will use.
+    mongo <<EOF
+use ${mongodb_name}
+db.addUser("${mongodb_broker_user}", "${mongodb_broker_password}")
+EOF
+  fi
 }
 
 
