@@ -566,24 +566,25 @@ class OOStats
           count_all[:apps] += 1
           count_for_profile[app_profile][:apps] += 1
           count_of[:apps] += 1
-          app['group_instances'].each do |group|
-            gear = group['gears'][0] or next # some broken apps seem to have no gears
-            gear_profile = gear['node_profile'] # for now, same as app profile, but...
-            count_of["#{gear_profile}_gears".to_sym] += 1
-            count_of[:gears] += 1
-            count_for_profile[gear_profile][:gears] += 1
-            count_all[:gears] += 1
-            gear['configured_components'].each do |cart_desc|
-              # e.g. extract from       "@@app/cart-mysql-5.1/comp-mysql-server" => "mysql-5.1"
-              cart = cart_desc.gsub %r{ ^.* \b cart-([^/]+) (/|$)   .*         $ }x, '\1'
-              # Now pull the shorter name out without the version number
-              # e.g. extract from        "@@app/cart- mysql  - 5.1    /comp-mysql-server" => "mysql"
-              short = cart_desc.gsub %r{ ^.* \b cart-([-\w]+)-[\d.]+ (/|$)   .*         $ }x, '\1'
-              # If either regex doesn't match then we are left with the whole description to ponder.
-              count_for_profile[gear_profile][:cartridges][cart] += 1
-              count_for_profile[gear_profile][:cartridges_short][short] += 1
-              count_all[:cartridges][cart] += 1
-              count_all[:cartridges_short][short] += 1
+          app['group_instances'].each do |group| # group of same-configured gears
+            group['gears'].each do |gear|
+              gear_profile = gear['node_profile'] # for now, same as app profile, but...
+              count_of["#{gear_profile}_gears".to_sym] += 1
+              count_of[:gears] += 1
+              count_for_profile[gear_profile][:gears] += 1
+              count_all[:gears] += 1
+              gear['configured_components'].each do |cart_desc|
+                # e.g. extract from       "@@app/cart-mysql-5.1/comp-mysql-server" => "mysql-5.1"
+                cart = cart_desc.gsub %r{ ^.* \b cart-([^/]+) (/|$)   .*         $ }x, '\1'
+                # Now pull the shorter name out without the version number
+                # e.g. extract from        "@@app/cart- mysql  - 5.1    /comp-mysql-server" => "mysql"
+                short = cart_desc.gsub %r{ ^.* \b cart-([-\w]+)-[\d.]+ (/|$)   .*         $ }x, '\1'
+                # If either regex doesn't match then we are left with the whole description to ponder.
+                count_for_profile[gear_profile][:cartridges][cart] += 1
+                count_for_profile[gear_profile][:cartridges_short][short] += 1
+                count_all[:cartridges][cart] += 1
+                count_all[:cartridges_short][short] += 1
+              end
             end
           end
         end
