@@ -17,9 +17,9 @@
 # You can also use the set_option and set_columns methods to
 # customize the output you get from stats.display_results.
 #
-# The data still include legacy gear stats that miscounted gears, but
-# now newer gear state facts are gathered and displayed.
-# Discrepancies between counts in MongoDB vs. nodes should be either
+# The data include gear state facts made available in 1.1.1.
+# For installations prior to this version, use the enterprise-1.0 branch.
+# Now discrepancies between counts in MongoDB vs. nodes should be either
 # 1. transient (gear create/destroy in progress), or
 # 2. indicative of a problem (broken gear on node or miscount in DB).
 
@@ -204,11 +204,6 @@ class OOStats
     #      :gears_unknown_count => 0,  # state not one of the above, shouldn't happen
     #      :gears_total_count   => 200,
     #      :gears_active_count  => 20, # all gears except idle and stopped are "active"
-    #        # legacy ways of counting gears
-    #      :max_apps        => 100,
-    #      :capacity        => 12.0, # percentage of max_apps consumed
-    #      :max_active_apps => 100,
-    #      :active_capacity => 12.0, # percentage of max_active_apps consumed
     #   },
     #   "node2.example.com" => ...
     # }
@@ -221,11 +216,11 @@ class OOStats
         # convert from strings to relevant values if needed
         %w{node_profile district_uuid}.each {|fact| node[fact.to_sym] = facts[fact]}
         node[:district_active] = facts['district_active'] == 'true' ? true : false
-        %w{ max_apps max_active_apps max_gears max_active_gears gears_started_count
+        %w{ max_gears max_active_gears gears_started_count
             gears_idle_count gears_stopped_count gears_deploying_count
             gears_unknown_count gears_total_count gears_active_count
           }.each {|fact| node[fact.to_sym] = facts[fact].to_i}
-        %w{capacity active_capacity gears_usage_pct gears_active_usage_pct
+        %w{gears_usage_pct gears_active_usage_pct
           }.each {|fact| node[fact.to_sym] = facts[fact].to_f}
 
         # record that hash for this node host
@@ -867,17 +862,3 @@ FORMAT
   o.display_results
 
 end
-# done: add check for no-gear apps
-# done: harden logic for extracting carts (use regex)
-# done: gather short cartridge names (in addition to full w/ version)
-# done: handle option parser exceptions better
-# done: make the gathering of user data optional
-# done: add user counts per app/gear count (100 users have 1 app, 2 have 2, ...)
-# done: add overall counts of nodes, districts, and profiles.
-# done: report nodes that are in district but didn't respond
-# done: distinguish non-districts from those actually named "NONE"
-# done: limit effective available gear counts per district by capacity
-# done: get rid of BSON data (deep clone district nodes)
-# done: use new gear-based node facts
-# TODO: compare gear count from DB and node (after node counts are right)
-# TODO: incorporate cartridge counts in profile summaries if present (db scanned)
