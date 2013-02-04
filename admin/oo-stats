@@ -42,6 +42,19 @@
 require 'rubygems'
 require 'time'
 
+class OOStatsFactsMissing < StandardError
+  def initialize(node, missing)
+    super <<-ERR
+
+      Node host "#{node}" did not report the following facts:
+        #{missing.join ", "}
+      Please ensure that all nodes have been updated with RPM
+      rubygem-openshift-origin-node at least version 1.0.11-1
+      or use the enterprise-1.0 version of oo-stats.
+    ERR
+  end
+end
+
 class OOStats
 
   # called when OOStats.new is called
@@ -178,7 +191,6 @@ class OOStats
     end
   end
 
-
   # get the node statistics by querying the facts on every node
   def get_node_entries
     entry_for_node = {}
@@ -211,7 +223,9 @@ class OOStats
       client.inventory do |response|
         facts = response[:body][:data][:facts]
         host = response[:senderid]
-        node = {}
+        node = {} # stuff all our data into this hash per node
+        # Prevent confusion by ensuring node has new facts; advise if missing.
+        missing_facts = []
 
         # convert from strings to relevant values if needed
         %w{node_profile district_uuid}.each {|fact| node[fact.to_sym] = facts[fact]}
@@ -219,9 +233,15 @@ class OOStats
         %w{ max_gears max_active_gears gears_started_count
             gears_idle_count gears_stopped_count gears_deploying_count
             gears_unknown_count gears_total_count gears_active_count
-          }.each {|fact| node[fact.to_sym] = facts[fact].to_i}
-        %w{gears_usage_pct gears_active_usage_pct
-          }.each {|fact| node[fact.to_sym] = facts[fact].to_f}
+        }.each do |fact|
+          missing_facts << fact if facts[fact].nil?
+          node[fact.to_sym] = facts[fact].to_i
+        end
+        %w{gears_usage_pct gears_active_usage_pct}.each do |fact|
+          missing_facts << fact if facts[fact].nil?
+          node[fact.to_sym] = facts[fact].to_f
+        end
+        missing_facts.empty? or raise OOStatsFactsMissing.new(host, missing_facts)
 
         # record that hash for this node host
         node[:id] = host
@@ -349,6 +369,8 @@ class OOStats
 
     # We will drive this according to the nodes that responded.
     # There may be some that didn't respond, which won't be included.
+    # We will keep track of those by deleting responders from missing_nodes
+    # and counting the remainder as non-responsive.
     entry_for_node.each do |id,node|
       sum = summary_for_district[node[:district_uuid]] ||
                    none_district[node[:node_profile ]]
@@ -454,8 +476,8 @@ class OOStats
     summary_for_profile.each do |profile,sum|
       sum[:district_count] = sum[:districts].size
       sum[:avg_active_usage_pct] /= sum[:nodes_count] if sum[:nodes_count] > 0
-      sum[:lowest_active_usage_pct] = sum[:districts].map{|d| d[:gears_active_usage_pct]}.min || 0.0
-      sum[:highest_active_usage_pct] = sum[:districts].map{|d| d[:gears_active_usage_pct]}.max || 0.0
+      sum[:lowest_active_usage_pct] = sum[:districts].map{|d| d[:lowest_active_usage_pct]}.min || 0.0
+      sum[:highest_active_usage_pct] = sum[:districts].map{|d| d[:highest_active_usage_pct]}.max || 0.0
       sum[:avg_dist_usage_pct] /= sum[:district_count] if sum[:district_count] > 0
       sum[:lowest_dist_usage_pct] = sum[:districts].map{|d| d[:dist_usage_pct]}.min || 0.0
       sum[:highest_dist_usage_pct] = sum[:districts].map{|d| d[:dist_usage_pct]}.max || 0.0
