@@ -438,7 +438,7 @@ class OOStats
     summary_for_profile.each do |profile,sum|
       sum[:avg_active_capacity_pct] /= sum[:node_count] if sum[:node_count] > 0
       sum[:lowest_active_capacity_pct] = sum[:districts].map{|d| d[:lowest_active_capacity_pct]}.min || 0.0
-      sum[:highest_active_capacity_pct] = sum[:districts].map{|d| d[:highest_active_capacity_pct]}.min || 0.0
+      sum[:highest_active_capacity_pct] = sum[:districts].map{|d| d[:highest_active_capacity_pct]}.max || 0.0
       sum[:effective_available_gears] = [sum[:available_active_gears], sum[:dist_avail_capacity]].min
       if count_for_profile
         sum[:total_gears_in_db_records] = count_for_profile[profile][:gears]
