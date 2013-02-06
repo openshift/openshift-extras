@@ -1639,6 +1639,10 @@ set_defaults()
   repos_base_default='https://mirror.openshift.com/pub/origin-server/nightly/enterprise/2012-11-15'
   repos_base="${CONF_REPOS_BASE:-${repos_base_default}}"
 
+  # There a no defaults for these.  Customers should be using subscriptions via
+  # RHN.  Internally we use private systems.
+  rhn_repo_base="$RHN_REPO_BASE"
+
   # The domain name for the OpenShift Enterprise installation.
   domain="${CONF_DOMAIN:-example.com}"
 
