@@ -1,0 +1,3 @@
+enterprise/install-scripts/amazon/openshift-amz.sh
+enterprise/install-scripts/generic/openshift.ks
+enterprise/install-scripts/generic/openshift.sh
