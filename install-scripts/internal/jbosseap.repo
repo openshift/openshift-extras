@@ -1,5 +1,0 @@
-[jbosseap]
-name=jbosseap
-baseurl=http://cdn.rcm-qa.redhat.com/content/dist/rhel/server/6/6Server/x86_64/jbeap/6/os/
-enabled=1
-gpgcheck=0

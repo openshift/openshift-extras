@@ -1,8 +1,0 @@
-#!/bin/bash
-
-sed -e '1i #!/bin/bash
-/^#Begin Kickstart Script/,/^set -x/ d
-/^%end/ d
-' $1 > $2
-
-chmod +x $2
