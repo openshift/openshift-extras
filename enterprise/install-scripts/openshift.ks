@@ -1641,8 +1641,8 @@ set_defaults()
 
   # There a no defaults for these.  Customers should be using subscriptions via
   # RHN.  Internally we use private systems.
-  rhel_repo="$RHEL_REPO"
-  jboss_repo_base="$JBOSS_REPO_BASE"
+  rhel_repo="$CONF_RHEL_REPO"
+  jboss_repo_base="$CONF_JBOSS_REPO_BASE"
 
   # The domain name for the OpenShift Enterprise installation.
   domain="${CONF_DOMAIN:-example.com}"
