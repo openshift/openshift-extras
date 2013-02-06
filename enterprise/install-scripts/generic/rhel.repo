@@ -1,5 +1,5 @@
-[rhel63]
-name=rhel63
-baseurl=http://${rhn_repo_base}/content/dist/rhel/server/6/6Server/x86_64/os/
+[rhel]
+name=rhel
+baseurl=${rhel_repo}
 enabled=1
 gpgcheck=0
