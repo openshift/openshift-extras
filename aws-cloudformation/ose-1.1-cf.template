@@ -60,7 +60,7 @@
         "UserData" : { "Fn::Base64" : { "Fn::Join" : ["",[
             "#!/bin/bash -x","\n",
             "cd ~/","\n",
-            "wget https://raw.github.com/openshift/openshift-extras/master/aws-cloudformation/ose-1.1-amz.sh","\n",
+            "wget --no-check-certificate https://raw.github.com/openshift/openshift-extras/master/aws-cloudformation/ose-1.1-amz.sh","\n",
             "export CONF_PREFIX='", { "Ref" : "Prefix" } , "'\n",
             "export CONF_INSTALL_COMPONENTS='named'","\n",
             "sh openshift-amz.sh 'ID_NAMED' '", {"Ref" : "NamedWaitForInstanceWaitHandle"} ,"'", "\n"]]}}
@@ -121,7 +121,7 @@
         "UserData" : { "Fn::Base64" : { "Fn::Join" : ["",[
             "#!/bin/bash -x","\n",
             "cd ~/","\n",
-            "wget https://raw.github.com/openshift/openshift-extras/master/aws-cloudformation/ose-1.1-amz.sh","\n",
+            "wget --no-check-certificate https://raw.github.com/openshift/openshift-extras/master/aws-cloudformation/ose-1.1-amz.sh","\n",
             "export CONF_PREFIX='", { "Ref" : "Prefix" } , "'\n",
             "export CONF_INSTALL_COMPONENTS='datastore'","\n",
             "sh openshift-amz.sh 'ID_MONGO' '", {"Ref" : "MongoWaitForInstanceWaitHandle"} ,"'", "\n"]]}}
@@ -170,7 +170,7 @@
         "UserData" : { "Fn::Base64" : { "Fn::Join" : ["",[
             "#!/bin/bash -x","\n",
             "cd ~/","\n",
-            "wget https://raw.github.com/openshift/openshift-extras/master/aws-cloudformation/ose-1.1-amz.sh","\n",
+            "wget --no-check-certificate https://raw.github.com/openshift/openshift-extras/master/aws-cloudformation/ose-1.1-amz.sh","\n",
             "export CONF_PREFIX='", { "Ref" : "Prefix" } , "'\n",
             "export CONF_INSTALL_COMPONENTS='activemq'","\n",
             "sh openshift-amz.sh 'ID_ACTIVEMQ' '", {"Ref" : "ActiveMQWaitForInstanceWaitHandle"} ,"'", "\n"]]}}
@@ -217,7 +217,7 @@
         "UserData" : { "Fn::Base64" : { "Fn::Join" : ["",[
             "#!/bin/bash -x","\n",
             "cd ~/","\n",
-            "wget https://raw.github.com/openshift/openshift-extras/master/aws-cloudformation/ose-1.1-amz.sh","\n",
+            "wget --no-check-certificate https://raw.github.com/openshift/openshift-extras/master/aws-cloudformation/ose-1.1-amz.sh","\n",
             "export CONF_PREFIX='", { "Ref" : "Prefix" } , "'\n",
             "export CONF_NAMED_IP_ADDR='", {"Fn::GetAtt" : [ "NamedInstance", "PublicIp" ]}, "'\n",
             "export CONF_INSTALL_COMPONENTS='broker'","\n",
@@ -267,7 +267,7 @@
         "UserData" : { "Fn::Base64" : { "Fn::Join" : ["",[
             "#!/bin/bash -x","\n",
             "cd ~/","\n",
-            "wget https://raw.github.com/openshift/openshift-extras/master/aws-cloudformation/ose-1.1-amz.sh","\n",
+            "wget --no-check-certificate https://raw.github.com/openshift/openshift-extras/master/aws-cloudformation/ose-1.1-amz.sh","\n",
             "export CONF_PREFIX='", { "Ref" : "Prefix" } , "'\n",
             "export CONF_INSTALL_COMPONENTS='node'","\n",
             "sh openshift-amz.sh 'ID_BROKER' '", {"Ref" : "NodeWaitForInstanceWaitHandle"} ,"'", "\n"]]}}
