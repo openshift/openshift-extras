@@ -46,9 +46,9 @@ configure_rhel_repo()
 {
   # Enable repo with the puddle for broker packages.
   cat > /etc/yum.repos.d/rhel.repo <<YUM
-[rhel6.4]
-name=RHEL 6.4 Snapshot 5
-baseurl=https://mirror.openshift.com/enterprise/rhel/6.4-SnapShot-5.0/
+[rhel server]
+name=RHEL Server
+baseurl=https://mirror.openshift.com/enterprise/enterprise-1.1/rhel/
 enabled=1
 gpgcheck=0
 sslverify=false
