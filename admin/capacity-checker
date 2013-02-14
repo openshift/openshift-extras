@@ -1,0 +1,70 @@
+#!/usr/bin/env ruby
+# For use with OpenShift Enterprise 1.0 and 1.1
+#
+# This is a simple script to show how you could monitor
+# the capacity of a node using oo-stats and then alert
+# a separate system to spin up new nodes as needed.
+#
+# Installation: Place this script in the same directory
+#   as the oo-stat script.
+#
+# Usage Example for new nodes at 50% capacity:
+#   capacity-checker -t 50
+#--
+# Copyright 2013 Red Hat, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#++
+load 'oo-stats'
+require 'optparse'
+require 'ostruct'
+
+options = OpenStruct.new
+
+opts = OptionParser.new do |opts|
+  opts.banner = "Usage: capacity-checker [options]"
+
+  opts.on("-v", "--verbose", "Run verbosely") do |v|
+    options.verbose = v
+  end
+
+  opts.on("-t", "--threshold PERCENTAGE", Float,
+          "Capacity threshold before adding nodes as a percentage (e.g. 50)") do |threshold|
+    options.threshold = threshold
+  end
+end
+
+opts.parse!
+
+# Make sure a threshold was provided
+unless options.threshold
+  puts "ERROR:"
+  puts " - Must supply a threshold value"
+  puts ""
+  puts opts.help
+  exit 1
+end
+
+o = OOStats.new(:format => :yaml)
+o.gather_statistics
+
+# Calculate capacity by seeing if any of the profiles
+# are over the specified capacity
+o.results[:profile_summaries].each do |profile|
+  usage_perct = profile[:gears_active_count].to_f / (profile[:available_active_gears] + profile[:gears_active_count]).to_f * 100
+  puts "Current usage = #{usage_perct}%"
+  if usage_perct >= options.threshold
+    puts "OpenShift Hungry!! Need more nodes!!"
+    # TODO - make some great call
+  end
+end
