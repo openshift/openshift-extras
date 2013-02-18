@@ -46,14 +46,14 @@ configure_rhel_repo()
 {
   # Enable repo with the puddle for broker packages.
   cat > /etc/yum.repos.d/rhel.repo <<YUM
-[rhel server]
+[rhel]
 name=RHEL Server
 baseurl=https://mirror.openshift.com/enterprise/enterprise-1.1/rhel/
 enabled=1
 gpgcheck=0
 sslverify=false
 sslclientkey = /root/client-key.pem
-sslclientcert = /root/client-client.pem
+sslclientcert = /root/client-cert.pem
 YUM
   # In order for the %post section to succeed, it must have a way of installing from RHEL.
   # The post section cannot access the method that was used in the base install.
