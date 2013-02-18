@@ -58,8 +58,7 @@
 #   "rhn" install method, credentials for registering and subscribing.
 
 # repos_base / CONF_REPOS_BASE
-#   Default: https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<
-latest>
+#   Default: https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<latest>
 #   "yum" install method, base URL for OpenShift repositories 
 
 # domain / CONF_DOMAIN
