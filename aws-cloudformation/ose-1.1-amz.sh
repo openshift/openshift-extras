@@ -1437,7 +1437,7 @@ is_false "$CONF_NO_NTP" && synchronize_clock
 is_false "$CONF_NO_SSH_KEYS" && install_ssh_keys
 
 
-#configure_rhel_repo
+configure_rhel_repo
 if activemq || broker || datastore
 then
   configure_broker_repo
