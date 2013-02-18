@@ -1,20 +1,24 @@
 #!/bin/bash
-# This script configures a host system with OpenShift components.
-# It may be used either as a RHEL6 kickstart script, or the %post section may be
-# extracted and run directly to install on top of an installed RHEL6 image.
-# When running the %post outside kickstart, a reboot is required afterward.
+# This script configures a host system with OpenShift components. It 
+# may be used either as a RHEL6 kickstart script, or the %post section
+# may be extracted and run directly to install on top of an installed 
+# RHEL6 image. When running the %post outside kickstart, a reboot is
+# required afterward.
 
 # SPECIFYING PARAMETERS
 #
-# If you supply no parameters, all components are installed on one host with default configuration,
-# which should give you a running demo.
+# If you supply no parameters, all components are installed on one host with
+# default configuration, which should give you a running demo.
 #
-# For a kickstart, you can supply further kernel parameters (in addition to the ks=location itself).
+# For a kickstart, you can supply further kernel parameters (in addition to the
+# ks=location itself).
 #  e.g. virt-install ... -x "ks=http://.../openshift.ks domain=example.com"
 #
-# As a bash script, just add the parameters as bash variables at the top of the script (or environment variables).
-# Kickstart parameters are mapped to uppercase bash variables prepended with CONF_
-# so for example, "domain=example.com" as a kickstart parameter would be "CONF_DOMAIN=example.com" for the script.
+# As a bash script, just add the parameters as bash variables at the top of the
+# script (or environment variables). Kickstart parameters are mapped to 
+# uppercase bash variables prepended with CONF_ so for example, "
+# domain=example.com" as a kickstart parameter would be
+# "CONF_DOMAIN=example.com" for the script.
 
 # PARAMETER DESCRIPTIONS
 
@@ -26,9 +30,9 @@
 #     datastore - installs the MongoDB datastore
 #     node - installs node functionality
 #   Default: all.
-#   Only the specified components are installed and configured.
-#   E.g. install_components=broker,datastore only installs the broker and DB,
-#   and assumes you have use other hosts for messaging and DNS.
+#   Only the specified components are installed and configured. E.g. 
+#   install_components=broker,datastore only installs the broker and DB, and
+#   assumes you have use other hosts for messaging and DNS.
 #
 # Example kickstart parameter:
 #  install_components="node,broker,named,activemq,datastore"
@@ -40,22 +44,23 @@
 #     sm - use subscription-manager
 #     rhn - use rhn-register
 #     yum - set up yum repos manually
-#     none - assume the install source is already set up when the script executes
+#     none -assume install source is set up when the script executes
 #   Default: yum
 
 # sm_reg_name / CONF_
 # sm_reg_pass / CONF_
 # sm_reg_pool / CONF_
-#   If using the "sm" install method, credentials for registering and subscribing.
+#   "sm" install method, credentials for registering and subscribing
 
 # rhn_reg_name / CONF_
 # rhn_reg_pass / CONF_
 # rhn_reg_subid / CONF_
-#   If using the "sm" install method, credentials for registering and subscribing.
+#   "rhn" install method, credentials for registering and subscribing.
 
 # repos_base / CONF_REPOS_BASE
-#   Default: https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<latest>
-#   The base URL for the OpenShift repositories used for the "yum" install method
+#   Default: https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<
+latest>
+#   "yum" install method, base URL for OpenShift repositories 
 
 # domain / CONF_DOMAIN
 #   Default: example.com
@@ -66,14 +71,16 @@
 # named_hostname / CONF_NAMED_HOSTNAME
 # activemq_hostname / CONF_ACTIVEMQ_HOSTNAME
 # datastore_hostname / CONF_DATASTORE_HOSTNAME
-#   Default: the root plus the domain, e.g. broker.example.com - except named=ns1.example.com
-#   These supply the FQDN of the hosts containing these components. Used for configuring the
-#   host's name at install, and also for configuring the broker application to reach the
-#   services needed.
+#   Default: the root plus the domain, e.g. broker.example.com - except
+#      named=ns1.example.com
+#   These supply the FQDN of the hosts containing these components. Used for
+#   configuring the host's name at install, and also for configuring the broker
+#   application to reach the services needed.
 #
-#   IMPORTANT NOTE: if installing a nameserver, the script will create DNS entries for the
-#   hostnames of the other components being installed on this host as well. If you are using
-#   a nameserver set up separately, you are responsible for all necessary DNS entries.
+#   IMPORTANT NOTE: if installing a nameserver, the script will create DNS 
+#   entries for the hostnames of the other components being installed on this
+#   host as well. If you are using a nameserver set up separately, you are
+#   responsible for all necessary DNS entries.
 
 
 # named_ip_addr / CONF_NAMED_IP_ADDR
@@ -81,120 +88,133 @@
 #   This is used by every host to configure its primary nameserver.
 
 # bind_key / CONF_BIND_KEY
-#   When the nameserver is remote, use this to specify the HMAC-MD5 key for updates.
-#   This is the "Key:" field from the .private key file generated by dnssec-keygen.
+#   When the nameserver is remote, use this to specify the HMAC-MD5 key for
+#   updates. This is the "Key:" field from the .private key file generated by
+#   dnssec-keygen.
 
 # broker_ip_addr / CONF_BROKER_IP_ADDR
 #   Default: the current IP (at install)
-#   This is used for the node to record its broker.
-#   Also is the default for the nameserver IP if none is given.
+#   This is used for the node to record its broker. Also is the default for the
+#   nameserver IP if none is given.
 
 # node_ip_addr / CONF_NODE_IP_ADDR
 #   Default: the current IP (at install)
-#   This is used for the node to give a public IP, if different from the one on its NIC.
+#   This is used for the node to give a public IP, if different from the one on 
+#   its NIC.
 
-# Passwords used to secure various services. You are advised to specify only alphanumeric
-# values in this script as others may cause syntax errors depending on context. If
-# non-alphanumeric values are required, update them separately after installation.
+# Passwords used to secure various services. You are advised to specify only
+# alphanumeric values in this script as others may cause syntax errors depending
+# on context. If non-alphanumeric values are required, update them separately 
+# after installation.
 #
 # activemq_admin_password / CONF_ACTIVEMQ_ADMIN_PASSWORD
 #   Default: randomized
-#   This is the admin password for the ActiveMQ admin console, which is not needed
-#   by OpenShift but might be useful in troubleshooting.
+#   This is the admin password for the ActiveMQ admin console, which is not 
+#   needed by OpenShift but might be useful in troubleshooting.
 #
 # mcollective_user / CONF_MCOLLECTIVE_USER
 # mcollective_password / CONF_MCOLLECTIVE_PASSWORD
 #   Default: mcollective/marionette
-#   This is the user and password shared between broker and node for communicating over
-#   the mcollective topic channels in ActiveMQ. Must be the same on all broker and node hosts.
+#   This is the user and password shared between broker and node for
+#   communicating over the mcollective topic channels in ActiveMQ. Must be the
+#   same on all broker and node hosts.
 #
 # mongodb_admin_user / CONF_MONGODB_ADMIN_USER
 # mongodb_admin_password / CONF_MONGODB_ADMIN_PASSWORD
 #   Default: admin:mongopass
-#   These are the username and password of the administrative user that will be created in the
-#   MongoDB datastore.  These credentials are not used by in this script or by OpenShift, but an
-#   administrative user must be added to MongoDB in order for it to enforce authentication.  Note:
-#   The administrative user will not be created if CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST is enabled.
+#   These are the username and password of the administrative user that will be
+#   created in the MongoDB datastore. These credentials are not used by in this
+#   script or by OpenShift, but an administrative user must be added to MongoDB
+#   in order for it to enforce authentication. Note: The administrative user 
+#   will not be created if CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST is enabled.
 #
 # mongodb_broker_user / CONF_MONGODB_BROKER_USER
 # mongodb_broker_password / CONF_MONGODB_BROKER_PASSWORD
 #   Default: openshift:mongopass
-#   These are the username and password of the normal user that will be created for the broker to
-#   connect to the MongoDB datastore.  The broker application's MongoDB plugin is also configured
-#   with these values.
+#   These are the username and password of the normal user that will be created
+#   for the broker to connect to the MongoDB datastore. The broker application's
+#   MongoDB plugin is also configured with these values.
 #
 # mongodb_name / CONF_MONGODB_NAME
 #   Default: openshift_broker
-#   This is the name of the database in MongoDB in which the broker will store data.
+#   This is the name of the database in MongoDB in which the broker will store
+#   data.
 #
 # openshift_user1 / CONF_OPENSHIFT_USER1
 # openshift_password1 / CONF_OPENSHIFT_PASSWORD1
 #   Default: demo/changeme
-#   This user and password are entered in the /etc/openshift/htpasswd file as a demo/test user.
-#   You will likely want to remove it after installation (or just use a different auth method).
+#   This user and password are entered in the /etc/openshift/htpasswd file as a
+#   demo/test user. You will likely want to remove it after installation (or 
+#   just use a different auth method).
 
 # IMPORTANT NOTES - DEPENDENCIES
 #
-# In order for the %post section to succeed, it must have a way of installing from RHEL 6.
-# The post section cannot access the method that was used in the base install.
-# So, you must modify this script, either to subscribe to RHEL during the base install,
-# or to ensure that the configure_rhel_repo function below subscribes to RHEL
-# or configures RHEL yum repos.
+# In order for the %post section to succeed, it must have a way of installing
+# from RHEL 6. The post section cannot access the method that was used in the
+# base install. So, you must modify this script, either to subscribe to RHEL
+# during the base install, or to ensure that the configure_rhel_repo function
+# below subscribes to RHEL or configures RHEL yum repos.
 #
-# The JBoss cartridges similarly require packages from the JBoss entitlements, so you must subscribe
-# to the corresponding channels during the base install or modify the
-# configure_jbossews_subscription or configure_jbosseap_subscription functions to do so.
+# The JBoss cartridges similarly require packages from the JBoss entitlements,
+# so you must subscribe to the corresponding channels during the base install or
+# modify the configure_jbossews_subscription or configure_jbosseap_subscription
+# functions to do so.
 #
-# The OpenShift repository steps below refer to public beta yum repositories. For a supported
-# production product, comment these out and use your OpenShift Enterprise subscription instead.
+# The OpenShift repository steps below refer to public beta yum repositories.
+# For a supported production product, comment these out and use your OpenShift
+# Enterprise subscription instead.
 #
-# DO NOT install with third-party (non-RHEL) repos enabled (e.g. EPEL). You may install different
-# package versions than OpenShift expects and be in for a long troubleshooting session.
-# Also avoid pre-installing third-party software like Puppet for the same reason.
+# DO NOT install with third-party (non-RHEL) repos enabled (e.g. EPEL). You may
+# install different package versions than OpenShift expects and be in for a long
+# troubleshooting session. Also avoid pre-installing third-party software like
+# Puppet for the same reason.
 #
 # OTHER IMPORTANT NOTES
 #
-# You will almost certainly want to change the root password or authorized keys (or both) that are
-# specified in the script, and/or set up another user/group with sudo access so that you can access
-# the system after installation.
+# You will almost certainly want to change the root password or authorized keys
+# (or both) that are specified in the script, and/or set up another user/group
+# with sudo access so that you can access the system after installation.
 #
-# If you install a broker, the rhc client is installed as well, for convenient local testing.
-# Also, a test OpenShift user "demo" with password "changeme" is created.
+# If you install a broker, the rhc client is installed as well, for convenient
+# local testing. Also, a test OpenShift user "demo" with password "changeme" is
+# created.
 #
-# If you want to use the broker from a client outside the installation, then of course that client
-# must be using a DNS server that knows about (or is) the DNS server for the installation.
-# Otherwise you will have DNS failures when creating the app and be unable to reach it in a browser.
+# If you want to use the broker from a client outside the installation, then of
+# course that client must be using a DNS server that knows about (or is) the DNS
+# server for the installation. Otherwise you will have DNS failures when
+# creating the app and be unable to reach it in a browser.
 #
 
 # MANUAL TASKS
 #
-# This script attempts to automate as many tasks as it reasonably can. Unfortunately, it is
-# constrained to setting up only a single host at a time. In an assumed multi-host setup,
-# you will need to do the following after the script has completed.
+# This script attempts to automate as many tasks as it reasonably can.
+# Unfortunately, it is constrained to setting up only a single host at a time.
+# In an assumed multi-host setup, you will need to do the following after the
+# script has completed.
 #
 # 1. Set up DNS entries for hosts
-# If you installed BIND with the script, then any other components installed with the script
-# on the same host received DNS entries. Other hosts must all be defined manually, including
-# at least your node hosts. oo-register-dns may prove useful for this.
+# If you installed BIND with the script, then any other components installed
+# with the script on the same host received DNS entries. Other hosts must all
+# be defined manually, including at least your node hosts. oo-register-dns may
+# prove useful for this.
 #
 # 2. Copy public rsync key to enable moving gears
-# The broker rsync public key needs to go on nodes, but there is no good way
-# to script that generically. Nodes should not have password-less access
-# to brokers to copy the .pub key, so this must be performed manually on each node host:
+# The broker rsync public key needs to go on nodes, but there is no good way to
+# script that generically. Nodes should not have password-less access to brokers
+# to copy the .pub key, so this must be performed manually on each node host:
 #   [root@node] # scp root@broker:/etc/openshift/rsync_id_rsa.pub /root/.ssh/
-#   (the above step will ask for the root password of the broker machine)
+# (the above step will ask for the root password of the broker machine)
 #   # cat /root/.ssh/rsync_id_rsa.pub >> /root/.ssh/authorized_keys
 #   # rm /root/.ssh/rsync_id_rsa.pub
-# If you skip this, each gear move will require typing root passwords for each of the
-# node hosts involved.
+# If you skip this, each gear move will require typing root passwords for each
+# of the node hosts involved.
 #
 # 3. Copy ssh host keys between the node hosts
-# All node hosts should identify as the same host, so that when gears are moved between
-# hosts, ssh and git don't give developers spurious warnings about the host keys changing.
-# So, copy /etc/ssh/ssh_* from one node host to all the rest (or, if using the same
-# image for all hosts, just keep the keys from the image).
-
-
+# All node hosts should identify as the same host, so that when gears are moved
+# between hosts, ssh and git don't give developers spurious warnings about the
+# host keys changing.  So, copy /etc/ssh/ssh_* from one node host to all the
+# rest (or, if using the same image for all hosts, just keep the keys from the
+# image).
 
 
 ########################################################################
