@@ -47,9 +47,10 @@ KEYS
 
 configure_rhel_repo()
 {
-  # In order for the %post section to succeed, it must have a way of installing from RHEL.
-  # The post section cannot access the method that was used in the base install.
-  # So, you must subscribe to RHEL or configure RHEL repos here.
+  # In order for the %post section to succeed, it must have a way of 
+  # installing from RHEL. The post section cannot access the method that
+  # was used in the base install. So, you must subscribe to RHEL or
+  # configure RHEL repos here.
 
   # configure RHEL subscription or repos here
   : # no-op so that this function definition is valid.
@@ -117,8 +118,8 @@ YUM
 
 configure_jbosseap_subscription()
 {
-  # The JBossEAP cartridge depends on Red Hat's JBoss packages, so you must
-  # subscribe to the appropriate channel here.
+  # The JBossEAP cartridge depends on Red Hat's JBoss packages, so you
+  # must subscribe to the appropriate channel here.
 
   # configure JBossEAP subscription
   : # no-op so that this function definition is valid.
@@ -126,8 +127,8 @@ configure_jbosseap_subscription()
 
 configure_jbossews_subscription()
 {
-  # The JBossEWS cartridge depends on Red Hat's JBoss packages, so you must
-  # subscribe to the appropriate channel here.
+  # The JBossEWS cartridge depends on Red Hat's JBoss packages, so you
+  # must subscribe to the appropriate channel here.
 
   # configure JBossEWS subscription
   : # no-op so that this function definition is valid.
@@ -239,7 +240,7 @@ configure_selinux_policy_on_broker()
   # We combine these setsebool commands into a single semanage command
   # because separate commands take a long time to run.
   (
-    # Allow the console application to access executable and writable memory
+    # Allow console application to access executable and writable memory
     echo boolean -m --on httpd_execmem
 
     # Allow the broker to write files in the http file context.
@@ -416,9 +417,9 @@ configure_datastore()
   # Start mongod so we can perform some administration now.
   service mongod start
 
-  # The init script lies to us as of version 2.0.2-1.el6_3: The start and
-  # restart actions return before the daemon is ready to accept
-  # connections (it appears to take time to initialize the journal).  Thus
+  # The init script lies to us as of version 2.0.2-1.el6_3: The start 
+  # and restart actions return before the daemon is ready to accept
+  # connections (appears to take time to initialize the journal). Thus
   # we need the following to wait until the daemon is really ready.
   echo "Waiting for MongoDB to start ($(date +%H:%M:%S))..."
   while :
@@ -468,9 +469,9 @@ configure_gears()
 # Enable services to start on boot for the node.
 enable_services_on_node()
 {
-  # We use --nostart below because activating the configuration here will
-  # produce errors.  Anyway, we only need the configuration activated
-  # after Anaconda reboots, so --nostart makes sense in any case.
+  # We use --nostart below because activating the configuration here 
+  # will produce errors.  Anyway, we only need the configuration 
+  # activated Anaconda reboots, so --nostart makes sense in any case.
 
   lokkit --nostart --service=ssh
   lokkit --nostart --service=https
@@ -487,9 +488,9 @@ enable_services_on_node()
 # Enable services to start on boot for the broker.
 enable_services_on_broker()
 {
-  # We use --nostart below because activating the configuration here will
-  # produce errors.  Anyway, we only need the configuration activated
-  # after Anaconda reboots, so --nostart makes sense in any case.
+  # We use --nostart below because activating the configuration here 
+  # will produce errors.  Anyway, we only need the configuration 
+  # activated after Anaconda reboots, so --nostart makes sense.
 
   lokkit --nostart --service=ssh
   lokkit --nostart --service=https
@@ -500,7 +501,7 @@ enable_services_on_broker()
   is_false "$CONF_NO_NTP" && chkconfig ntpd on
   chkconfig sshd on
 
-  # Remove the VirtualHost from the default ssl.conf to prevent a warning
+  # Remove VirtualHost from the default ssl.conf to prevent a warning
    sed -i '/VirtualHost/,/VirtualHost/ d' /etc/httpd/conf.d/ssl.conf
 }
 
@@ -1007,6 +1008,10 @@ configure_controller()
     echo "Warning: broker authentication salt is empty!"
   fi
 
+  # Configure the console with the correct hostname, and use random salt
+  sed -i -e "s/^DOMAIN_SUFFIX=.*$/DOMAIN_SUFFIX=${domain}/" \
+      /etc/openshift/console.conf
+
   # Configure the broker with the correct hostname, and use random salt
   # to the data store (the host running MongoDB).
   sed -i -e "s/^CLOUD_DOMAIN=.*$/CLOUD_DOMAIN=${domain}/;
@@ -1060,10 +1065,10 @@ configure_mongo_auth_plugin()
     mongo_opts="--host ${datastore_hostname} --username openshift --password mooo"
   fi
 
-  # The init script is broken as of version 2.0.2-1.el6_3: The start and
-  # restart actions return before the daemon is ready to accept
-  # connections (it appears to take time to initialize the journal).  Thus
-  # we need the following hack to wait until the daemon is ready.
+  # The init script is broken as of version 2.0.2-1.el6_3: The start 
+  # and restart actions return before the daemon is ready to accept
+  # connections (it appears to take time to initialize the journal).
+  # Thus we need the following hack to wait until the daemon is ready.
   echo "Waiting for MongoDB to start ($(date +%H:%M:%S))..."
   while :
   do
@@ -1139,7 +1144,8 @@ configure_httpd_auth()
 
 configure_access_keys_on_broker()
 {
-  # Generate a broker access key for remote apps (Jenkins) to access the broker.
+  # Generate a broker access key for remote apps (Jenkins) to access 
+  # the broker.
   openssl genrsa -out /etc/openshift/server_priv.pem 2048
   openssl rsa -in /etc/openshift/server_priv.pem -pubout > /etc/openshift/server_pub.pem
 
@@ -1147,12 +1153,13 @@ configure_access_keys_on_broker()
   ssh-keygen -t rsa -b 2048 -P "" -f /root/.ssh/rsync_id_rsa
   cp ~/.ssh/rsync_id_rsa* /etc/openshift/
   # the .pub key needs to go on nodes, but there is no good way
-  # to script that generically. Nodes should not have password-less access
-  # to brokers to copy the .pub key, but this can be performed manually:
-  # [root@node] # scp root@broker:/etc/openshift/rsync_id_rsa.pub /root/.ssh/
+  # to script that generically. Nodes should not have password-less 
+  # access to brokers to copy the .pub key, but this can be performed
+  # manually:
+  #   # scp root@broker:/etc/openshift/rsync_id_rsa.pub /root/.ssh/
   # the above step will ask for the root password of the broker machine
-  # # cat /root/.ssh/rsync_id_rsa.pub >> /root/.ssh/authorized_keys
-  # # rm /root/.ssh/rsync_id_rsa.pub
+  #   # cat /root/.ssh/rsync_id_rsa.pub >> /root/.ssh/authorized_keys
+  #   # rm /root/.ssh/rsync_id_rsa.pub
 }
 
 configure_wildcard_ssl_cert_on_node()
@@ -1334,7 +1341,7 @@ is_false()
 # of this variable can be changed to use a custom repository or puddle.
 #
 # We also set the $cur_ip_addr variable to the IP address of the host
-# running this script, based on the output of the `ip addr show` command.
+# running this script, based on the output of the `ip addr show` command
 #
 # In addition, the $nameservers variable will be set to
 # a semicolon-delimited list of nameservers, suitable for use in
@@ -1416,8 +1423,8 @@ set_defaults()
   repos_base_default='https://mirror.openshift.com/pub/origin-server/nightly/enterprise/2012-11-15'
   repos_base="${CONF_REPOS_BASE:-${repos_base_default}}"
 
-  # There a no defaults for these.  Customers should be using subscriptions via
-  # RHN.  Internally we use private systems.
+  # There a no defaults for these. Customers should be using 
+  # subscriptions via RHN. Internally we use private systems.
   rhel_repo="$CONF_RHEL_REPO"
   jboss_repo_base="$CONF_JBOSS_REPO_BASE"
 
@@ -1432,8 +1439,8 @@ set_defaults()
   datastore_hostname="${CONF_DATASTORE_HOSTNAME:-datastore.${domain}}"
 
   # The hostname name for this host.
-  # Note: If this host is, e.g., both a broker and a datastore, we want to
-  # go with the broker hostname and not the datastore hostname.
+  # Note: If this host is, e.g., both a broker and a datastore, we want
+  # to go with the broker hostname and not the datastore hostname.
   if broker
   then hostname="$broker_hostname"
   elif node
@@ -1481,32 +1488,38 @@ set_defaults()
 
   # Set default passwords
   #
-  #   This is the admin password for the ActiveMQ admin console, which is not needed
-  #   by OpenShift but might be useful in troubleshooting.
+  #   This is the admin password for the ActiveMQ admin console, which 
+  #   is not needed by OpenShift but might be useful in troubleshooting.
   activemq && activemq_admin_password="${CONF_ACTIVEMQ_ADMIN_PASSWORD:-${randomized//[![:alnum:]]}}"
 
-  #   This is the user and password shared between broker and node for communicating over
-  #   the mcollective topic channels in ActiveMQ. Must be the same on all broker and node hosts.
+  #   This is the user and password shared between broker and node for
+  #   communicating over the mcollective topic channels in ActiveMQ. 
+  #   Must be the same on all broker and node hosts.
   mcollective_user="${CONF_MCOLLECTIVE_USER:-mcollective}"
   mcollective_password="${CONF_MCOLLECTIVE_PASSWORD:-marionette}"
 
-  #   These are the username and password of the administrative user that will be created in the
-  #   MongoDB datastore.  These credentials are not used by in this script or by OpenShift, but an
-  #   administrative user must be added to MongoDB in order for it to enforce authentication.
+  #   These are the username and password of the administrative user 
+  #   that will be created in the MongoDB datastore. These credentials
+  #   are not used by in this script or by OpenShift, but an
+  #   administrative user must be added to MongoDB in order for it to
+  #   enforce authentication.
   mongodb_admin_user="${CONF_MONGODB_ADMIN_USER:-admin}"
   mongodb_admin_password="${CONF_MONGODB_ADMIN_PASSWORD:-${CONF_MONGODB_PASSWORD:-mongopass}}"
 
-  #   These are the username and password of the normal user that will be created for the broker to
-  #   connect to the MongoDB datastore.  The broker application's MongoDB plugin is also configured
-  #   with these values.
+  #   These are the username and password of the normal user that will
+  #   be created for the broker to connect to the MongoDB datastore. The
+  #   broker application's MongoDB plugin is also configured with these
+  #   values.
   mongodb_broker_user="${CONF_MONGODB_BROKER_USER:-openshift}"
   mongodb_broker_password="${CONF_MONGODB_BROKER_PASSWORD:-${CONF_MONGODB_PASSWORD:-mongopass}}"
 
-  #   This is the name of the database in MongoDB in which the broker will store data.
+  #   This is the name of the database in MongoDB in which the broker
+  #   will store data.
   mongodb_name="${CONF_MONGODB_NAME:-openshift_broker}"
 
-  #   This user and password are entered in the /etc/openshift/htpasswd file as a demo/test user.
-  #   You will likely want to remove it after installation (or just use a different auth method).
+  #   This user and password are entered in the /etc/openshift/htpasswd
+  #   file as a demo/test user. You will likely want to remove it after
+  #   installation (or just use a different auth method).
   broker && openshift_user1="${CONF_OPENSHIFT_USER1:-demo}"
   broker && openshift_password1="${CONF_OPENSHIFT_PASSWORD1:-changeme}"
 }
