@@ -38,7 +38,6 @@
 #  install_components="node,broker,named,activemq,datastore"
 # Example script variable:
 #  CONF_INSTALL_COMPONENTS="node,broker,named,activemq,datastore"
-CONF_INSTALL_COMPONENTS="broker,named,activemq,datastore"
 
 # install_method / CONF_INSTALL_METHOD
 #   Choice from the following ways to provide packages:
@@ -68,7 +67,6 @@ CONF_INSTALL_COMPONENTS="broker,named,activemq,datastore"
 # domain / CONF_DOMAIN
 #   Default: example.com
 #   The network domain under which apps and hosts will be placed.
-CONF_DOMAIN="pryzby.org"
 
 # broker_hostname / CONF_BROKER_HOSTNAME
 # node_hostname / CONF_NODE_HOSTNAME
