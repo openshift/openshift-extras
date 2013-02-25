@@ -1379,6 +1379,10 @@ configure_access_keys_on_broker()
   openssl genrsa -out /etc/openshift/server_priv.pem 2048
   openssl rsa -in /etc/openshift/server_priv.pem -pubout > /etc/openshift/server_pub.pem
 
+  # If a key pair already exists, delete it so that the ssh-keygen
+  # command will not have to ask the user what to do.
+  rm -f /root/.ssh/rsync_id_rsa /root/.ssh/rsync_id_rsa.pub
+
   # Generate a key pair for moving gears between nodes from the broker
   ssh-keygen -t rsa -b 2048 -P "" -f /root/.ssh/rsync_id_rsa
   cp ~/.ssh/rsync_id_rsa* /etc/openshift/
