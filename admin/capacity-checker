@@ -1,9 +1,11 @@
 #!/usr/bin/env ruby
 # For use with OpenShift Enterprise 1.0 and 1.1
 #
-# This is a simple script to show how you could monitor
+# This is an EXAMPLE script to show how you could monitor
 # the capacity of a node using oo-stats and then alert
 # a separate system to spin up new nodes as needed.
+# It would need a lot of work to actually do that in any
+# specific system.
 #
 # Installation: Place this script in the same directory
 #   as the oo-stat script.
@@ -58,13 +60,29 @@ end
 o = OOStats.new(:format => :yaml)
 o.gather_statistics
 
+# May want to consult the districts first to see if any need changes
+o.results[:district_summaries].each do |district|
+  # TODO
+  # treat the NONE district specially, its capacity is always 0
+  # For districts with effective available gears < available active gears,
+  #   consider adding capacity if possible, or if up against the 6000 limit,
+  #   consider compacting by removing a node.
+  # For districts with very high active usage but plenty of capacity,
+  #   consider adding a node to that district.
+  #
+end
+
 # Calculate capacity by seeing if any of the profiles
 # are over the specified capacity
 o.results[:profile_summaries].each do |profile|
   usage_perct = profile[:gears_active_count].to_f / (profile[:available_active_gears] + profile[:gears_active_count]).to_f * 100
   puts "Current usage = #{usage_perct}%"
   if usage_perct >= options.threshold
+    # TODO - create a new district in this profile
+    # then create some nodes
+    # then add them to the new district
     puts "OpenShift Hungry!! Need more nodes!!"
-    # TODO - make some great call
   end
 end
+
+
