@@ -805,7 +805,7 @@ enable_services_on_node()
 }
 
 
-# Enable services to start on boot for the broker.
+# Enable services to start on boot for the broker and fix up some issues.
 enable_services_on_broker()
 {
   # We use --nostart below because activating the configuration here 
@@ -823,6 +823,11 @@ enable_services_on_broker()
 
   # Remove VirtualHost from the default ssl.conf to prevent a warning
    sed -i '/VirtualHost/,/VirtualHost/ d' /etc/httpd/conf.d/ssl.conf
+
+  # make sure mcollective client log is created with proper ownership.
+  # if root owns it, the broker (apache user) can't log to it.
+  touch /var/log/mcollective-client.log
+  chown apache:root /var/log/mcollective-client.log
 }
 
 
@@ -852,7 +857,6 @@ factsource = yaml
 plugin.yaml = /etc/mcollective/facts.yaml
 EOF
 
-chown apache:root /var/log/mcollective-client.log
 }
 
 
@@ -911,11 +915,6 @@ plugin.stomp.port = 61613
 plugin.stomp.user = ${mcollective_user}
 plugin.stomp.password = ${mcollective_password}
 EOF
-
-  # make sure this file is created with proper ownership.
-  # if root owns it, the broker (apache user) can't log to it.
-  touch /var/log/mcollective-client.log
-  chown apache:root /var/log/mcollective-client.log
 }
 
 
@@ -1328,7 +1327,7 @@ configure_controller()
     echo "Warning: broker authentication salt is empty!"
   fi
 
-  # Configure the console with the correct hostname, and use random salt
+  # Configure the console with the correct domain
   sed -i -e "s/^DOMAIN_SUFFIX=.*$/DOMAIN_SUFFIX=${domain}/" \
       /etc/openshift/console.conf
 
