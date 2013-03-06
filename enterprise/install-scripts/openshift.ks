@@ -1829,6 +1829,8 @@ then
   fi
   node && configure_node_repo
   node && configure_jbosseap_cartridge_repo
+  node && configure_jbosseap_subscription
+  node && configure_jbossews_subscription
   broker && configure_client_tools_repo
 elif [ "$CONF_INSTALL_METHOD" == "rhn" ]
 then
