@@ -619,13 +619,19 @@ configure_quotas_on_node()
     echo 'Could not enable quotas for gear data: unable to determine mountpoint.'
   else
     # Enable user quotas for the device housing /var/lib/openshift.
-    sed -i -e "/^[^[:blank:]]\\+[[:blank:]]\\+${geardata_mnt////\/}/{/usrquota/! s/[[:blank:]]\\+/,usrquota&/4;}" /etc/fstab
+    sed -i -e "/^[^[:blank:]]\\+[[:blank:]]\\+${geardata_mnt////\/\\+[[:blank:]]}/{/usrquota/! s/[[:blank:]]\\+/,usrquota&/4;}" /etc/fstab
 
     # Remount to get quotas enabled immediately.
     mount -o remount "${geardata_mnt}"
 
     # Generate user quota info for the mount point.
     quotacheck -cmug "${geardata_mnt}"
+
+    # fix up selinux perms
+    restorecon "${geardata_mnt}"aquota.user
+
+    # (re)enable quotas
+    quotaon "${geardata_mnt}"
   fi
 }
 
@@ -1430,6 +1436,10 @@ configure_access_keys_on_broker()
   # the broker.
   openssl genrsa -out /etc/openshift/server_priv.pem 2048
   openssl rsa -in /etc/openshift/server_priv.pem -pubout > /etc/openshift/server_pub.pem
+
+  # If a key pair already exists, delete it so that the ssh-keygen
+  # command will not have to ask the user what to do.
+  rm -f /root/.ssh/rsync_id_rsa /root/.ssh/rsync_id_rsa.pub
 
   # Generate a key pair for moving gears between nodes from the broker
   ssh-keygen -t rsa -b 2048 -P "" -f /root/.ssh/rsync_id_rsa
