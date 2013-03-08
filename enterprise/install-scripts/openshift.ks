@@ -51,7 +51,7 @@
 #       rhn_reg_pass / CONF_RHN_REG_PASS
 #       rhn_reg_actkey / CONF_RHN_REG_ACTKEY
 #     none - install source is already set up when the script executes
-#   Default: yum
+#   Default: none
 #CONF_INSTALL_METHOD="yum"
 
 # optional_repo / CONF_OPTIONAL_REPO
