@@ -508,7 +508,7 @@ install_cartridges()
 
   # When dependencies are missing, e.g. JBoss subscriptions,
   # still install as much as possible.
-  if [ "$CONF_OPTIONAL_REPO" == 1 ]
+  if is_true "$CONF_OPTIONAL_REPO"
   then
     carts="$carts --skip-broken"
   fi
@@ -1852,7 +1852,7 @@ then
    node && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
    node && rhn-channel --add --channel jbappplatform-6-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
    node && rhn-channel --add --channel jb-ews-1-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-   if [ "$CONF_OPTIONAL_REPO" == 1 ]
+   if is_true "$CONF_OPTIONAL_REPO"
    then
      rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
    fi
