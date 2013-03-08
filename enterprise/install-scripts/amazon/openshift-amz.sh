@@ -438,7 +438,7 @@ configure_datastore()
   done
   echo "MongoDB is ready! ($(date +%H:%M:%S))"
 
-  if [ is_false "$CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST" ]
+  if is_false "$CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST"
   then
     # Add an administrative user and a user that the broker will use.
     mongo <<EOF
