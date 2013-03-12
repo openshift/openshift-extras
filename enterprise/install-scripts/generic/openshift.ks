@@ -51,7 +51,7 @@
 #       rhn_reg_pass / CONF_RHN_REG_PASS
 #       rhn_reg_actkey / CONF_RHN_REG_ACTKEY
 #     none - install source is already set up when the script executes
-#   Default: yum
+#   Default: none
 #CONF_INSTALL_METHOD="yum"
 
 # optional_repo / CONF_OPTIONAL_REPO
@@ -532,7 +532,7 @@ install_cartridges()
 
   # When dependencies are missing, e.g. JBoss subscriptions,
   # still install as much as possible.
-  if [ "$CONF_OPTIONAL_REPO" == 1 ]
+  if is_true "$CONF_OPTIONAL_REPO"
   then
     carts="$carts --skip-broken"
   fi
@@ -741,7 +741,7 @@ configure_datastore()
   done
   echo "MongoDB is ready! ($(date +%H:%M:%S))"
 
-  if [ is_false "$CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST" ]
+  if is_false "$CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST"
   then
     # Add an administrative user and a user that the broker will use.
     mongo <<EOF
@@ -1855,39 +1855,40 @@ configure_console_msg
 is_false "$CONF_NO_NTP" && synchronize_clock
 is_false "$CONF_NO_SSH_KEYS" && install_ssh_keys
 
-if [ "$CONF_INSTALL_METHOD" == "yum" ]
-then
-  configure_rhel_repo
-  if activemq || broker || datastore
-  then
-    configure_broker_repo
-  fi
-  node && configure_node_repo
-  node && configure_jbosseap_cartridge_repo
-  node && configure_jbosseap_subscription
-  node && configure_jbossews_subscription
-  broker && configure_client_tools_repo
-elif [ "$CONF_INSTALL_METHOD" == "rhn" ]
-then
-   echo "Register with RHN using an activation key"
-   rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname}
-   broker && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-rhc --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-   broker && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-infrastructure --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-   node && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-node --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-   node && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-   node && rhn-channel --add --channel jbappplatform-6-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-   node && rhn-channel --add --channel jb-ews-1-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-   if [ "$CONF_OPTIONAL_REPO" == 1 ]
-   then
-     rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-   fi
-elif [ "$CONF_INSTALL_METHOD" == "sm" ]
-then
-# sm_reg_name / CONF_SM_REG_NAME
-# sm_reg_pass / CONF_SM_REG_PASS
-# sm_reg_pool / CONF_SM_REG_POLL
-   echo "sam"
-fi
+case "$CONF_INSTALL_METHOD" in
+  (yum)
+    configure_rhel_repo
+    if activemq || broker || datastore
+    then
+      configure_broker_repo
+    fi
+    node && configure_node_repo
+    node && configure_jbosseap_cartridge_repo
+    node && configure_jbosseap_subscription
+    node && configure_jbossews_subscription
+    broker && configure_client_tools_repo
+    ;;
+  (rhn)
+     echo "Register with RHN using an activation key"
+     rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname}
+     broker && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-rhc --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+     broker && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-infrastructure --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+     node && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-node --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+     node && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+     node && rhn-channel --add --channel jbappplatform-6-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+     node && rhn-channel --add --channel jb-ews-1-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+     if is_true "$CONF_OPTIONAL_REPO"
+     then
+       rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+     fi
+     ;;
+  (sm)
+     #sm_reg_name / CONF_SM_REG_NAME
+     #sm_reg_pass / CONF_SM_REG_PASS
+     #sm_reg_pool / CONF_SM_REG_POLL
+     echo "sam"
+     ;;
+esac
 
 yum update -y
 
