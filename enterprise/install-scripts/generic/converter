@@ -8,15 +8,3 @@ sed -i -e '
 configure_console_msg
 ' $2
 
-# allow installation of carts to proceed as possible even if packaging is borked
-sed -i -e 's/#\(carts.*--skip-broken\)/\1/' $2
-
-# configure yum to pull RHEL from a custom repo
-ruby -p -i -e 'if $_ =~ /# configure RHEL subscription or repos here/; $_ = "  #" + $_[2..-1] + "  cat <<EOF > /etc/yum.repos.d/rhel.repo\n" + File.open("generic/rhel.repo").read + "\nEOF\n" end' $2
-
-# configure yum to pull JBossEAP from a custom repo
-ruby -p -i -e 'if $_ =~ /# configure JBossEAP subscription/; $_ = "  #" + $_[2..-1] + "  cat <<EOF > /etc/yum.repos.d/jbosseap.repo\n" + File.open("generic/jbosseap.repo").read + "\nEOF\n" end' $2
-
-# configure yum to pull JBossEWS from a custom repo
-ruby -p -i -e 'if $_ =~ /# configure JBossEWS subscription/; $_ = "  #" + $_[2..-1] + "  cat <<EOF > /etc/yum.repos.d/jbossews.repo\n" + File.open("generic/jbossews.repo").read + "\nEOF\n" end' $2
-

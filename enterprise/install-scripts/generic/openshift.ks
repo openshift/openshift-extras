@@ -42,10 +42,13 @@
 # install_method / CONF_INSTALL_METHOD
 #   Choice from the following ways to provide packages:
 #     yum - set up yum repos manually
-#     sm - use subscription-manager
+#       repos_base / CONF_REPOS_BASE -- see below
+#       rhel_repo / CONF_RHEL_REPO -- see below
+#       jboss_repo_base / CONF_JBOSS_REPO_BASE -- see below
+#     sm - use subscription-manager (not yet implemented)
 #       sm_reg_name / CONF_SM_REG_NAME
 #       sm_reg_pass / CONF_SM_REG_PASS
-#       sm_reg_pool / CONF_SM_REG_POLL
+#       sm_reg_pool / CONF_SM_REG_POOL
 #     rhn - use rhn-register
 #       rhn_reg_name / CONF_RHN_REG_NAME
 #       rhn_reg_pass / CONF_RHN_REG_PASS
@@ -54,18 +57,24 @@
 #   Default: none
 #CONF_INSTALL_METHOD="yum"
 
-# optional_repo / CONF_OPTIONAL_REPO
-#   Setup rhel-x86_64-server-optional-6 repo and add --skip-broken to
-#   catch the use case when dependencies are missing, e.g. JBoss
-#   subscriptions, still install as much as possible.
-#   Default: no
-#CONF_OPTIONAL_REPO=1
-
 # repos_base / CONF_REPOS_BASE
 #   Default: https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<latest>
 #   The base URL for the OpenShift repositories used for the "yum" 
-#   install method
+#   install method - the part before Infrastructure/Node/etc.
 #CONF_REPOS_BASE="https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<latest>"
+
+# rhel_repo / CONF_RHEL_REPO
+#   The URL for a RHEL 6 yum repository used with the "yum" install method.
+#   Should end in /6Server/x86_64/os/
+
+# jboss_repo_base / CONF_JBOSS_REPO_BASE
+#   The base URL for the JBoss repositories used with the "yum" 
+#   install method - the part before jbeap/jbews - ends in /6/6Server/x86_64
+
+# optional_repo / CONF_OPTIONAL_REPO
+#   Enable rhel-x86_64-server-optional-6 repo.
+#   Default: no
+#CONF_OPTIONAL_REPO=1
 
 # domain / CONF_DOMAIN
 #   Default: example.com
@@ -186,8 +195,8 @@
 #
 # The JBoss cartridges similarly require packages from the JBoss
 # entitlements, so you must subscribe to the corresponding channels
-# during the base install or modify the configure_jbossews_subscription
-# or configure_jbosseap_subscription functions to do so.
+# during the base install or modify the configure_jbossews_repo
+# or configure_jbosseap_repo functions to do so.
 #
 # The OpenShift repository steps below refer to public beta yum
 # repositories. For a supported production product, comment these out
@@ -332,19 +341,17 @@ configure_rhel_repo()
 {
   # In order for the %post section to succeed, it must have a way of 
   # installing from RHEL. The post section cannot access the method that
-  # was used in the base install. So, you must subscribe to RHEL or
-  # configure RHEL repos here.
-
-  ## configure RHEL subscription or repos here
-  cat <<EOF > /etc/yum.repos.d/rhel.repo
-[rhel]
-name=rhel
-baseurl=${rhel_repo}
+  # was used in the base install. This configures a RHEL yum repo which
+  # you must supply.
+  cat > /etc/yum.repos.d/rhel.repo <<YUM
+[rhel6]
+name=RHEL 6 base OS
+baseurl=${CONF_RHEL_REPO}
 enabled=1
 gpgcheck=0
+sslverify=false
 
-EOF
-  : # no-op so that this function definition is valid.
+YUM
 }
 
 configure_client_tools_repo()
@@ -353,7 +360,7 @@ configure_client_tools_repo()
   cat > /etc/yum.repos.d/openshift-client.repo <<YUM
 [openshift_client]
 name=OpenShift Client
-baseurl=${repos_base}/Client/x86_64/os/
+baseurl=${CONF_REPOS_BASE}/Client/x86_64/os/
 enabled=1
 gpgcheck=0
 sslverify=false
@@ -367,7 +374,7 @@ configure_broker_repo()
   cat > /etc/yum.repos.d/openshift-infrastructure.repo <<YUM
 [openshift_infrastructure]
 name=OpenShift Infrastructure
-baseurl=${repos_base}/Infrastructure/x86_64/os/
+baseurl=${CONF_REPOS_BASE}/Infrastructure/x86_64/os/
 enabled=1
 gpgcheck=0
 sslverify=false
@@ -381,7 +388,7 @@ configure_node_repo()
   cat > /etc/yum.repos.d/openshift-node.repo <<YUM
 [openshift_node]
 name=OpenShift Node
-baseurl=${repos_base}/Node/x86_64/os/
+baseurl=${CONF_REPOS_BASE}/Node/x86_64/os/
 enabled=1
 gpgcheck=0
 sslverify=false
@@ -395,7 +402,7 @@ configure_jbosseap_cartridge_repo()
   cat > /etc/yum.repos.d/openshift-jboss.repo <<YUM
 [openshift_jbosseap]
 name=OpenShift JBossEAP
-baseurl=${repos_base}/JBoss_EAP6_Cartridge/x86_64/os/
+baseurl=${CONF_REPOS_BASE}/JBoss_EAP6_Cartridge/x86_64/os/
 enabled=1
 gpgcheck=0
 sslverify=false
@@ -403,38 +410,42 @@ sslverify=false
 YUM
 }
 
-configure_jbosseap_subscription()
+configure_jbosseap_repo()
 {
-  # The JBossEAP cartridge depends on Red Hat's JBoss packages, so you
-  # must subscribe to the appropriate channel here.
+  # The JBossEAP cartridge depends on Red Hat's JBoss packages.
 
-  ## configure JBossEAP subscription
-  cat <<EOF > /etc/yum.repos.d/jbosseap.repo
+  if [ "x${CONF_JBOSS_REPO_BASE}" != "x" ]
+  then
+  ## configure JBossEAP repo
+    cat <<YUM > /etc/yum.repos.d/jbosseap.repo
 [jbosseap]
 name=jbosseap
-baseurl=http://${jboss_repo_base}/content/dist/rhel/server/6/6Server/x86_64/jbeap/6/os/
+baseurl=${CONF_JBOSS_REPO_BASE}/jbeap/6/os/
 enabled=1
 gpgcheck=0
 
-EOF
-  : # no-op so that this function definition is valid.
+YUM
+
+  fi
 }
 
-configure_jbossews_subscription()
+configure_jbossews_repo()
 {
-  # The JBossEWS cartridge depends on Red Hat's JBoss packages, so you
-  # must subscribe to the appropriate channel here.
+  # The JBossEWS cartridge depends on Red Hat's JBoss packages.
 
-  ## configure JBossEWS subscription
-  cat <<EOF > /etc/yum.repos.d/jbossews.repo
+  if [ "x${CONF_JBOSS_REPO_BASE}" != "x" ]
+  then
+  ## configure JBossEWS repo
+    cat <<YUM > /etc/yum.repos.d/jbossews.repo
 [jbossews]
 name=jbossews
-baseurl=http://${jboss_repo_base}/content/dist/rhel/server/6/6Server/x86_64/jbews/1/os/
+baseurl=${CONF_JBOSS_REPO_BASE}/jbews/1/os/
 enabled=1
 gpgcheck=0
 
-EOF
-  : # no-op so that this function definition is valid.
+YUM
+
+  fi
 }
 
 yum_install_or_exit()
@@ -495,12 +506,12 @@ install_cartridges()
 
   # JBossEWS1.0 support.
   # Note: Be sure to subscribe to the JBossEWS entitlements during the
-  # base install or in configure_jbossews_subscription.
-  #carts="$carts openshift-origin-cartridge-jbossews-1.0"
+  # base install or in configure_jbossews_repo.
+  carts="$carts openshift-origin-cartridge-jbossews-1.0"
 
   # JBossEAP6.0 support.
   # Note: Be sure to subscribe to the JBossEAP entitlements during the
-  # base install or in configure_jbosseap_subscription.
+  # base install or in configure_jbosseap_repo.
   carts="$carts openshift-origin-cartridge-jbosseap-6.0"
 
   # Jenkins server for continuous integration.
@@ -532,10 +543,7 @@ install_cartridges()
 
   # When dependencies are missing, e.g. JBoss subscriptions,
   # still install as much as possible.
-  if is_true "$CONF_OPTIONAL_REPO"
-  then
-    carts="$carts --skip-broken"
-  fi
+  carts="$carts --skip-broken"
 
   yum install -y $carts
 }
@@ -1843,7 +1851,7 @@ set_defaults()
 
 ########################################################################
 
-# Note: This function is only needed for kickstart and not if this %post
+# Note: parse_cmdline is only needed for kickstart and not if this %post
 # section is extracted and executed on a running system.
 parse_cmdline
 
@@ -1855,6 +1863,7 @@ configure_console_msg
 is_false "$CONF_NO_NTP" && synchronize_clock
 is_false "$CONF_NO_SSH_KEYS" && install_ssh_keys
 
+# enable subscriptions / repositories according to requested method
 case "$CONF_INSTALL_METHOD" in
   (yum)
     configure_rhel_repo
@@ -1864,8 +1873,8 @@ case "$CONF_INSTALL_METHOD" in
     fi
     node && configure_node_repo
     node && configure_jbosseap_cartridge_repo
-    node && configure_jbosseap_subscription
-    node && configure_jbossews_subscription
+    node && configure_jbosseap_repo
+    node && configure_jbossews_repo
     broker && configure_client_tools_repo
     ;;
   (rhn)
@@ -1885,7 +1894,7 @@ case "$CONF_INSTALL_METHOD" in
   (sm)
      #sm_reg_name / CONF_SM_REG_NAME
      #sm_reg_pass / CONF_SM_REG_PASS
-     #sm_reg_pool / CONF_SM_REG_POLL
+     #sm_reg_pool / CONF_SM_REG_POOL
      echo "sam"
      ;;
 esac
