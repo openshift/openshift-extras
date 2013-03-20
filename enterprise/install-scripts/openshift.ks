@@ -1333,9 +1333,9 @@ configure_controller()
 
   # Configure the broker with the correct hostname, and use random salt
   # to the data store (the host running MongoDB).
-  sed -i -e "s/^CLOUD_DOMAIN=.*$/CLOUD_DOMAIN=${domain}/;
-             s/^AUTH_SALT=.*/AUTH_SALT=\"${broker_auth_salt//\//\\/}\"/" \
+  sed -i -e "s/^CLOUD_DOMAIN=.*$/CLOUD_DOMAIN=${domain}/" \
       /etc/openshift/broker.conf
+  echo AUTH_SALT=${broker_auth_salt} >> /etc/openshift/broker.conf
 
   if ! datastore
   then
