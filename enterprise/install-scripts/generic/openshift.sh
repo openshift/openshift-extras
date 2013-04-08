@@ -1500,7 +1500,7 @@ configure_node()
   sed -i -e "s/^PUBLIC_IP=.*$/PUBLIC_IP=${node_ip_addr}/;
              s/^CLOUD_DOMAIN=.*$/CLOUD_DOMAIN=${domain}/;
              s/^PUBLIC_HOSTNAME=.*$/PUBLIC_HOSTNAME=${hostname}/;
-             s/^BROKER_HOST=.*$/BROKER_HOST=${broker_ip_addr}/" \
+             s/^BROKER_HOST=.*$/BROKER_HOST=${broker_hostname}/" \
       /etc/openshift/node.conf
 }
 
