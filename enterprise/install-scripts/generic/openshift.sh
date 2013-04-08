@@ -1483,6 +1483,7 @@ configure_network()
 prepend domain-name-servers ${named_ip_addr};
 supersede host-name "${hostname%.${domain}}";
 supersede domain-name "${domain}";
+prepend domain-search "${domain}";
 EOF
 }
 
