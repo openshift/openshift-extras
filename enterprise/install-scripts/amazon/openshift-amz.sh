@@ -1244,7 +1244,7 @@ configure_network()
   cat <<EOF >> /etc/dhcp/dhclient-eth0.conf
 
 prepend domain-name-servers ${named_ip_addr};
-supersede host-name "${hostname}";
+supersede host-name "${hostname%.${domain}}";
 supersede domain-name "${domain}";
 EOF
 }
