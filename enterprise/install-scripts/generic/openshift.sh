@@ -1896,8 +1896,7 @@ parse_cmdline
 set_defaults
 
 echo_installation_intentions
-configure_console_msg
-configure_console_msg
+#configure_console_msg
 
 is_false "$CONF_NO_NTP" && synchronize_clock
 is_false "$CONF_NO_SSH_KEYS" && install_ssh_keys
