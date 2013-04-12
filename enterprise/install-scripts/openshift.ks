@@ -126,6 +126,9 @@
 #   one on its NIC.
 #CONF_NODE_IP_ADDR=10.10.10.10
 
+# A given node can only accept either V1 or V2 cartridges.
+#CONF_NODE_V2_ENABLE=false
+
 # Passwords used to secure various services. You are advised to specify
 # only alphanumeric values in this script as others may cause syntax
 # errors depending on context. If non-alphanumeric values are required,
@@ -433,13 +436,21 @@ configure_jbossews_repo()
 {
   # The JBossEWS cartridge depends on Red Hat's JBoss packages.
 
+  ews_version="1"
+  if is_true "$node_v2_enable"
+  then
+    ews_version="2"
+  else
+    ews_version="1"
+  fi
+
   if [ "x${CONF_JBOSS_REPO_BASE}" != "x" ]
   then
   ## configure JBossEWS repo
     cat <<YUM > /etc/yum.repos.d/jbossews.repo
 [jbossews]
 name=jbossews
-baseurl=${CONF_JBOSS_REPO_BASE}/jbews/1/os/
+baseurl=${CONF_JBOSS_REPO_BASE}/jbews/${ews_version}/os/
 enabled=1
 gpgcheck=0
 
@@ -471,16 +482,23 @@ install_broker_pkgs()
   pkgs="$pkgs openshift-origin-broker-util"
   pkgs="$pkgs rubygem-openshift-origin-msg-broker-mcollective"
   pkgs="$pkgs rubygem-openshift-origin-auth-remote-user"
-  pkgs="$pkgs rubygem-openshift-origin-dns-bind"
+  pkgs="$pkgs rubygem-openshift-origin-dns-nsupdate"
   pkgs="$pkgs openshift-console"
 
   yum_install_or_exit -y $pkgs
 }
 
+fix_passenger()
+{
+  mkdir /var/log/passenger-analytics
+  chmod 750 /var/log/passenger-analytics
+  chown apache:apache /var/log/passenger-analytics
+}
+
 # Install node-specific packages.
 install_node_pkgs()
 {
-  pkgs="rubygem-openshift-origin-node rubygem-passenger-native"
+  pkgs="rubygem-openshift-origin-node ruby193-rubygem-passenger-native"
   pkgs="$pkgs openshift-origin-port-proxy"
   pkgs="$pkgs openshift-origin-node-util"
   # We use semanage in this script, so we need to install
@@ -494,52 +512,97 @@ install_node_pkgs()
 install_cartridges()
 {
   # Following are cartridge rpms that one may want to install here:
+  if is_true "$node_v2_enable"
+  then
+    # Embedded cron support. This is required on node hosts.
+    carts="openshift-origin-cartridge-cron"
 
-  # Embedded cron support. This is required on node hosts.
-  carts="openshift-origin-cartridge-cron-1.4"
+    # diy app.
+    carts="$carts openshift-origin-cartridge-diy"
 
-  # diy app.
-  carts="$carts openshift-origin-cartridge-diy-0.1"
+    # haproxy support.
+    carts="$carts openshift-origin-cartridge-haproxy"
 
-  # haproxy-1.4 support.
-  carts="$carts openshift-origin-cartridge-haproxy-1.4"
+    # JBossEWS support.
+    # Note: Be sure to subscribe to the JBossEWS entitlements during the
+    # base install or in configure_jbossews_repo.
+    carts="$carts openshift-origin-cartridge-jbossews"
+ 
+    # JBossEAP support.
+    # Note: Be sure to subscribe to the JBossEAP entitlements during the
+    # base install or in configure_jbosseap_repo.
+    carts="$carts openshift-origin-cartridge-jbosseap"
+ 
+    # Jenkins server for continuous integration.
+    carts="$carts openshift-origin-cartridge-jenkins"
+ 
+    # Embedded jenkins client.
+    carts="$carts openshift-origin-cartridge-jenkins-client"
+ 
+    # Embedded MySQL.
+    #carts="$carts openshift-origin-cartridge-mysql"
+ 
+    # mod_perl support.
+    carts="$carts openshift-origin-cartridge-perl"
+  
+    # PHP support.
+    carts="$carts openshift-origin-cartridge-php"
+  
+    # Embedded PostgreSQL.
+    #carts="$carts openshift-origin-cartridge-postgresql"
+  
+    # Python support.
+    carts="$carts openshift-origin-cartridge-python"
+  
+    # Ruby Rack support running on Phusion Passenger
+    carts="$carts openshift-origin-cartridge-ruby"
+  else
+    # Embedded cron support. This is required on node hosts.
+    carts="openshift-origin-cartridge-cron-1.4"
 
-  # JBossEWS1.0 support.
-  # Note: Be sure to subscribe to the JBossEWS entitlements during the
-  # base install or in configure_jbossews_repo.
-  carts="$carts openshift-origin-cartridge-jbossews-1.0"
+    # diy app.
+    carts="$carts openshift-origin-cartridge-diy-0.1"
 
-  # JBossEAP6.0 support.
-  # Note: Be sure to subscribe to the JBossEAP entitlements during the
-  # base install or in configure_jbosseap_repo.
-  carts="$carts openshift-origin-cartridge-jbosseap-6.0"
+    # haproxy-1.4 support.
+    carts="$carts openshift-origin-cartridge-haproxy-1.4"
 
-  # Jenkins server for continuous integration.
-  carts="$carts openshift-origin-cartridge-jenkins-1.4"
+    # JBossEWS1.0 support.
+    # Note: Be sure to subscribe to the JBossEWS entitlements during the
+    # base install or in configure_jbossews_repo.
+    carts="$carts openshift-origin-cartridge-jbossews-1.0"
 
-  # Embedded jenkins client.
-  carts="$carts openshift-origin-cartridge-jenkins-client-1.4"
+    # JBossEAP6.0 support.
+    # Note: Be sure to subscribe to the JBossEAP entitlements during the
+    # base install or in configure_jbosseap_repo.
+    carts="$carts openshift-origin-cartridge-jbosseap-6.0"
 
-  # Embedded MySQL.
-  carts="$carts openshift-origin-cartridge-mysql-5.1"
+    # Jenkins server for continuous integration.
+    carts="$carts openshift-origin-cartridge-jenkins-1.4"
 
-  # mod_perl support.
-  carts="$carts openshift-origin-cartridge-perl-5.10"
+    # Embedded jenkins client.
+    carts="$carts openshift-origin-cartridge-jenkins-client-1.4"
 
-  # PHP 5.3 support.
-  carts="$carts openshift-origin-cartridge-php-5.3"
+    # Embedded MySQL.
+    carts="$carts openshift-origin-cartridge-mysql-5.1"
 
-  # Embedded PostgreSQL.
-  carts="$carts openshift-origin-cartridge-postgresql-8.4"
+    # mod_perl support.
+    carts="$carts openshift-origin-cartridge-perl-5.10"
 
-  # Python 2.6 support.
-  carts="$carts openshift-origin-cartridge-python-2.6"
+    # PHP 5.3 support.
+    carts="$carts openshift-origin-cartridge-php-5.3"
 
-  # Ruby Rack support running on Phusion Passenger (Ruby 1.8).
-  carts="$carts openshift-origin-cartridge-ruby-1.8"
+    # Embedded PostgreSQL.
+    carts="$carts openshift-origin-cartridge-postgresql-8.4"
 
-  # Ruby Rack support running on Phusion Passenger (Ruby 1.9).
-  carts="$carts openshift-origin-cartridge-ruby-1.9-scl"
+    # Python 2.6 support.
+    carts="$carts openshift-origin-cartridge-python-2.6"
+
+    # Ruby Rack support running on Phusion Passenger (Ruby 1.8).
+    carts="$carts openshift-origin-cartridge-ruby-1.8"
+
+    # Ruby Rack support running on Phusion Passenger (Ruby 1.9).
+    carts="$carts openshift-origin-cartridge-ruby-1.9-scl"
+  fi
 
   # When dependencies are missing, e.g. JBoss subscriptions,
   # still install as much as possible.
@@ -576,11 +639,12 @@ configure_selinux_policy_on_broker()
     echo boolean -m --on allow_ypbind
   ) | semanage -i -
 
-  fixfiles -R rubygem-passenger restore
-  fixfiles -R mod_passenger restore
+  fixfiles -R ruby193-rubygem-passenger restore
+  fixfiles -R ruby193-mod_passenger restore
 
   restorecon -rv /var/run
-  restorecon -rv /usr/share/rubygems/gems/passenger-* 
+  # This should cover everything in the SCL, including passenger
+  restorecon -rv /opt
 }
 
 # Fix up SELinux policy on the node.
@@ -632,7 +696,7 @@ configure_pam_on_node()
 
 configure_cgroups_on_node()
 {
-  cp -vf /usr/share/doc/*/cgconfig.conf /etc/cgconfig.conf
+  cp -vf /opt/rh/ruby193/root/usr/share/gems/doc/openshift-origin-node-*/cgconfig.conf /etc/cgconfig.conf
   restorecon -rv /etc/cgconfig.conf
   mkdir -p /cgroup
   restorecon -rv /cgroup
@@ -797,11 +861,16 @@ enable_services_on_node()
   lokkit --nostart --service=https
   lokkit --nostart --service=http
 
+  # Allow connections to openshift-node-web-proxy
+  lokkit --nostart --port=8000:tcp
+  lokkit --nostart --port=8443:tcp
+
   chkconfig httpd on
   chkconfig network on
   is_false "$CONF_NO_NTP" && chkconfig ntpd on
   chkconfig sshd on
   chkconfig oddjobd on
+  chkconfig openshift-node-web-proxy on
 }
 
 
@@ -840,7 +909,7 @@ configure_mcollective_for_qpid_on_broker()
 topicprefix = /topic/
 main_collective = mcollective
 collectives = mcollective
-libdir = /usr/libexec/mcollective
+libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
 loglevel = debug
 logfile = /var/log/mcollective-client.log
 
@@ -869,7 +938,7 @@ configure_mcollective_for_qpid_on_node()
 topicprefix = /topic/
 main_collective = mcollective
 collectives = mcollective
-libdir = /usr/libexec/mcollective
+libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
 logfile = /var/log/mcollective.log
 loglevel = debug
 daemonize = 1
@@ -901,7 +970,7 @@ configure_mcollective_for_activemq_on_broker()
 topicprefix = /topic/
 main_collective = mcollective
 collectives = mcollective
-libdir = /usr/libexec/mcollective
+libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
 logfile = /var/log/mcollective-client.log
 loglevel = debug
 
@@ -927,7 +996,7 @@ configure_mcollective_for_activemq_on_node()
 topicprefix = /topic/
 main_collective = mcollective
 collectives = mcollective
-libdir = /usr/libexec/mcollective
+libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
 logfile = /var/log/mcollective.log
 loglevel = debug
 daemonize = 1
@@ -1415,25 +1484,18 @@ configure_dns_plugin()
   then
     echo 'WARNING: No key has been set for communication with BIND.'
     echo 'You will need to modify the value of BIND_KEYVALUE in'
-    echo '/etc/openshift/plugins.d/openshift-origin-dns-bind.conf'
+    echo '/etc/openshift/plugins.d/openshift-origin-dns-nsupdate.conf'
     echo 'after installation.'
   fi
 
   mkdir -p /etc/openshift/plugins.d
-  cat <<EOF > /etc/openshift/plugins.d/openshift-origin-dns-bind.conf
+  cat <<EOF > /etc/openshift/plugins.d/openshift-origin-dns-nsupdate.conf
 BIND_SERVER="${named_ip_addr}"
 BIND_PORT=53
 BIND_KEYNAME="${domain}"
 BIND_KEYVALUE="${bind_key}"
 BIND_ZONE="${domain}"
 EOF
-
-  if named
-  then
-    echo 'Broker and bind are running on the same host - installing custom SELinux policy'
-    pushd /usr/share/selinux/packages/rubygem-openshift-origin-dns-bind/ && make -f /usr/share/selinux/devel/Makefile ; popd
-    semodule -i /usr/share/selinux/packages/rubygem-openshift-origin-dns-bind/dhcpnamedforward.pp
-  fi
 }
 
 # Configure httpd for authentication.
@@ -1459,6 +1521,21 @@ configure_httpd_auth()
   # TODO: In the future, we will want to edit
   # /etc/openshift/plugins.d/openshift-origin-auth-remote-user.conf to
   # put in a random salt.
+}
+
+# if the broker and node are on the same machine we need to manually update the
+# nodes.db
+fix_broker_routing()
+{
+  cat <<EOF >> /var/lib/openshift/.httpd.d/nodes.txt
+__default__ REDIRECT:/console
+__default__/console TOHTTPS:127.0.0.1:8118/console
+__default__/broker TOHTTPS:127.0.0.1:8080/broker
+EOF
+
+  httxt2dbm -f DB -i /etc/httpd/conf.d/openshift/nodes.txt -o /etc/httpd/conf.d/openshift/nodes.db
+  chown root:apache /etc/httpd/conf.d/openshift/nodes.txt /etc/httpd/conf.d/openshift/nodes.db
+  chmod 750 /etc/httpd/conf.d/openshift/nodes.txt /etc/httpd/conf.d/openshift/nodes.db
 }
 
 configure_access_keys_on_broker()
@@ -1550,6 +1627,12 @@ configure_node()
              s/^PUBLIC_HOSTNAME=.*$/PUBLIC_HOSTNAME=${hostname}/;
              s/^BROKER_HOST=.*$/BROKER_HOST=${broker_hostname}/" \
       /etc/openshift/node.conf
+
+  if is_true "$node_v2_enable"
+  then
+    mkdir -p /var/lib/openshift/.settings
+    touch /var/lib/openshift/.settings/v2_cartridge_format
+  fi
 }
 
 # Run the cronjob installed by openshift-origin-msg-node-mcollective immediately
@@ -1704,6 +1787,7 @@ is_false()
 #   CONF_NAMED_IP_ADDR
 #   CONF_NODE_HOSTNAME
 #   CONF_NODE_IP_ADDR
+#   CONF_NODE_V2_ENABLE
 #   CONF_REPOS_BASE
 set_defaults()
 {
@@ -1788,6 +1872,8 @@ set_defaults()
   # host.
   node_ip_addr="${CONF_NODE_IP_ADDR:-$cur_ip_addr}"
 
+  node_v2_enable="${CONF_NODE_V2_ENABLE:-false}"
+
   # Unless otherwise specified, the named service, data store, and
   # ActiveMQ service are assumed to be the current host if we are
   # installing the component now or the broker host otherwise.
@@ -1858,6 +1944,7 @@ parse_cmdline
 set_defaults
 
 echo_installation_intentions
+configure_console_msg
 
 is_false "$CONF_NO_NTP" && synchronize_clock
 is_false "$CONF_NO_SSH_KEYS" && install_ssh_keys
@@ -1921,6 +2008,7 @@ broker && configure_mcollective_for_activemq_on_broker
 node && configure_mcollective_for_activemq_on_node
 
 broker && install_broker_pkgs
+broker && fix_passenger
 node && install_node_pkgs
 node && install_cartridges
 broker && install_rhc_pkg
@@ -1952,6 +2040,8 @@ node && configure_gears
 node && configure_node
 node && configure_wildcard_ssl_cert_on_node
 node && update_openshift_facts_on_node
+
+node && broker && fix_broker_routing
 
 echo "Installation and configuration is complete;"
 echo "please reboot to start all services properly."
