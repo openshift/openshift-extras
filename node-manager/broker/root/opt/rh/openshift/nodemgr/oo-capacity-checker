@@ -1,0 +1,191 @@
+#!/usr/bin/env ruby
+# For use with OpenShift Enterprise 1.0 and 1.1
+#
+# This is an EXAMPLE script to show how you could monitor
+# OpenShift capacity using oo-stats and then alert
+# a separate system to manage nodes as needed.
+# It may need a lot of work to actually do that in any
+# specific system.
+# 
+# This is intended to contain the logic for deciding when a
+# node management event is necessary. The actual implementation
+# of these events is left to handler-specific event scripts.
+#
+# Installation: Place this script in the same directory
+#   as the oo-stats script on a broker.
+#
+# Usage Example for new nodes when 50% profile capacity reached:
+#   oo-capacity-checker -p 50
+#
+# Keep in mind two major kinds of capacity:
+# 1) Active capacity - the number of active gears node hosts can run
+# 2) District capacity - the number of gears (in any state) that the
+# district can allocate.
+#--
+# Copyright 2013 Red Hat, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#++
+HANDLER_BASE_DIR = "/opt/rh/openshift/nodemgr"
+
+load 'oo-stats'
+require 'optparse'
+require 'ostruct'
+
+
+options = OpenStruct.new :dist_t => 90.0, :compact_t => 50.0, :profile_t => 80.0,
+                         :wait => 2, :interval => 60, :handler => "stdout"
+
+opts = OptionParser.new do |opts|
+  opts.banner = "Usage: oo-capacity-checker [options]"
+
+  opts.on("-i", "--interval SECONDS", "Wait N seconds between capacity checks (default 60)") do |interval|
+    options.interval = interval.to_i
+  end
+
+  opts.on("-d", "--district PERCENTAGE", Float,
+          "Active usage threshold before adding nodes to a district, as a percentage (default 90)") do |threshold|
+    options.dist_t = threshold
+  end
+  opts.on("-c", "--compact PERCENTAGE", Float,
+          "When to consider compacting a full district: available UIDs as percentage of node available active capacity (default 50)") do |threshold|
+    options.compact_t = threshold
+  end
+  opts.on("-p", "--profile PERCENTAGE", Float,
+          "Active usage threshold before adding nodes to a profile, as a percentage (default 80)") do |threshold|
+    options.profile_t = threshold
+  end
+  opts.on('-w','--wait SECONDS', Float, <<WAIT) { |wait| options.wait = wait }
+Seconds for broker to wait for node responses (default 2).
+\tIf nodes are not responding in time, increase this as needed.
+WAIT
+  opts.on('-m','--handler HANDLER', String, <<HANDLER) {|handler| options.handler = handler }
+Method for handling events. Default is "stdout" which just results in
+messages going to the log. Must be a subdirectory in #{HANDLER_BASE_DIR}
+and contain a script named "event" for handling nodemgr events.
+HANDLER
+  opts.on("-h", "--help", "Print usage and exit") {|h| puts opts; exit 0 }
+end
+
+opts.parse!
+
+MAX_DISTRICT_CAPACITY = 6000 # for now = the cap on district capacity
+handler_script = File.join(HANDLER_BASE_DIR, options.handler, "event")
+if !File.exists? handler_script
+  puts "Method '#{options.handler}' is invalid; #{handler_script} does not exist. Exiting."
+  exit 1
+end
+
+o = OOStats.new :wait => options.wait
+
+while true # main loop
+
+  o.gather_statistics
+  # May want to consult the districts first to see if any need adjustment
+  o.results[:district_summaries].each do |district|
+
+    # TODO: fill in with your own automation instead of just messages.
+    # Ignore NONE districts (i.e. non-districted nodes) for now
+    next if district[:uuid].start_with? 'NONE ' # not a real district
+    unless district[:missing_nodes].empty?
+      puts "Warning: these nodes from district '#{district[:name]}' are not responding:"
+      puts district[:missing_nodes].join ', '
+    end
+
+    # For districts with more available active gears on the nodes than district capacity,
+    if district[:dist_avail_capacity] < district[:available_active_gears]
+
+      #   consider simply adding capacity if possible
+      if district[:district_capacity] < MAX_DISTRICT_CAPACITY
+        puts <<CAPACITY
+[WARN] District '#{district[:name]}' has unusable node capacity.
+Consider adding district capacity with this broker command (customize as needed):
+  oo-admin-ctl-district -c add-capacity -n '#{district[:name]}' -s #{district[:available_active_gears]-district[:dist_avail_capacity]}
+CAPACITY
+
+      #   or if up against the 6000 limit, consider compacting by removing a node.
+      #   -c specifies a threshold where this becomes desirable, e.g. when
+      #   dist_avail_capacity is <50% of available_active_gears.
+      elsif district[:dist_avail_capacity] * options.compact_t < district[:available_active_gears] * 100.0
+        puts <<COMPACT
+[WARN] District '#{district[:name]}' has unusable node capacity.
+Consider compacting the district by removing a node.
+COMPACT
+      end
+    else
+
+      # For districts with very high active usage but not lacking capacity,
+      #   consider adding a node to that district.
+      # TODO: also establish a threshold for how much capacity the district should have.
+      usage_perct = 100.0 * district[:gears_active_count] /
+        (district[:available_active_gears] + district[:gears_active_count])
+      if usage_perct > options.dist_t
+        puts <<ADD
+[WARN] District '#{district[:name]}' has active usage #{ usage_perct }.
+To give it another node, create a node with profile '#{district[:profile]}'
+and add it to the district with:
+  oo-admin-ctl-district -c add-node -n '#{district[:name]}' -i <node.host.name>
+ADD
+      end
+    end
+
+  end
+
+  # Calculate need for nodes by seeing if any of the profiles
+  # are over the specified usage
+  o.results[:profile_summaries].each do |profile|
+    usage_perct = 100.0 * profile[:gears_active_count].to_f / (profile[:available_active_gears] + profile[:gears_active_count])
+    puts "Current '#{profile[:profile]}' active gear usage = #{usage_perct}%"
+    if usage_perct >= options.profile_t
+      puts <<ADD
+
+[INFO] Profile '#{profile[:profile]}' has active usage #{ usage_perct }.
+This exceeds the configured threshold #{options.profile_t}.
+In other words:
+OpenShift Hungry!! Need more nodes!!
+
+ADD
+      if ! profile[:missing_nodes].empty?
+        puts "[WARN] these nodes from profile #{profile[:profile]} are not responding:"
+        puts profile[:missing_nodes].join ', '
+        puts "Waiting until these nodes return to take action."
+        next
+      end
+      target_dist = o.results[:district_summaries].
+        select {|d| d[:profile] == profile[:profile]}.
+        select {|d| d[:dist_avail_capacity] > 0}.
+        sort_by {|x| x[:dist_avail_capacity]}.
+        reverse.first
+      if !target_dist
+        puts "[ERROR] No districts have available capacity. Please create a new district!"
+        #oo-admin-ctl-district -c create -n <district name> -p '#{profile[:profile]}'
+      else
+        puts "district '#{target_dist[:name]}' has available capacity #{target_dist[:dist_avail_capacity]}"
+        puts "A new node will be created for district '#{target_dist[:name]}'"
+        output = `#{handler_script} create-node --profile=#{target_dist[:profile]} --district=#{target_dist[:name]} 2>&1`.chomp
+        if $?.success?
+          puts output
+          puts "[INFO] Successfully added new node."
+        else
+          puts output
+          puts "[ERROR] NODE CREATION FAILED - exiting to prevent further problems"
+          exit 1
+        end
+      end
+
+    end
+  end
+
+  sleep options.interval
+end
+

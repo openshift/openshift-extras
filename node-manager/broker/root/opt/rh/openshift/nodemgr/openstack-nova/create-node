@@ -1,0 +1,121 @@
+#!/bin/bash
+
+if [[ -z $1 ]]; then
+	echo Must pass in a profile name.
+	exit 1
+fi
+
+
+DATADIR=/etc/openshift/nodemgr/openstack-nova/node-data
+PROFILE=$1
+DISTRICT=$2
+
+
+# Source OpenShift broker conf (for CLOUD_DOMAIN)
+. /etc/openshift/broker.conf
+# Source OpenStack client authentication
+. /etc/openshift/nodemgr/openstack-nova/auth.env
+# Source OpenStack node specifications (NODE_BASE_NAME, IMAGE_BASE_NAME, MAX_NODES)
+. /etc/openshift/nodemgr/openstack-nova/node.conf
+NODE_BASE_NAME=${NODE_BASE_NAME:-openshift-node}
+NODE_IMAGE_NAME=${NODE_IMAGE_NAME:-openshift-node-image-current}
+MAX_NODES=${MAX_NODES:-1000}
+
+
+# Assuming node names look like NODE_BASE_NAME followed by underscore
+# and a number, get first available node number.
+NEXTNODE=$( (nova list | grep -o -E "${NODE_BASE_NAME}_[0-9]*" | cut -d_ -f2; \
+		seq 1 $MAX_NODES) | \
+		sort -n | uniq -u | head -n 1 )
+
+if [[ -z $NEXTNODE ]] || [[ $NEXTNODE -gt $MAX_NODES ]]; then
+	echo Could not get available node number.
+	exit 1
+else
+	echo "Creating node '$NEXTNODE'."
+	echo "Log will be in $DATADIR/boot.$NEXTNODE.log"
+fi
+
+exec > $DATADIR/boot.$NEXTNODE.log 2>&1
+
+UDFILE=$DATADIR/user-data.$NEXTNODE
+NODENAME=${NODE_BASE_NAME}_$NEXTNODE
+NODE_HOSTNAME=${NODENAME/_/-} # underscore not valid in a dns entry
+FQDN=$NODE_HOSTNAME.$CLOUD_DOMAIN
+
+# Write a user-data file for this instance - passed to cloud-init to run on boot
+cat >$UDFILE <<EOF
+#!/bin/bash
+
+export NODENAME=$NODE_HOSTNAME
+export DOMAIN=$CLOUD_DOMAIN
+export OSPROFILE=$PROFILE
+export FQDN=$FQDN
+
+/opt/rh/openshift/nodemgr/reinit-node
+EOF
+
+echo "Finding node image to instantiate."
+NODEIMAGE=$(nova image-list| grep -o -P " ${NODE_IMAGE_NAME} " | sort | tail -n 1)
+
+if [[ -z $NODEIMAGE ]]; then
+	echo "[ERROR] Node snapshot not available."
+	exit 1
+fi
+echo "Found $NODEIMAGE."
+
+# Create storage
+echo "Creating a disk volume for the node to use."
+if ! nova volume-list | grep $NODENAME; then
+	nova volume-create --display-name $NODENAME 40
+	[[ $? -eq 0 ]] || exit 1
+
+	while ! nova volume-list | grep -E "available.*$NODENAME"; do
+		echo "Waiting for volume creation"
+		sleep 15
+	done
+fi
+echo "Volume $NODENAME created."
+
+VOLID=$(nova volume-list | grep $NODENAME | awk '{print $2}')
+echo "Volume ID is $VOLID."
+
+
+# Start the node
+echo "Starting node $NODENAME."
+nova boot --flavor m1.medium --image $NODE_IMAGE_NAME --user-data=$UDFILE --poll $NODENAME 
+[[ $? -eq 0 ]] || exit 1
+
+# Discover node's IP and register it with DNS
+NODEIP=$( nova list | grep $NODENAME | cut -d '|' -f5 | cut -d ' ' -f3 )
+[[ -n $NODEIP ]] || exit 1  # this can fail when we're out of IPs
+oo-register-dns -d $CLOUD_DOMAIN -h $NODE_HOSTNAME -n $NODEIP
+
+# Attach storage
+echo "Attaching volume."
+nova volume-attach $NODENAME $VOLID /dev/vdc
+
+
+# Wait for node to listen
+echo "Waiting for node to respond via mcollective."
+TIMES=0
+while ! mco ping | grep $NODE_HOSTNAME
+do
+	let TIMES+=1
+	if [[ $TIMES -gt 100 ]]
+	then
+		echo "waited 25 minutes for $NODE_HOSTNAME to mco ping; giving up."
+		exit 1
+	fi
+	echo `date` Waiting for $NODE_HOSTNAME...
+	sleep 15
+done
+
+# Add to district
+if [[ -n $DISTRICT ]]; then
+	echo "Adding node to district $DISTRICT."
+	oo-admin-ctl-district -c add-node -n $DISTRICT -i $FQDN
+	[[ $? -eq 0 ]] || exit 1
+fi
+
+echo "Done."

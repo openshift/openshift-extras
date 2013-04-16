@@ -1,0 +1,70 @@
+#!/usr/bin/env ruby
+#--
+# Copyright 2013 Red Hat, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#++
+
+require 'optparse'
+require 'ostruct'
+
+options = OpenStruct.new
+command = nil
+
+opts = OptionParser.new(:unknown_options_action => :ignore) do |opts|
+  opts.banner = "Usage: ./event <command> [options]"
+
+  opts.on("-d", "--district DISTRICT", String, "District name for adding or removing a node") do |district|
+    options.district = district
+  end
+  opts.on("-p", "--profile PROFILE", String, "Profile name for adding a node") do |profile|
+    options.profile = profile
+  end
+  opts.on("-h", "--help", "Print usage and exit") {|h| puts opts; exit 0 }
+
+  command = ARGV[0]
+  unless command
+    puts "[ERROR] no command given to openstack-nova nodemgr"
+    puts opts
+    exit 1
+  end
+end
+
+begin
+  opts.parse!
+rescue OptionParser::InvalidOption
+  #ignore any additional arguments we don't need.
+end
+
+PATH=File.dirname(__FILE__)
+
+case command
+when "create-node"
+  puts "A new node will be created for district '#{options.district}'"
+  output = `#{PATH}/create-node '#{options.profile}' '#{options.district}' 2>&1`.chomp
+  if $?.success?
+    puts output
+    puts "[INFO] Successfully added new node."
+  else
+    puts output
+    puts "[ERROR] NODE CREATION FAILED"
+    exit $?.exitstatus
+  end
+when "remove-node"
+  puts "[INFO] openstack-nova event not implemented: '#{command}'"
+else
+  puts "[ERROR] openstack-nova event received an unknown command '#{command}'"
+  exit 1
+end
+
+exit 0

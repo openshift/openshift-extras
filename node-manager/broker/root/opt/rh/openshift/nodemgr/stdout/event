@@ -1,0 +1,5 @@
+#!/usr/bin/env ruby
+
+event = ARGV.shift
+puts "[INFO] stdout nodemgr received event '#{event}' with args:\n#{ARGV.join ' '}"
+exit 0

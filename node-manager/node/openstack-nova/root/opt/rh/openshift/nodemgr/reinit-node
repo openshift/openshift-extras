@@ -1,0 +1,126 @@
+#!/bin/bash -x
+
+exec >/var/log/openshift/node/reinit.log 2>&1
+
+echo `date` "Starting cloud-init script"
+
+# This is the /dev location we assume the volume for /var/lib/openshift is available.
+# Modify depending on your OpenStack config.
+VOLUME_DEV=${VOLUME_DEV:-vdc}
+
+# make a record of parameters set here, might be useful to someone
+DATFILE=/etc/openshift/nodemgr/reinit-node.info
+rm -f $DATFILE
+
+## Likely/critical cloud-init parameters
+if [[ -n $NODENAME ]]; then
+	echo `date` "Setting hostname: ${NODENAME}"
+	echo NODENAME=$NODENAME >> $DATFILE
+fi
+
+if [[ -n $DOMAIN ]]; then
+	echo `date` "Setting domain: ${DOMAIN}"
+	sed -i -e "s/^CLOUD_DOMAIN=.*/CLOUD_DOMAIN=${DOMAIN}/" /etc/openshift/node.conf
+	echo DOMAIN=$DOMAIN >> $DATFILE
+fi
+
+
+## Look for and create volume groups
+VGLABEL=vg_gear_storage
+OSEDIR=/var/lib/openshift
+
+VGROUP=$(vgscan | grep -o -E "$VGLABEL")
+if [[ -z $VGROUP ]] && 	fdisk -l | grep ${VOLUME_DEV} && ! fdisk -l | grep ${VOLUME_DEV}1
+then
+	LVDEV=/dev/vg_gear_storage/lv_ose
+	echo "Creating logical volume $LVDEV"
+	parted /dev/${VOLUME_DEV} mklabel msdos
+	parted -s /dev/${VOLUME_DEV} mkpart primary 1 -- -1
+	pvcreate /dev/${VOLUME_DEV}1
+	vgcreate vg_gear_storage /dev/${VOLUME_DEV}1
+	lvcreate -l 100%VG -n lv_ose vg_gear_storage
+	mkfs.ext4 $LVDEV
+
+	# Clean any vgs from fstab
+	sed -i "\:$OSEDIR:d" /etc/fstab
+	# Add entry for current volume group
+	echo -e "$LVDEV\t$OSEDIR\text4\tdefaults,usrquota\t0 0" >> /etc/fstab
+
+	# Turn everything on, remount storage with quota
+	mount -a
+	mount -o remount $OSEDIR
+	restorecon -R $OSEDIR
+
+	# Initialize quotas
+	quotacheck -cmug $OSEDIR
+
+fi
+
+# Some of these may or may not work - not all parameters are really tested - proceed with caution
+
+if [[ -n $OSPROFILE ]]; then
+	# TODO: better to symlink in a profile-specific file
+	echo `date` "Setting PROFILE: ${OSPROFILE}"
+	sed -i -e "s/^node_profile=.*/node_profile=$OSPROFILE/" /etc/openshift/resource_limits.conf
+	echo OSPROFILE=$OSPROFILE >> $DATFILE
+fi
+
+if [[ -n $MAXAPPS ]]; then
+	echo `date` "Setting max apps: ${MAXAPPS}"
+	sed -i -e "s/^max_apps=.*/max_apps=$MAXAPPS/" /etc/openshift/resource_limits.conf
+	sed -i -e "s/^max_active_apps=.*/max_active_apps=$MAXAPPS/" /etc/openshift/resource_limits.conf
+	echo MAXAPPS=$MAXAPPS >> $DATFILE
+fi
+
+if [[ -n $MEMLIMIT ]]; then
+	echo `date` "Setting memory limit: $MEMLIMIT"
+	sed -i -e "s/^memory_limit_in_bytes=.*/memory_limit_in_bytes=$(($MEMLIMIT*1024*1024))/" /etc/openshift/resource_limits.conf
+	sed -i -e "s/^memory_memsw_limit_in_bytes=.*/memory_limit_in_bytes=$(( (100+$MEMLIMIT) *1024*1024))/" /etc/openshift/resource_limits.conf
+	echo MEMLIMIT=$MEMLIMIT >> $DATFILE
+fi
+
+if [[ -n $NAMESERVER ]]; then
+	echo `date` "Setting nameserver: ${NAMESERVER}"
+	sed -i -e "1nameserver ${NAMESERVER}" /etc/resolv.conf
+	sed -i -e "s/^prepend domain-name-servers.*/prepend domain-name-servers ${NAMESERVER}\;/" /etc/dhcp/dhclient-eth0.conf
+fi
+
+
+if [[ -n $FQDN ]]; then
+	hostname $FQDN
+	sed -i -e "s/^HOSTNAME=.*/HOSTNAME=$FQDN/" /etc/sysconfig/network
+	sed -i -e "s/^PUBLIC_HOSTNAME=.*/PUBLIC_HOSTNAME=$FQDN/" /etc/openshift/node.conf
+fi
+
+if [[ -n $AMQSERVER ]]; then
+	echo `date` "Setting activemq server: ${AMQSERVER}"
+	sed -i -e "s/^plugin.stomp.host =.*/plugin.stomp.host = ${AMQSERVER}/" /etc/mcollective/server.cfg
+fi
+
+
+if [[ -n $BROKER ]]; then
+	echo `date` "Setting broker: ${BROKER}"
+	sed -i -e "s/^BROKER_HOST=.*/BROKER_HOST=${BROKER}/" /etc/openshift/node.conf
+fi
+
+if [[ -n $BROKERKEY ]]; then
+	echo `date` "Setting broker ssh key"
+	echo `date` "$BROKERKEY" > /root/.ssh/authorized_keys
+fi
+
+# update PUBLIC_IP; ideally it is actually the node's public IP,
+# but OpenShift doesn't much care as it's not used. However there
+# are checks for it in oo-accept-systems and oo-accept-node so we
+# do want it to be either the internal IP, or the external one if
+# it resolves - the create script should have registered the hostname.
+
+IPADDR=$(ip -f inet -o addr show eth0 | awk '{print $4}' | cut -d/ -f 1)
+EXTIP=$(host `hostname` | grep -v NXDOMAIN | cut -d ' ' -f4)
+sed -i -e "s/^PUBLIC_IP=.*/PUBLIC_IP=${EXTIP:-$IPADDR}/" /etc/openshift/node.conf
+
+
+## Rerun init scripts here
+service network restart
+service mcollective start
+chkconfig mcollective on
+

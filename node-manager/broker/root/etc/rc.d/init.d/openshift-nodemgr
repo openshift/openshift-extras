@@ -1,0 +1,59 @@
+#!/bin/bash
+#
+# chkconfig: - 99 75
+# description: start the oo-capacity-checker script
+
+### BEGIN INIT INFO
+# Provides: openshift-nodemgr
+# Required-Start: httpd
+# Should-Start:
+# Short-Description: start the oo-capacity-checker script
+# Description: start the oo-capacity-checker script
+### END INIT INFO
+
+# Source function library.
+. /etc/init.d/functions
+
+NMDIR=/opt/rh/openshift/nodemgr
+SCRIPT=oo-capacity-checker
+LOG=/var/log/openshift/broker/openshift-nodemgr.log
+CONF=/etc/openshift/nodemgr/capacity.conf
+
+start() {
+	cd $NMDIR
+	cmd=$NMDIR/$SCRIPT
+	args=""
+
+	# Source parameters for node manager and scaling
+	. $CONF
+	[[ -n $HANDLER ]] && args="$args --handler $HANDLER"
+	[[ -n $INTERVAL ]] && args="$args --interval $INTERVAL"
+	[[ -n $DISTRICT_THRESHOLD ]] && args="$args --district $DISTRICT_THRESHOLD"
+	[[ -n $COMPACT_THRESHOLD ]] && args="$args --compact $COMPACT_THRESHOLD"
+	[[ -n $PROFILE_THRESHOLD ]] && args="$args --profile $PROFILE_THRESHOLD"
+	[[ -n $MCO_WAIT ]] && args="$args --wait $MCO_WAIT"
+
+	nohup ruby $cmd $args >> $LOG 2>&1 &
+}
+
+
+stop() {
+	pgrep -f $SCRIPT | xargs -r kill -9
+}
+
+# See how we were called.
+case "$1" in
+  start)
+	start
+	;;
+  stop)
+	stop
+	;;
+  restart)
+	stop
+	start
+	;;
+  *)
+	echo $"Usage: $0 {start|stop|restart}"
+	exit 2
+esac
