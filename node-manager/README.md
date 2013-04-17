@@ -27,27 +27,27 @@ For an OpenShift installation to automate node elasticity, it needs:
 2. The means to request resources (or their removal)
 
 This implementation includes a capacity checker service
-(openshift-nodemgr) on the broker utilizing the oo-stats library from
-/opt/rh/openshift/nodemgr/oo-capacity-checker to determine when and
+(`openshift-nodemgr`) on the broker utilizing the `oo-stats` library from
+`/opt/rh/openshift/nodemgr/oo-capacity-checker` to determine when and
 where to scale. The parameters for this service are located in
-/etc/openshift/nodemgr/capacity.conf
+`/etc/openshift/nodemgr/capacity.conf`
 
 Once it has determined that a scaling event is necessary,
-oo-capacity-checker calls a event handler (specified in capacity.conf)
+`oo-capacity-checker` calls a event handler (specified in `capacity.conf`)
 to actually implement the logic depending on the method an OpenShift
 system administrator has available.
 
-Output from oo-capacity-checker is logged to:
-/var/log/openshift/broker/openshift-nodemgr.log
+Output from `oo-capacity-checker` is logged to:
+`/var/log/openshift/broker/openshift-nodemgr.log`
 
 Event handlers
 ==============
 
-The event handler for scaling is specified in capacity.conf. It should
-be located in a subdirectory of /opt/rh/openshift/nodemgr/ and contain
+The event handler for scaling is specified in `capacity.conf`. It should
+be located in a subdirectory of `/opt/rh/openshift/nodemgr/` and contain
 a script named "event" which is the entry point for nodemgr to request
 an event from that handler. Configuration for event handlers should be
-located in the handler's subdirectory of /etc/openshift/nodemgr/
+located in the handler's subdirectory of `/etc/openshift/nodemgr/`
 
 The existing code includes two event handlers that can be configured:
 
@@ -72,8 +72,8 @@ and profile the new node host should have are command-line arguments.
 
 Compacting a district by removing a node requires first moving all of
 the gears off of the node, which is not well-enabled by the existing
-OpenShift tools (gear moving is a manual process, performed one gear at
-a time, and somewhat error prone. This will be improved in the future
-but it is not clear when). This framework may provide tools to do this
-in the future.
+OpenShift tools (gear moving is a manual process, performed one gear
+at a time, and somewhat error prone. This [will be improved in the
+future](https://trello.com/c/k7Nefq8x) but it is not clear when). This
+framework may provide tools to help with this in the future.
 
