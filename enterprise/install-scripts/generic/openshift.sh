@@ -435,7 +435,7 @@ install_broker_pkgs()
   pkgs="$pkgs rubygem-openshift-origin-msg-broker-mcollective"
   pkgs="$pkgs rubygem-openshift-origin-auth-remote-user"
   pkgs="$pkgs rubygem-openshift-origin-dns-nsupdate"
-  pkgs="$pkgs openshift-console"
+  pkgs="$pkgs openshift-origin-console"
 
   yum_install_or_exit -y $pkgs
 }
@@ -1896,6 +1896,7 @@ parse_cmdline
 set_defaults
 
 echo_installation_intentions
+configure_console_msg
 configure_console_msg
 
 is_false "$CONF_NO_NTP" && synchronize_clock
