@@ -46,6 +46,7 @@
 #       repos_base / CONF_REPOS_BASE -- see below
 #       rhel_repo / CONF_RHEL_REPO -- see below
 #       jboss_repo_base / CONF_JBOSS_REPO_BASE -- see below
+#       rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO -- see below
 #     sm - use subscription-manager (not yet implemented)
 #       sm_reg_name / CONF_SM_REG_NAME
 #       sm_reg_pass / CONF_SM_REG_PASS
@@ -67,6 +68,10 @@
 # rhel_repo / CONF_RHEL_REPO
 #   The URL for a RHEL 6 yum repository used with the "yum" install method.
 #   Should end in /6Server/x86_64/os/
+
+# rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO
+#   The URL for a RHEL 6 Optional yum repository used with the "yum" install method.
+#   Should end in /6Server/x86_64/optional/os/
 
 # jboss_repo_base / CONF_JBOSS_REPO_BASE
 #   The base URL for the JBoss repositories used with the "yum" 
@@ -304,6 +309,21 @@ name=RHEL 6 base OS
 baseurl=${CONF_RHEL_REPO}
 enabled=1
 gpgcheck=0
+priority=2
+sslverify=false
+
+YUM
+}
+
+configure_optional_repo()
+{
+  cat > /etc/yum.repos.d/rheloptional.repo <<YUM
+[rhel6_optional]
+name=RHEL 6 Optional
+baseurl=${CONF_RHEL_OPTIONAL_REPO}
+enabled=1
+gpgcheck=0
+priority=2
 sslverify=false
 
 YUM
@@ -318,6 +338,7 @@ name=OpenShift Client
 baseurl=${CONF_REPOS_BASE}/Client/x86_64/os/
 enabled=1
 gpgcheck=0
+priority=1
 sslverify=false
 
 YUM
@@ -332,6 +353,7 @@ name=OpenShift Infrastructure
 baseurl=${CONF_REPOS_BASE}/Infrastructure/x86_64/os/
 enabled=1
 gpgcheck=0
+priority=1
 sslverify=false
 
 YUM
@@ -346,6 +368,7 @@ name=OpenShift Node
 baseurl=${CONF_REPOS_BASE}/Node/x86_64/os/
 enabled=1
 gpgcheck=0
+priority=1
 sslverify=false
 
 YUM
@@ -360,6 +383,7 @@ name=OpenShift JBossEAP
 baseurl=${CONF_REPOS_BASE}/JBoss_EAP6_Cartridge/x86_64/os/
 enabled=1
 gpgcheck=0
+priority=1
 sslverify=false
 
 YUM
@@ -377,6 +401,7 @@ configure_jbosseap_repo()
 name=jbosseap
 baseurl=${CONF_JBOSS_REPO_BASE}/jbeap/6/os/
 enabled=1
+priority=3
 gpgcheck=0
 
 YUM
@@ -404,6 +429,7 @@ configure_jbossews_repo()
 name=jbossews
 baseurl=${CONF_JBOSS_REPO_BASE}/jbews/${ews_version}/os/
 enabled=1
+priority=3
 gpgcheck=0
 
 YUM
@@ -1158,14 +1184,7 @@ EOF
 
   # secure the ActiveMQ console
   sed -i -e '/name="authenticate"/s/false/true/' /etc/activemq/jetty.xml
-
-  # only add the host property if it's not already there
-  # (so you can run the script multiple times)
-  grep '<property name="host" value="127.0.0.1" />' /etc/activemq/jetty.xml > /dev/null
-  if [ $? -ne 0 ]; then
-    sed -i -e '/name="port"/a<property name="host" value="127.0.0.1" />' /etc/activemq/jetty.xml
-  fi
-
+  sed -i -e '/name="port"/a<property name="host" value="127.0.0.1" />' /etc/activemq/jetty.xml
   sed -i -e "/admin:/s/admin,/${activemq_admin_password},/" /etc/activemq/jetty-realm.properties
 
 
@@ -1794,6 +1813,7 @@ set_defaults()
   # subscriptions via RHN. Internally we use private systems.
   rhel_repo="$CONF_RHEL_REPO"
   jboss_repo_base="$CONF_JBOSS_REPO_BASE"
+  rhel_optional_repo="$CONF_RHEL_OPTIONAL_REPO"
 
   # The domain name for the OpenShift Enterprise installation.
   domain="${CONF_DOMAIN:-example.com}"
@@ -1908,10 +1928,16 @@ echo_installation_intentions
 is_false "$CONF_NO_NTP" && synchronize_clock
 is_false "$CONF_NO_SSH_KEYS" && install_ssh_keys
 
+
 # enable subscriptions / repositories according to requested method
 case "$CONF_INSTALL_METHOD" in
   (yum)
     configure_rhel_repo
+    if is_true "$CONF_OPTIONAL_REPO"
+    then
+      configure_optional_repo
+    fi
+
     if activemq || broker || datastore
     then
       configure_broker_repo
@@ -1925,12 +1951,24 @@ case "$CONF_INSTALL_METHOD" in
   (rhn)
      echo "Register with RHN using an activation key"
      rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname}
-     broker && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-rhc --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-     broker && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-infrastructure --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-     node && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-node --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-     node && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-     node && rhn-channel --add --channel jbappplatform-6-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-     node && rhn-channel --add --channel jb-ews-1-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+     yum-config-manager --setopt=rhel-x86_64-server-6.priority=2 rhel-x86_64-server-6 --save
+
+     for channel in rhel-x86_64-server-6-osop-1-rhc rhel-x86_64-server-6-osop-1-infrastructure
+     do
+       broker && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+       yum-config-manager --setopt=${channel}.priority=1 ${channel} --save
+     done
+     for channel in rhel-x86_64-server-6-osop-1-node rhel-x86_64-server-6-osop-1-jbosseap
+     do
+       node && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+       yum-config-manager --setopt=${channel}.priority=1 ${channel} --save
+     done
+     for channel in jbappplatform-6-x86_64-server-6-rpm jb-ews-1-x86_64-server-6-rpm
+     do
+       node && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+       yum-config-manager --setopt=${channel}.priority=3 ${channel} --save
+     done
+
      if is_true "$CONF_OPTIONAL_REPO"
      then
        rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
@@ -1943,6 +1981,9 @@ case "$CONF_INSTALL_METHOD" in
      echo "sam"
      ;;
 esac
+
+# Install yum-plugin-priorities
+yum clean all; yum install -y yum-plugin-priorities
 
 yum update -y
 
