@@ -1184,7 +1184,14 @@ EOF
 
   # secure the ActiveMQ console
   sed -i -e '/name="authenticate"/s/false/true/' /etc/activemq/jetty.xml
-  sed -i -e '/name="port"/a<property name="host" value="127.0.0.1" />' /etc/activemq/jetty.xml
+
+  # only add the host property if it's not already there
+  # (so you can run the script multiple times)
+  grep '<property name="host" value="127.0.0.1" />' /etc/activemq/jetty.xml > /dev/null
+  if [ $? -ne 0 ]; then
+    sed -i -e '/name="port"/a<property name="host" value="127.0.0.1" />' /etc/activemq/jetty.xml
+  fi
+
   sed -i -e "/admin:/s/admin,/${activemq_admin_password},/" /etc/activemq/jetty-realm.properties
 
 
