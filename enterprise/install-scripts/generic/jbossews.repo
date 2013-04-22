@@ -3,3 +3,4 @@ name=jbossews
 baseurl=http://${jboss_repo_base}/content/dist/rhel/server/6/6Server/x86_64/jbews/1/os/
 enabled=1
 gpgcheck=0
+priority=3
