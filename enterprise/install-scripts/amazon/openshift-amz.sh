@@ -427,9 +427,9 @@ configure_pam_on_node()
     fi
   done
 
-  echo "/tmp        $HOME/.tmp/      user:iscript=/usr/sbin/oo-namespace-init root,adm,apache,gdm" > /etc/security/namespace.d/tmp.conf
-  echo "/var/tmp    $HOME/.tmp/   user:iscript=/usr/sbin/oo-namespace-init root,adm,apache,gdm" > /etc/security/namespace.d/vartmp.conf
-  echo "/sandbox    $HOME/.sandbox/      user:iscript=/usr/sbin/oo-namespace-init       root,adm,apache,gdm" > /etc/security/namespace.d/sandbox.conf
+  echo "/tmp        $HOME/.tmp/      user:iscript=/usr/sbin/oo-namespace-init root,adm,apache,gdm,activemq" > /etc/security/namespace.d/tmp.conf
+  echo "/var/tmp    $HOME/.tmp/   user:iscript=/usr/sbin/oo-namespace-init root,adm,apache,gdm,activemq" > /etc/security/namespace.d/vartmp.conf
+  echo "/sandbox    $HOME/.sandbox/      user:iscript=/usr/sbin/oo-namespace-init       root,adm,apache,gdm,activemq" > /etc/security/namespace.d/sandbox.conf
 }
 
 configure_cgroups_on_node()
