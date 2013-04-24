@@ -12,4 +12,4 @@ case it is needed for security reasons.  Our jenkins jobs will test pull
 requests and we cannot have code executed on the CI server.  We scp the
 unmodified repository to a remote VM and run it there.  Someday we'll make it
 so that issuing the `make` call could happen on the remote VM but that isn't
-out the build scripts work today.
+how the build scripts work today.

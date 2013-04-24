@@ -1,4 +1,4 @@
-#!/usr/bin/env ruby
+#!/usr/bin/env oo-ruby
 # Run with "-h" for usage, "-v" to see INFO-level output while running.
 #
 # Run this script as root on any kind of OpenShift host to diagnose common problems.
@@ -817,7 +817,7 @@ class OODiag
     # create a tmp file with all of the unique error log statements after the most recent openshift-broker start
     #
     tmpfile = Tempfile.new("oodiag-log-#{$$}").path
-    logfile = @project_is[:enterprise] ? '/var/www/openshift/broker/httpd/logs/error_log' : '/var/log/openshift/broker/httpd/error_log'
+    logfile = '/var/log/openshift/broker/httpd/error_log'
     verbose "no file #{logfile}" and skip_test if ! File.exists? logfile # log file just not there
     system %Q[sed -n 'H; /configured -- resuming normal operations/h; ${g;p;}' #{logfile} | sort -u > #{tmpfile}]
     # if no restart msg, just use the whole thing
