@@ -447,7 +447,7 @@ configure_jbosseap_repo()
     cat <<YUM > /etc/yum.repos.d/jbosseap.repo
 [jbosseap]
 name=jbosseap
-baseurl=${CONF_JBOSS_REPO_BASE}/jbeap/6/os/
+baseurl=${CONF_JBOSS_REPO_BASE}/jbeap/6/os
 enabled=1
 priority=3
 gpgcheck=0
@@ -475,7 +475,7 @@ configure_jbossews_repo()
     cat <<YUM > /etc/yum.repos.d/jbossews.repo
 [jbossews]
 name=jbossews
-baseurl=${CONF_JBOSS_REPO_BASE}/jbews/${ews_version}/os/
+baseurl=${CONF_JBOSS_REPO_BASE}/jbews/${ews_version}/os
 enabled=1
 priority=3
 gpgcheck=0
@@ -499,6 +499,8 @@ yum_install_or_exit()
 install_rhc_pkg()
 {
   yum install -y rhc
+  # set up the system express.conf so this broker will be used by default
+  echo -e "\nlibra_server = '${broker_hostname}'" >> /etc/openshift/express.conf
 }
 
 # Install broker-specific packages.
