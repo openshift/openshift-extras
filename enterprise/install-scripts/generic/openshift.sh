@@ -671,8 +671,17 @@ configure_pam_on_node()
     fi
   done
 
-  echo "/tmp        \$HOME/.tmp/      user:iscript=/usr/sbin/oo-namespace-init root,adm,apache,gdm,activemq,mongodb" > /etc/security/namespace.d/tmp.conf
-  echo "/dev/shm  tmpfs  tmpfs:mntopts=size=5M:iscript=/usr/sbin/oo-namespace-init root,adm,apache,gdm,activemq,mongodb" > /etc/security/namespace.d/shm.conf
+  # if the user does not exist on the system an error will show up in
+  # /var/log/secure.
+  user_list="root,adm,apache"
+  for user in gdm activemq mongodb; do
+      id -u "$user" >/dev/null 2>&1
+      if [ X"$?" == X"0" ]; then
+          user_list="${user_list},${user}"
+      fi
+  done
+  echo "/tmp        \$HOME/.tmp/      user:iscript=/usr/sbin/oo-namespace-init ${user_list}" > /etc/security/namespace.d/tmp.conf
+  echo "/dev/shm  tmpfs  tmpfs:mntopts=size=5M:iscript=/usr/sbin/oo-namespace-init ${user_list}" > /etc/security/namespace.d/shm.conf
 }
 
 configure_cgroups_on_node()
