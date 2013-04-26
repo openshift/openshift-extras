@@ -1101,6 +1101,31 @@ class OODiag
       BORKED
   end
 
+  def test_usergroups_enabled
+    skip_test unless @is_node
+    ugs = `grep -i 'USERGROUPS_ENAB yes' /etc/login.defs`
+    if(ugs.empty?)
+      do_fail <<-UGS
+        The USERGROUPS_ENAB setting is either missing or set to no in /etc/login.defs.
+        This will prevent creating user groups for new gears that are added to the system.
+        You can fix this by:
+            # vim /etc/login.defs
+            Add/fix the line 'USERGROUPS_ENAB yes'
+      UGS
+    end 
+  end
+
+  def test_mcollective_context
+    #skip_test unless @is_node
+    context = `ps -o label= $(pgrep -f ruby./usr/sbin/mcollectived1) | cut -d: -f3`
+    if(context != "openshift_initrc_t")
+      do_fail <<-CONTEXT
+      Mcollectived is not running in the expected SELinux context, which may result in node execution failures.  
+      Please check that the correct context is set on /usr/sbin/mcollectived and that the correct SELinux policies are loaded. 
+      CONTEXT
+    end
+  end
+
 end #class OODiag
 
 
