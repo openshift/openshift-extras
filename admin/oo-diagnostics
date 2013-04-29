@@ -35,6 +35,7 @@ class OODiag
 
   require 'rubygems'
   require 'tempfile'
+  require 'bundler'
 
   def initialize(options = nil)
     @options = options || @options || {
@@ -147,7 +148,10 @@ class OODiag
 
   def run_script(script)
     verbose "running #{script}"
-    output = `#{script} 2>&1`
+    output = ""
+    Bundler.with_clean_env do
+      output = `#{script} 2>&1`
+    end
     if $?.success?
       verbose "#{script} ran without error:\n--BEGIN OUTPUT--\n#{output}\n--END #{script} OUTPUT--"
     else
