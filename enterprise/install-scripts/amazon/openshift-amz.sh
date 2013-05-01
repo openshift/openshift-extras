@@ -276,7 +276,7 @@ install_cartridges()
     carts="$carts openshift-origin-cartridge-jenkins-client"
  
     # Embedded MySQL.
-    #carts="$carts openshift-origin-cartridge-mysql"
+    carts="$carts openshift-origin-cartridge-mysql"
  
     # mod_perl support.
     carts="$carts openshift-origin-cartridge-perl"
@@ -285,7 +285,7 @@ install_cartridges()
     carts="$carts openshift-origin-cartridge-php"
   
     # Embedded PostgreSQL.
-    #carts="$carts openshift-origin-cartridge-postgresql"
+    carts="$carts openshift-origin-cartridge-postgresql"
   
     # Python support.
     carts="$carts openshift-origin-cartridge-python"
