@@ -516,13 +516,6 @@ install_broker_pkgs()
   yum_install_or_exit -y $pkgs
 }
 
-fix_passenger()
-{
-  mkdir /var/log/passenger-analytics
-  chmod 750 /var/log/passenger-analytics
-  chown apache:apache /var/log/passenger-analytics
-}
-
 # Install node-specific packages.
 install_node_pkgs()
 {
@@ -2077,7 +2070,6 @@ broker && configure_mcollective_for_activemq_on_broker
 node && configure_mcollective_for_activemq_on_node
 
 broker && install_broker_pkgs
-broker && fix_passenger
 node && install_node_pkgs
 node && install_cartridges
 broker && install_rhc_pkg
