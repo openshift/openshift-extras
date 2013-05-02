@@ -516,6 +516,11 @@ install_broker_pkgs()
   yum_install_or_exit -y $pkgs
 }
 
+# Currently, ruby193-rubygem-passenger-native creates
+# /usr/var/log/passenger-analytics as its log directory, but our
+# software expects it to be at /var/log/passenger-analytics, and the
+# broker doesn't work if this folder isn't present and
+# accessible. This function fixes that.
 fix_passenger()
 {
   mkdir /var/log/passenger-analytics
