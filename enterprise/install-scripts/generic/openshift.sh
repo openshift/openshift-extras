@@ -311,6 +311,7 @@ enabled=1
 gpgcheck=0
 priority=2
 sslverify=false
+exclude=tomcat6*
 
 YUM
 }
@@ -1978,6 +1979,7 @@ case "$CONF_INSTALL_METHOD" in
      echo "Register with RHN using an activation key"
      rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname}
      yum-config-manager --setopt=rhel-x86_64-server-6.priority=2 rhel-x86_64-server-6 --save
+     yum-config-manager --setopt="rhel-x86_64-server-6.exclude=tomcat6*" rhel-x86_64-server-6 --save
 
      for channel in rhel-x86_64-server-6-osop-1-rhc rhel-x86_64-server-6-osop-1-infrastructure
      do
