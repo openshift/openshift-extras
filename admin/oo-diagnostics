@@ -1116,13 +1116,23 @@ class OODiag
   end
 
   def test_mcollective_context
-    #skip_test unless @is_node
-    context = `ps -o label= $(pgrep -f ruby./usr/sbin/mcollectived1) | cut -d: -f3`
+    skip_test unless @is_node
+    context = `ps -o label= $(pgrep -f ruby./usr/sbin/mcollectived) | cut -d: -f3`
     if(context != "openshift_initrc_t")
       do_fail <<-CONTEXT
       Mcollectived is not running in the expected SELinux context, which may result in node execution failures.  
       Please check that the correct context is set on /usr/sbin/mcollectived and that the correct SELinux policies are loaded. 
       CONTEXT
+    end
+  end
+
+  def test_mcollective_bad_facts
+    skip_test unless @is_broker
+    max_active_gears = `mco facts max_active_gears | grep -i NaN`
+    if(!max_active_gears.empty?)
+      do_fail <<-NAN
+      Mcollectived is reporting that the max_active_gears is returning NaN (Not a Number). Please check your settings.
+      NAN
     end
   end
 
