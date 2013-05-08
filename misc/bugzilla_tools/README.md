@@ -8,4 +8,4 @@ Change_Bug_Status.rb
 --------------------
 
 This script can be used to automatically update Bugzilla bugs that need to be moved to Modified/ON_QA depending on the current state in development. 
-Usage: "ruby change_bug_status.rb -m <MODFIED | ON_QA> <BUG_IDS_TO_MOVE>
+Usage: "ruby change_bug_status.rb -m <MODFIED | ON_QA> <BUG_IDS_TO_MOVE>"
