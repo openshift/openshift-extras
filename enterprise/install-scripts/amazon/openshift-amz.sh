@@ -168,22 +168,13 @@ YUM
 configure_jbossews_repo()
 {
   # The JBossEWS cartridge depends on Red Hat's JBoss packages.
-
-  ews_version="1"
-  if is_true "$node_v2_enable"
-  then
-    ews_version="2"
-  else
-    ews_version="1"
-  fi
-
   if [ "x${CONF_JBOSS_REPO_BASE}" != "x" ]
   then
   ## configure JBossEWS repo
     cat <<YUM > /etc/yum.repos.d/jbossews.repo
 [jbossews]
 name=jbossews
-baseurl=${CONF_JBOSS_REPO_BASE}/jbews/${ews_version}/os
+baseurl=${CONF_JBOSS_REPO_BASE}/jbews/2/os
 enabled=1
 priority=3
 gpgcheck=0
