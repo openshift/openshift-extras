@@ -1380,6 +1380,9 @@ configure_node()
              s/^BROKER_HOST=.*$/BROKER_HOST=${broker_hostname}/" \
       /etc/openshift/node.conf
 
+  echo $broker_hostname > /etc/openshift/env/OPENSHIFT_BROKER_HOST
+  echo $domain > /etc/openshift/env/OPENSHIFT_CLOUD_DOMAIN
+
   if is_true "$node_v2_enable"
   then
     mkdir -p /var/lib/openshift/.settings
