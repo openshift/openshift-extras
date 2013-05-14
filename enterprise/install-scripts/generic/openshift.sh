@@ -193,6 +193,15 @@
 #CONF_OPENSHIFT_USER1="demo"
 #CONF_OPENSHIFT_PASSWORD1="changeme"
 
+# conf_broker_auth_salt / CONF_BROKER_AUTH_SALT
+#CONF_BROKER_AUTH_SALT=""
+
+# conf_broker_session_secret / CONF_BROKER_SESSION_SECRET
+#CONF_BROKER_SESSION_SECRET=""
+
+# conf_console_session_secret / CONF_CONSOLE_SESSION_SECRET
+#CONF_CONSOLE_SESSION_SECRET=""
+
 # IMPORTANT NOTES - DEPENDENCIES
 #
 # In order for the %post section to succeed, it must have a way of
@@ -1406,6 +1415,12 @@ configure_controller()
   sed -i -e "s/# SESSION_SECRET=.*$/SESSION_SECRET=${broker_session_secret}/" \
       /etc/openshift/broker.conf
 
+  # Configure the session secret for the console
+  if [ `grep -c SESSION_SECRET /etc/openshift/console.conf` -eq 0 ]
+  then
+    echo "SESSION_SECRET=${console_session_secret}" >> /etc/openshift/console.conf
+  fi
+
   if ! datastore
   then
     #mongo not installed locally, so point to given hostname
@@ -1903,6 +1918,9 @@ set_defaults()
   # Generate a random session secret for broker sessions.
   randomized=$(openssl rand -hex 64)
   broker && broker_session_secret="${CONF_BROKER_SESSION_SECRET:-${randomized}}"
+
+  # Generate a random session secret for console sessions.
+  broker && console_session_secret="${CONF_CONSOLE_SESSION_SECRET:-${randomized}}"
 
   # Set default passwords
   #

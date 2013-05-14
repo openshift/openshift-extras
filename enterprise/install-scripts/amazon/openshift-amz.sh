@@ -1162,6 +1162,12 @@ configure_controller()
   sed -i -e "s/# SESSION_SECRET=.*$/SESSION_SECRET=${broker_session_secret}/" \
       /etc/openshift/broker.conf
 
+  # Configure the session secret for the console
+  if [ `grep -c SESSION_SECRET /etc/openshift/console.conf` -eq 0 ]
+  then
+    echo "SESSION_SECRET=${console_session_secret}" >> /etc/openshift/console.conf
+  fi
+
   if ! datastore
   then
     #mongo not installed locally, so point to given hostname
@@ -1659,6 +1665,9 @@ set_defaults()
   # Generate a random session secret for broker sessions.
   randomized=$(openssl rand -hex 64)
   broker && broker_session_secret="${CONF_BROKER_SESSION_SECRET:-${randomized}}"
+
+  # Generate a random session secret for console sessions.
+  broker && console_session_secret="${CONF_CONSOLE_SESSION_SECRET:-${randomized}}"
 
   # Set default passwords
   #
