@@ -1450,6 +1450,10 @@ configure_controller()
       /etc/openshift/broker.conf
   echo AUTH_SALT=${broker_auth_salt} >> /etc/openshift/broker.conf
 
+  # Configure the session secret for the broker
+  sed -i -e "s/# SESSION_SECRET=.*$/SESSION_SECRET=${broker_session_secret}/" \
+      /etc/openshift/broker.conf
+
   if ! datastore
   then
     #mongo not installed locally, so point to given hostname
@@ -1943,6 +1947,10 @@ set_defaults()
   # Generate a random salt for the broker authentication.
   randomized=$(openssl rand -base64 20)
   broker && broker_auth_salt="${CONF_BROKER_AUTH_SALT:-${randomized}}"
+
+  # Generate a random session secret for broker sessions.
+  randomized=$(openssl rand -hex 64)
+  broker && broker_session_secret="${CONF_BROKER_SESSION_SECRET:-${randomized}}"
 
   # Set default passwords
   #
