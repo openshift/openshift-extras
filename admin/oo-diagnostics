@@ -666,12 +666,12 @@ class OODiag
       if district.server_identities.empty?
         do_warn "There are no node hosts in district '#{district.name}'"
       end
-      district.server_identities.each do |node,v|
-        d_profile_for[node] = profile
-        d_district_for[node] = district.name
-        d_profile_active[profile] = true if v["active"]
-        d_nodes_with_profile[profile] << node
-        verbose "  host #{node} is #{v['active']? 'active' : 'inactive'} in district '#{district.name}'"
+      district.server_identities.each do |node|
+        d_profile_for[node["name"]] = profile
+        d_district_for[node["name"]] = district.name
+        d_profile_active[profile] = true if node["active"]
+        d_nodes_with_profile[profile] << node["name"]
+        verbose "  host #{node['name']} is #{node['active']? 'active' : 'inactive'} in district '#{district.name}'"
       end
     end
 
