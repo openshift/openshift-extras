@@ -469,18 +469,6 @@ install_broker_pkgs()
   yum_install_or_exit -y $pkgs
 }
 
-# Currently, ruby193-rubygem-passenger-native creates
-# /usr/var/log/passenger-analytics as its log directory, but our
-# software expects it to be at /var/log/passenger-analytics, and the
-# broker doesn't work if this folder isn't present and
-# accessible. This function fixes that.
-fix_passenger()
-{
-  mkdir /var/log/passenger-analytics
-  chmod 750 /var/log/passenger-analytics
-  chown apache:apache /var/log/passenger-analytics
-}
-
 # Install node-specific packages.
 install_node_pkgs()
 {
@@ -2056,7 +2044,6 @@ broker && configure_mcollective_for_activemq_on_broker
 node && configure_mcollective_for_activemq_on_node
 
 broker && install_broker_pkgs
-broker && fix_passenger
 node && install_node_pkgs
 node && install_cartridges
 broker && install_rhc_pkg
