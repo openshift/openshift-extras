@@ -132,7 +132,7 @@
 #CONF_NODE_IP_ADDR=10.10.10.10
 
 # A given node can only accept either V1 or V2 cartridges.
-#CONF_NODE_V2_ENABLE=false
+#CONF_NODE_V1_ENABLE=false
 
 # Passwords used to secure various services. You are advised to specify
 # only alphanumeric values in this script as others may cause syntax
@@ -534,51 +534,8 @@ install_node_pkgs()
 install_cartridges()
 {
   # Following are cartridge rpms that one may want to install here:
-  if is_true "$node_v2_enable"
+  if is_true "$node_v1_enable"
   then
-    # Embedded cron support. This is required on node hosts.
-    carts="openshift-origin-cartridge-cron"
-
-    # diy app.
-    carts="$carts openshift-origin-cartridge-diy"
-
-    # haproxy support.
-    carts="$carts openshift-origin-cartridge-haproxy"
-
-    # JBossEWS support.
-    # Note: Be sure to subscribe to the JBossEWS entitlements during the
-    # base install or in configure_jbossews_repo.
-    carts="$carts openshift-origin-cartridge-jbossews"
- 
-    # JBossEAP support.
-    # Note: Be sure to subscribe to the JBossEAP entitlements during the
-    # base install or in configure_jbosseap_repo.
-    carts="$carts openshift-origin-cartridge-jbosseap"
- 
-    # Jenkins server for continuous integration.
-    carts="$carts openshift-origin-cartridge-jenkins"
- 
-    # Embedded jenkins client.
-    carts="$carts openshift-origin-cartridge-jenkins-client"
- 
-    # Embedded MySQL.
-    carts="$carts openshift-origin-cartridge-mysql"
- 
-    # mod_perl support.
-    carts="$carts openshift-origin-cartridge-perl"
-  
-    # PHP support.
-    carts="$carts openshift-origin-cartridge-php"
-  
-    # Embedded PostgreSQL.
-    carts="$carts openshift-origin-cartridge-postgresql"
-  
-    # Python support.
-    carts="$carts openshift-origin-cartridge-python"
-  
-    # Ruby Rack support running on Phusion Passenger
-    carts="$carts openshift-origin-cartridge-ruby"
-  else
     # Embedded cron support. This is required on node hosts.
     carts="openshift-origin-cartridge-cron-1.4"
 
@@ -624,6 +581,49 @@ install_cartridges()
 
     # Ruby Rack support running on Phusion Passenger (Ruby 1.9).
     carts="$carts openshift-origin-cartridge-ruby-1.9-scl"
+  else
+    # Embedded cron support. This is required on node hosts.
+    carts="openshift-origin-cartridge-cron"
+
+    # diy app.
+    carts="$carts openshift-origin-cartridge-diy"
+
+    # haproxy support.
+    carts="$carts openshift-origin-cartridge-haproxy"
+
+    # JBossEWS support.
+    # Note: Be sure to subscribe to the JBossEWS entitlements during the
+    # base install or in configure_jbossews_repo.
+    carts="$carts openshift-origin-cartridge-jbossews"
+ 
+    # JBossEAP support.
+    # Note: Be sure to subscribe to the JBossEAP entitlements during the
+    # base install or in configure_jbosseap_repo.
+    carts="$carts openshift-origin-cartridge-jbosseap"
+ 
+    # Jenkins server for continuous integration.
+    carts="$carts openshift-origin-cartridge-jenkins"
+ 
+    # Embedded jenkins client.
+    carts="$carts openshift-origin-cartridge-jenkins-client"
+ 
+    # Embedded MySQL.
+    carts="$carts openshift-origin-cartridge-mysql"
+ 
+    # mod_perl support.
+    carts="$carts openshift-origin-cartridge-perl"
+  
+    # PHP support.
+    carts="$carts openshift-origin-cartridge-php"
+  
+    # Embedded PostgreSQL.
+    carts="$carts openshift-origin-cartridge-postgresql"
+  
+    # Python support.
+    carts="$carts openshift-origin-cartridge-python"
+  
+    # Ruby Rack support running on Phusion Passenger
+    carts="$carts openshift-origin-cartridge-ruby"
   fi
 
   # When dependencies are missing, e.g. JBoss subscriptions,
@@ -1682,10 +1682,10 @@ configure_node()
   echo $broker_hostname > /etc/openshift/env/OPENSHIFT_BROKER_HOST
   echo $domain > /etc/openshift/env/OPENSHIFT_CLOUD_DOMAIN
 
-  if is_true "$node_v2_enable"
+  if is_true "$node_v1_enable"
   then
     mkdir -p /var/lib/openshift/.settings
-    touch /var/lib/openshift/.settings/v2_cartridge_format
+    touch /var/lib/openshift/.settings/v1_cartridge_format
   fi
 }
 
@@ -1841,7 +1841,7 @@ is_false()
 #   CONF_NAMED_IP_ADDR
 #   CONF_NODE_HOSTNAME
 #   CONF_NODE_IP_ADDR
-#   CONF_NODE_V2_ENABLE
+#   CONF_NODE_V1_ENABLE
 #   CONF_REPOS_BASE
 set_defaults()
 {
@@ -1927,7 +1927,7 @@ set_defaults()
   # host.
   node_ip_addr="${CONF_NODE_IP_ADDR:-$cur_ip_addr}"
 
-  node_v2_enable="${CONF_NODE_V2_ENABLE:-false}"
+  node_v1_enable="${CONF_NODE_V1_ENABLE:-false}"
 
   # Unless otherwise specified, the named service, data store, and
   # ActiveMQ service are assumed to be the current host if we are
