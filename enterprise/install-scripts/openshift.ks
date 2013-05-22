@@ -1347,7 +1347,8 @@ key ${domain} {
 };
 EOF
 
-  chown named:named -R /var/named
+  chgrp named -R /var/named
+  chown named -R /var/named/dynamic
   restorecon -rv /var/named
 
   # Replace named.conf.
