@@ -1147,6 +1147,10 @@ configure_controller()
       /etc/openshift/broker.conf
   echo AUTH_SALT=${broker_auth_salt} >> /etc/openshift/broker.conf
 
+  # Configure the valid gear sizes for the broker
+  sed -i -e "s/^VALID_GEAR_SIZES=.*/VALID_GEAR_SIZES=\"${conf_valid_gear_sizes}\"/" \
+      /etc/openshift/broker.conf
+
   # Configure the session secret for the broker
   sed -i -e "s/# SESSION_SECRET=.*$/SESSION_SECRET=${broker_session_secret}/" \
       /etc/openshift/broker.conf
@@ -1646,6 +1650,9 @@ set_defaults()
   # Set $bind_key to the value of $CONF_BIND_KEY if the latter is
   # non-empty.
   [ "x$CONF_BIND_KEY" != x ] && bind_key="$CONF_BIND_KEY"
+
+  # Set $conf_valid_gear_sizes to $CONF_VALID_GEAR_SIZES
+  broker && conf_valid_gear_sizes="${CONF_VALID_GEAR_SIZES:-small}"
 
   # Generate a random salt for the broker authentication.
   randomized=$(openssl rand -base64 20)
