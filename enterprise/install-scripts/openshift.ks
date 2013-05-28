@@ -1778,7 +1778,7 @@ set_defaults()
   fi
 
   # Grab the IP address set during installation.
-  cur_ip_addr="$(/sbin/ip addr show dev eth0 | awk '/inet / { split($2,a,"/"); print a[1]; }')"
+  cur_ip_addr="$(/sbin/ip addr show | awk '/inet .*global/ { split($2,a,"/"); print a[1]; }' | head -1)"
 
   # Unless otherwise specified, the broker is assumed to be the current
   # host.
