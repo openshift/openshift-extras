@@ -1010,16 +1010,23 @@ collectives = mcollective
 libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
 logfile = /var/log/mcollective-client.log
 loglevel = debug
+direct_addressing = 1
 
 # Plugins
 securityprovider=psk
-plugin.psk=unset
+plugin.psk = asimplething
 
-connector = stomp
-plugin.stomp.host = ${activemq_hostname}
-plugin.stomp.port = 61613
-plugin.stomp.user = ${mcollective_user}
-plugin.stomp.password = ${mcollective_password}
+connector = activemq
+plugin.activemq.pool.size = 1
+plugin.activemq.pool.1.host = ${activemq_hostname}
+plugin.activemq.pool.1.port = 61613
+plugin.activemq.pool.1.user = ${mcollective_user}
+plugin.activemq.pool.1.password = ${mcollective_password}
+
+# Facts
+factsource = yaml
+plugin.yaml = /etc/mcollective/facts.yaml
+
 EOF
 }
 
@@ -1036,19 +1043,20 @@ collectives = mcollective
 libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
 logfile = /var/log/mcollective.log
 loglevel = debug
+
 daemonize = 1
-direct_addressing = n
-registerinterval = 30
+direct_addressing = 1
 
 # Plugins
 securityprovider = psk
-plugin.psk = unset
+plugin.psk = asimplething
 
-connector = stomp
-plugin.stomp.host = ${activemq_hostname}
-plugin.stomp.port = 61613
-plugin.stomp.user = ${mcollective_user}
-plugin.stomp.password = ${mcollective_password}
+connector = activemq
+plugin.activemq.pool.size = 1
+plugin.activemq.pool.1.host = ${activemq_hostname}
+plugin.activemq.pool.1.port = 61613
+plugin.activemq.pool.1.user = ${mcollective_user}
+plugin.activemq.pool.1.password = ${mcollective_password}
 
 # Facts
 factsource = yaml
