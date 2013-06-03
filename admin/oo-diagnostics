@@ -1101,6 +1101,86 @@ class OODiag
       BORKED
   end
 
+  def test_usergroups_enabled
+    skip_test unless @is_node
+    #Check if login.defs has usergroups enabled
+    ugs = `grep -i 'USERGROUPS_ENAB yes' /etc/login.defs`
+    if(ugs.empty?)
+      do_fail <<-UGS
+        The USERGROUPS_ENAB setting is either missing or set to no in /etc/login.defs.
+        This will prevent creating user groups for new gears that are added to the system.
+        You can fix this by:
+            # vim /etc/login.defs
+            Add/fix the line 'USERGROUPS_ENAB yes'
+      UGS
+    end 
+  end
+
+  def test_mcollective_context
+    skip_test unless @is_node
+    #check if the context for mcollective is corerct
+    context = `ps -o label= $(pgrep -f ruby./usr/sbin/mcollectived) | cut -d: -f3`
+    if(context != "openshift_initrc_t")
+      do_fail <<-CONTEXT
+      Mcollectived is not running in the expected SELinux context, which may result in node execution failures.  
+      Please check that the correct context is set on /usr/sbin/mcollectived and that the correct SELinux policies are loaded. 
+      CONTEXT
+    end
+  end
+
+  def test_mcollective_bad_facts
+    skip_test unless @is_broker
+    #Grep for a NAN of max active gears from mcollective
+    max_active_gears = `mco facts max_active_gears | grep -i NaN`
+    #If not empty, then there is a problem
+    if(!max_active_gears.empty?)
+      do_fail <<-NAN
+      Mcollectived is reporting that the max_active_gears is returning NaN (Not a Number). Please check your settings.
+      NAN
+    end
+  end
+
+  def test_auth_conf_files
+    skip_test unless @is_broker
+    #Boolean for aborting match check
+    mto = false
+ 
+    console = `ls /var/www/openshift/console/httpd/conf.d/ | grep -i '.*auth.*\.conf$'`
+    #Make sure there is only 1 conf file for the console
+    console = console.split(/\n/)
+    if(console.size > 1)
+      mto = true
+      do_warn <<-CONSOLE
+        There is more than one authentication configuration file for the console in /var/www/openshift/console/httpd/conf.d
+        Authentication configration files:
+        #{console.join "\n\t"}
+      CONSOLE
+    end
+
+    broker = `ls /etc/openshift/plugins.d/ | grep -i '.*auth.*\.conf$'` 
+    #Make sure there is only 1 conf file for the broker
+    broker = broker.split(/\n/)
+    if(broker.size > 1)
+      mto = true
+      do_warn <<-BROKER
+        There is more than one authentication configuration file for the broker in /etc/openshift/plugins.d
+        Authentication configration files:
+        #{broker.join "\n\t"}
+      BROKER
+    end
+
+    #If conf files dont match, then it is possible they are using two different auth types.
+    if(console[0].casecmp(broker[0]) != 0  && !mto)
+      do_warn <<-MISMATCH
+        The two authentication configuration file names set up for the console and broker do not match, please ensure that they are using the same authentication mechanism.
+        Authentication configration files:
+        Broker: #{broker[0]} located in /etc/openshift/plugins.d
+        Console: #{console[0]} located in /var/www/openshift/console/httpd/conf.d
+      MISMATCH
+    end
+
+  end
+
 end #class OODiag
 
 
