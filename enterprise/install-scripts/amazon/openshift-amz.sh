@@ -1190,6 +1190,10 @@ configure_controller()
             s/MONGO_DB=.*$/MONGO_DB=\"${mongodb_name}\"/" \
       /etc/openshift/broker.conf
 
+  # Set the ServerName for httpd
+  sed -i -e "s/ServerName .*$/ServerName ${hostname}/" \
+      /etc/httpd/conf.d/000002_openshift_origin_broker_servername.conf
+
   # Configure the broker service to start on boot.
   chkconfig openshift-broker on
   chkconfig openshift-console on
@@ -1363,7 +1367,7 @@ configure_wildcard_ssl_cert_on_node()
   # Generate a 2048 bit key and self-signed cert
   cat << EOF | openssl req -new -rand /dev/urandom \
 	-newkey rsa:2048 -nodes -keyout /etc/pki/tls/private/localhost.key \
-	-x509 -days 3650 -extensions v3_req \
+	-x509 -days 3650 \
 	-out /etc/pki/tls/certs/localhost.crt 2> /dev/null
 XX
 SomeState
@@ -1374,8 +1378,6 @@ SomeOrganizationalUnit
 root@${domain}
 EOF
 
-  # Generate a cert signing request (example)
-  #openssl req -new -in /etc/pki/tls/private/localhost.key -out /etc/pki/tls/certs/localhost.csr
 }
 
 configure_broker_ssl_cert()
@@ -1383,7 +1385,7 @@ configure_broker_ssl_cert()
   # Generate a 2048 bit key and self-signed cert
   cat << EOF | openssl req -new -rand /dev/urandom \
 	-newkey rsa:2048 -nodes -keyout /etc/pki/tls/private/localhost.key \
-	-x509 -days 3650 -extensions v3_req \
+	-x509 -days 3650 \
 	-out /etc/pki/tls/certs/localhost.crt 2> /dev/null
 XX
 SomeState
@@ -1432,6 +1434,10 @@ configure_node()
     mkdir -p /var/lib/openshift/.settings
     touch /var/lib/openshift/.settings/v1_cartridge_format
   fi
+
+  # Set the ServerName for httpd
+  sed -i -e "s/ServerName .*$/ServerName ${hostname}/" \
+      /etc/httpd/conf.d/000001_openshift_origin_node_servername.conf
 }
 
 # Run the cronjob installed by openshift-origin-msg-node-mcollective immediately
