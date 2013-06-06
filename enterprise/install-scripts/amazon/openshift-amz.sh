@@ -1274,7 +1274,21 @@ EOF
 # Configure httpd for authentication.
 configure_httpd_auth()
 {
-  # Install the Apache configuration file.
+  # Configure mod_auth_kerb if both CONF_BROKER_KRB_SERVICE_NAME
+  # and CONF_BROKER_KRB_AUTH_REALMS are specified
+  if [ -n "$CONF_BROKER_KRB_SERVICE_NAME" ] && [ -n "$CONF_BROKER_KRB_AUTH_REALMS" ]
+  then
+    yum_install_or_exit -y mod_auth_kerb
+    for d in /var/www/openshift/broker/httpd/conf.d /var/www/openshift/console/httpd/conf.d
+    do
+      sed -e "s#KrbServiceName.*#KrbServiceName ${CONF_BROKER_KRB_SERVICE_NAME}#" \
+        -e "s#KrbAuthRealms.*#KrbAuthRealms ${CONF_BROKER_KRB_AUTH_REALMS}#" \
+	$d/openshift-origin-auth-remote-user-kerberos.conf.sample > $d/openshift-origin-auth-remote-user-kerberos.conf
+    done
+    return
+  fi
+
+  # Install the Apache Basic Authentication configuration file.
   cp /var/www/openshift/broker/httpd/conf.d/openshift-origin-auth-remote-user-basic.conf.sample \
      /var/www/openshift/broker/httpd/conf.d/openshift-origin-auth-remote-user.conf
 
