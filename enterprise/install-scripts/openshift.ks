@@ -752,6 +752,15 @@ configure_pam_on_node()
 
 configure_cgroups_on_node()
 {
+  for f in "runuser" "runuser-l" "sshd" "system-auth-ac"
+  do
+    t="/etc/pam.d/$f"
+    if ! grep -q "pam_cgroup" "$t"
+    then
+      echo -e "session\t\toptional\tpam_cgroup.so" >> "$t"
+    fi
+  done
+
   cp -vf /opt/rh/ruby193/root/usr/share/gems/doc/openshift-origin-node-*/cgconfig.conf /etc/cgconfig.conf
   restorecon -rv /etc/cgconfig.conf
   mkdir -p /cgroup
@@ -2203,3 +2212,4 @@ echo "Installation and configuration is complete;"
 echo "please reboot to start all services properly."
 
 %end
+
