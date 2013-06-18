@@ -40,22 +40,27 @@
 #CONF_INSTALL_COMPONENTS="node"
 
 # install_method / CONF_INSTALL_METHOD
-#   Choice from the following ways to provide packages:
+#   Choose from the following ways to provide packages:
+#     none - install sources are already set up when the script executes (default)
 #     yum - set up yum repos manually
 #       repos_base / CONF_REPOS_BASE -- see below
 #       rhel_repo / CONF_RHEL_REPO -- see below
 #       jboss_repo_base / CONF_JBOSS_REPO_BASE -- see below
-#     sm - use subscription-manager (not yet implemented)
+#       rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO -- see below
+#     rhsm - use subscription-manager
 #       sm_reg_name / CONF_SM_REG_NAME
 #       sm_reg_pass / CONF_SM_REG_PASS
-#       sm_reg_pool / CONF_SM_REG_POOL
+#       sm_reg_pool / CONF_SM_REG_POOL - pool ID for OpenShift subscription
 #     rhn - use rhn-register
 #       rhn_reg_name / CONF_RHN_REG_NAME
 #       rhn_reg_pass / CONF_RHN_REG_PASS
 #       rhn_reg_actkey / CONF_RHN_REG_ACTKEY
-#     none - install source is already set up when the script executes
 #   Default: none
 #CONF_INSTALL_METHOD="yum"
+
+# Hint: when running as a cmdline script, to enter your password invisibly:
+#  read -s CONF_SM_REG_PASS
+#  export CONF_SM_REG_PASS
 
 # repos_base / CONF_REPOS_BASE
 #   Default: https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<latest>
@@ -67,12 +72,16 @@
 #   The URL for a RHEL 6 yum repository used with the "yum" install method.
 #   Should end in /6Server/x86_64/os/
 
+# rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO
+#   The URL for a RHEL 6 Optional yum repository used with the "yum" install method.
+#   Should end in /6Server/x86_64/optional/os/
+
 # jboss_repo_base / CONF_JBOSS_REPO_BASE
 #   The base URL for the JBoss repositories used with the "yum" 
 #   install method - the part before jbeap/jbews - ends in /6/6Server/x86_64
 
 # optional_repo / CONF_OPTIONAL_REPO
-#   Enable rhel-x86_64-server-optional-6 repo.
+#   Enable unsupported RHEL "optional" repo under RHN or RHSM methods
 #   Default: no
 #CONF_OPTIONAL_REPO=1
 
@@ -183,6 +192,19 @@
 #   installation (or just use a different auth method).
 #CONF_OPENSHIFT_USER1="demo"
 #CONF_OPENSHIFT_PASSWORD1="changeme"
+
+# Shared salt for the broker authentication. Should be same across multiple brokers.
+# conf_broker_auth_salt / CONF_BROKER_AUTH_SALT
+#CONF_BROKER_AUTH_SALT=""
+
+# Shared secret for the broker and console session. Should be same across multiple brokers.
+# conf_broker_session_secret / CONF_BROKER_SESSION_SECRET
+#CONF_BROKER_SESSION_SECRET=""
+# conf_console_session_secret / CONF_CONSOLE_SESSION_SECRET
+#CONF_CONSOLE_SESSION_SECRET=""
+
+#conf_valid_gear_sizes / CONF_VALID_GEAR_SIZES
+#CONF_VALID_GEAR_SIZES="small"
 
 # IMPORTANT NOTES - DEPENDENCIES
 #
@@ -350,6 +372,20 @@ baseurl=${CONF_RHEL_REPO}
 enabled=1
 gpgcheck=0
 sslverify=false
+exclude=tomcat6*
+
+YUM
+}
+
+configure_optional_repo()
+{
+  cat > /etc/yum.repos.d/rheloptional.repo <<YUM
+[rhel6_optional]
+name=RHEL 6 Optional
+baseurl=${CONF_RHEL_OPTIONAL_REPO}
+enabled=1
+gpgcheck=0
+sslverify=false
 
 YUM
 }
@@ -420,8 +456,9 @@ configure_jbosseap_repo()
     cat <<YUM > /etc/yum.repos.d/jbosseap.repo
 [jbosseap]
 name=jbosseap
-baseurl=${CONF_JBOSS_REPO_BASE}/jbeap/6/os/
+baseurl=${CONF_JBOSS_REPO_BASE}/jbeap/6/os
 enabled=1
+exclude=httpd* mod_ssl
 gpgcheck=0
 
 YUM
@@ -439,8 +476,9 @@ configure_jbossews_repo()
     cat <<YUM > /etc/yum.repos.d/jbossews.repo
 [jbossews]
 name=jbossews
-baseurl=${CONF_JBOSS_REPO_BASE}/jbews/1/os/
+baseurl=${CONF_JBOSS_REPO_BASE}/jbews/2/os
 enabled=1
+exclude=httpd* mod_ssl
 gpgcheck=0
 
 YUM
@@ -462,6 +500,8 @@ yum_install_or_exit()
 install_rhc_pkg()
 {
   yum install -y rhc
+  # set up the system express.conf so this broker will be used by default
+  echo -e "\nlibra_server = '${broker_hostname}'" >> /etc/openshift/express.conf
 }
 
 # Install broker-specific packages.
@@ -1137,7 +1177,14 @@ EOF
 
   # secure the ActiveMQ console
   sed -i -e '/name="authenticate"/s/false/true/' /etc/activemq/jetty.xml
-  sed -i -e '/name="port"/a<property name="host" value="127.0.0.1" />' /etc/activemq/jetty.xml
+
+  # only add the host property if it's not already there
+  # (so you can run the script multiple times)
+  grep '<property name="host" value="127.0.0.1" />' /etc/activemq/jetty.xml > /dev/null
+  if [ $? -ne 0 ]; then
+    sed -i -e '/name="port"/a<property name="host" value="127.0.0.1" />' /etc/activemq/jetty.xml
+  fi
+
   sed -i -e "/admin:/s/admin,/${activemq_admin_password},/" /etc/activemq/jetty-realm.properties
 
 
@@ -1337,6 +1384,20 @@ configure_controller()
       /etc/openshift/broker.conf
   echo AUTH_SALT=${broker_auth_salt} >> /etc/openshift/broker.conf
 
+  # Configure the valid gear sizes for the broker
+  sed -i -e "s/^VALID_GEAR_SIZES=.*/VALID_GEAR_SIZES=\"${conf_valid_gear_sizes}\"/" \
+      /etc/openshift/broker.conf
+
+  # Configure the session secret for the broker
+  sed -i -e "s/# SESSION_SECRET=.*$/SESSION_SECRET=${broker_session_secret}/" \
+      /etc/openshift/broker.conf
+
+  # Configure the session secret for the console
+  if [ `grep -c SESSION_SECRET /etc/openshift/console.conf` -eq 0 ]
+  then
+    echo "SESSION_SECRET=${console_session_secret}" >> /etc/openshift/console.conf
+  fi
+
   if ! datastore
   then
     #mongo not installed locally, so point to given hostname
@@ -1348,6 +1409,10 @@ configure_controller()
             s/MONGO_USER=.*$/MONGO_USER=\"${mongodb_broker_user}\"/
             s/MONGO_DB=.*$/MONGO_DB=\"${mongodb_name}\"/" \
       /etc/openshift/broker.conf
+
+  # Set the ServerName for httpd
+  sed -i -e "s/ServerName .*$/ServerName ${hostname}/" \
+      /etc/httpd/conf.d/000002_openshift_origin_broker_servername.conf
 
   # Configure the broker service to start on boot.
   chkconfig openshift-broker on
@@ -1490,7 +1555,7 @@ configure_wildcard_ssl_cert_on_node()
   # Generate a 2048 bit key and self-signed cert
   cat << EOF | openssl req -new -rand /dev/urandom \
 	-newkey rsa:2048 -nodes -keyout /etc/pki/tls/private/localhost.key \
-	-x509 -days 3650 -extensions v3_req \
+	-x509 -days 3650 \
 	-out /etc/pki/tls/certs/localhost.crt 2> /dev/null
 XX
 SomeState
@@ -1510,7 +1575,7 @@ configure_broker_ssl_cert()
   # Generate a 2048 bit key and self-signed cert
   cat << EOF | openssl req -new -rand /dev/urandom \
 	-newkey rsa:2048 -nodes -keyout /etc/pki/tls/private/localhost.key \
-	-x509 -days 3650 -extensions v3_req \
+	-x509 -days 3650 \
 	-out /etc/pki/tls/certs/localhost.crt 2> /dev/null
 XX
 SomeState
@@ -1550,6 +1615,10 @@ configure_node()
              s/^PUBLIC_HOSTNAME=.*$/PUBLIC_HOSTNAME=${hostname}/;
              s/^BROKER_HOST=.*$/BROKER_HOST=${broker_hostname}/" \
       /etc/openshift/node.conf
+
+  # Set the ServerName for httpd
+  sed -i -e "s/ServerName .*$/ServerName ${hostname}/" \
+      /etc/httpd/conf.d/000001_openshift_origin_node_servername.conf
 }
 
 # Run the cronjob installed by openshift-origin-msg-node-mcollective immediately
@@ -1751,6 +1820,7 @@ set_defaults()
   # subscriptions via RHN. Internally we use private systems.
   rhel_repo="$CONF_RHEL_REPO"
   jboss_repo_base="$CONF_JBOSS_REPO_BASE"
+  rhel_optional_repo="$CONF_RHEL_OPTIONAL_REPO"
 
   # The domain name for the OpenShift Enterprise installation.
   domain="${CONF_DOMAIN:-example.com}"
@@ -1778,7 +1848,7 @@ set_defaults()
   fi
 
   # Grab the IP address set during installation.
-  cur_ip_addr="$(/sbin/ip addr show dev eth0 | awk '/inet / { split($2,a,"/"); print a[1]; }')"
+  cur_ip_addr="$(/sbin/ip addr show | awk '/inet .*global/ { split($2,a,"/"); print a[1]; }' | head -1)"
 
   # Unless otherwise specified, the broker is assumed to be the current
   # host.
@@ -1806,9 +1876,19 @@ set_defaults()
   # non-empty.
   [ "x$CONF_BIND_KEY" != x ] && bind_key="$CONF_BIND_KEY"
 
+  # Set $conf_valid_gear_sizes to $CONF_VALID_GEAR_SIZES
+  broker && conf_valid_gear_sizes="${CONF_VALID_GEAR_SIZES:-small}"
+
   # Generate a random salt for the broker authentication.
   randomized=$(openssl rand -base64 20)
   broker && broker_auth_salt="${CONF_BROKER_AUTH_SALT:-${randomized}}"
+
+  # Generate a random session secret for broker sessions.
+  randomized=$(openssl rand -hex 64)
+  broker && broker_session_secret="${CONF_BROKER_SESSION_SECRET:-${randomized}}"
+
+  # Use session secret for console sessions too.
+  broker && console_session_secret="${CONF_CONSOLE_SESSION_SECRET:-${randomized}}"
 
   # Set default passwords
   #
@@ -1867,6 +1947,11 @@ is_false "$CONF_NO_SSH_KEYS" && install_ssh_keys
 case "$CONF_INSTALL_METHOD" in
   (yum)
     configure_rhel_repo
+    if is_true "$CONF_OPTIONAL_REPO"
+    then
+      configure_optional_repo
+    fi
+
     if activemq || broker || datastore
     then
       configure_broker_repo
@@ -1879,26 +1964,61 @@ case "$CONF_INSTALL_METHOD" in
     ;;
   (rhn)
      echo "Register with RHN using an activation key"
-     rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname}
+     rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || exit 1
      broker && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-rhc --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+     yum-config-manager --setopt="rhel-x86_64-server-6.exclude=tomcat6*" rhel-x86_64-server-6 --save
      broker && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-infrastructure --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
      node && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-node --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
      node && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
      node && rhn-channel --add --channel jbappplatform-6-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+     yum-config-manager --setopt="jbappplatform-6-x86_64-server-6-rpm.exclude=httpd* mod_ssl" jbappplatform-6-x86_64-server-6-rpm --save
      node && rhn-channel --add --channel jb-ews-1-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+     yum-config-manager --setopt="jb-ews-1-x86_64-server-6-rpm.exclude=httpd* mod_ssl" jb-ews-1-x86_64-server-6-rpm --save
      if is_true "$CONF_OPTIONAL_REPO"
      then
        rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
      fi
      ;;
-  (sm)
-     #sm_reg_name / CONF_SM_REG_NAME
-     #sm_reg_pass / CONF_SM_REG_PASS
-     #sm_reg_pool / CONF_SM_REG_POOL
-     echo "sam"
+  (rhsm)
+     echo "Register with RHSM using a pool ID"
+     subscription-manager register --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || exit 1
+     # add the necessary subscriptions
+     subscription-manager attach --auto || exit 1
+     subscription-manager attach --pool $CONF_SM_REG_POOL || exit 1
+     # have yum sync new list of repos from rhsm before changing settings
+     yum repolist
+
+     # configure the RHEL subscription
+     yum-config-manager --setopt="rhel-6-server-rpms.exclude=tomcat6*" rhel-6-server-rpms --save
+     if is_true "$CONF_OPTIONAL_REPO"; then
+       yum-config-manager --enable rhel-6-server-optional-rpms
+     fi
+
+     # and the OpenShift subscriptions
+     if broker; then
+       for channel in rhel-server-ose-infra-6-rpms rhel-server-ose-rhc-6-rpms
+       do
+         yum-config-manager --enable ${channel}
+       done
+     fi
+     if node; then
+       for channel in rhel-server-ose-node-6-rpms rhel-server-ose-jbosseap-6-rpms
+       do
+         yum-config-manager --enable ${channel}
+       done
+       # and JBoss subscriptions for the node (should ignore if not available)
+       for channel in jb-eap-6-for-rhel-6-server-rpms jb-ews-2-for-rhel-6-server-rpms
+       do
+         yum-config-manager --enable ${channel}
+         yum-config-manager --setopt="${channel}.exclude=tomcat6*" ${channel} --save
+       done
+       yum-config-manager --disable jb-ews-1-for-rhel-6-server-rpms
+       yum-config-manager --disable jb-eap-5-for-rhel-6-server-rpms
+     fi
      ;;
 esac
 
+yum clean all
 yum update -y
 
 # Note: configure_named must run before configure_controller if we are
