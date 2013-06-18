@@ -41,23 +41,27 @@
 #CONF_INSTALL_COMPONENTS="node"
 
 # install_method / CONF_INSTALL_METHOD
-#   Choice from the following ways to provide packages:
+#   Choose from the following ways to provide packages:
+#     none - install sources are already set up when the script executes (default)
 #     yum - set up yum repos manually
 #       repos_base / CONF_REPOS_BASE -- see below
 #       rhel_repo / CONF_RHEL_REPO -- see below
 #       jboss_repo_base / CONF_JBOSS_REPO_BASE -- see below
 #       rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO -- see below
-#     sm - use subscription-manager (not yet implemented)
+#     rhsm - use subscription-manager
 #       sm_reg_name / CONF_SM_REG_NAME
 #       sm_reg_pass / CONF_SM_REG_PASS
-#       sm_reg_pool / CONF_SM_REG_POOL
+#       sm_reg_pool / CONF_SM_REG_POOL - pool ID for OpenShift subscription
 #     rhn - use rhn-register
 #       rhn_reg_name / CONF_RHN_REG_NAME
 #       rhn_reg_pass / CONF_RHN_REG_PASS
 #       rhn_reg_actkey / CONF_RHN_REG_ACTKEY
-#     none - install source is already set up when the script executes
 #   Default: none
 #CONF_INSTALL_METHOD="yum"
+
+# Hint: when running as a cmdline script, to enter your password invisibly:
+#  read -s CONF_SM_REG_PASS
+#  export CONF_SM_REG_PASS
 
 # repos_base / CONF_REPOS_BASE
 #   Default: https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<latest>
@@ -71,6 +75,7 @@
 
 # rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO
 #   The URL for a RHEL 6 Optional yum repository used with the "yum" install method.
+#   (only used if CONF_OPTIONAL_REPO is true below)
 #   Should end in /6Server/x86_64/optional/os/
 
 # jboss_repo_base / CONF_JBOSS_REPO_BASE
@@ -78,7 +83,7 @@
 #   install method - the part before jbeap/jbews - ends in /6/6Server/x86_64
 
 # optional_repo / CONF_OPTIONAL_REPO
-#   Enable rhel-x86_64-server-optional-6 repo.
+#   Enable unsupported RHEL "optional" repo.
 #   Default: no
 #CONF_OPTIONAL_REPO=1
 
@@ -2073,16 +2078,16 @@ case "$CONF_INSTALL_METHOD" in
     ;;
   (rhn)
      echo "Register with RHN using an activation key"
-     rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname}
+     rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || exit 1
      yum-config-manager --setopt=rhel-x86_64-server-6.priority=2 rhel-x86_64-server-6 --save
      yum-config-manager --setopt="rhel-x86_64-server-6.exclude=tomcat6*" rhel-x86_64-server-6 --save
 
-     for channel in rhel-x86_64-server-6-osop-1-rhc rhel-x86_64-server-6-osop-1-infrastructure
+     for channel in rhel-x86_64-server-6-osop-1.2-rhc rhel-x86_64-server-6-osop-1.2-infrastructure
      do
        broker && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
        yum-config-manager --setopt=${channel}.priority=1 ${channel} --save
      done
-     for channel in rhel-x86_64-server-6-osop-1-node rhel-x86_64-server-6-osop-1-jbosseap
+     for channel in rhel-x86_64-server-6-osop-1.2-node rhel-x86_64-server-6-osop-1.2-jbosseap
      do
        node && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
        yum-config-manager --setopt=${channel}.priority=1 ${channel} --save
@@ -2098,16 +2103,52 @@ case "$CONF_INSTALL_METHOD" in
        rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
      fi
      ;;
-  (sm)
-     #sm_reg_name / CONF_SM_REG_NAME
-     #sm_reg_pass / CONF_SM_REG_PASS
-     #sm_reg_pool / CONF_SM_REG_POOL
-     echo "sam"
+  (rhsm)
+     echo "Register with RHSM using a pool ID"
+     subscription-manager register --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || exit 1
+     # add the necessary subscriptions
+     subscription-manager attach --auto || exit 1
+     subscription-manager attach --pool $CONF_SM_REG_POOL || exit 1
+     # have yum sync new list of repos from rhsm before changing settings
+     yum repolist
+
+     # configure the RHEL subscription
+     yum-config-manager --setopt=rhel-6-server-rpms.priority=2 rhel-6-server-rpms --save
+     yum-config-manager --setopt="rhel-6-server-rpms.exclude=tomcat6*" rhel-6-server-rpms --save
+     if is_true "$CONF_OPTIONAL_REPO"; then
+       yum-config-manager --enable rhel-6-server-optional-rpms
+     fi
+
+     # and the OpenShift subscription
+     if broker; then
+       for channel in rhel-server-ose-1.2-infra-6-rpms rhel-server-ose-1.2-rhc-6-rpms
+       do
+         yum-config-manager --enable ${channel}
+         yum-config-manager --setopt=${channel}.priority=1 ${channel} --save
+       done
+     fi
+     if node; then
+       for channel in rhel-server-ose-1.2-node-6-rpms rhel-server-ose-1.2-jbosseap-6-rpms
+       do
+         yum-config-manager --enable ${channel}
+         yum-config-manager --setopt=${channel}.priority=1 ${channel} --save
+       done
+       # and JBoss subscriptions for the node
+       for channel in jb-eap-6-for-rhel-6-server-rpms jb-ews-2-for-rhel-6-server-rpms
+       do
+         yum-config-manager --enable ${channel}
+         yum-config-manager --setopt=${channel}.priority=3 ${channel} --save
+       done
+       yum-config-manager --disable jb-ews-1-for-rhel-6-server-rpms
+       yum-config-manager --disable jb-eap-5-for-rhel-6-server-rpms
+     fi
      ;;
 esac
 
 # Install yum-plugin-priorities
-yum clean all; yum install -y yum-plugin-priorities
+yum clean all
+echo "Installing yum-plugin-priorities; if something goes wrong here, check your install source."
+yum install -y yum-plugin-priorities || exit 1
 
 yum update -y
 
