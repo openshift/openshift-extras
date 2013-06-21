@@ -557,6 +557,16 @@ install_node_pkgs()
   yum_install_or_exit -y $pkgs
 }
 
+# Remove abrt-addon-python if necessary
+# https://bugzilla.redhat.com/show_bug.cgi?id=907449
+# This only affects the python v2 cart
+remove_abrt_addon_python()
+{
+  if grep 'Enterprise Linux Server release 6.4' /etc/redhat-release && rpm -q abrt-addon-python && rpm -q openshift-origin-cartridge-python; then
+    yum remove -y abrt-addon-python
+  fi
+}
+
 # Install any cartridges developers may want.
 install_cartridges()
 {
@@ -2223,6 +2233,7 @@ node && configure_mcollective_for_activemq_on_node
 broker && install_broker_pkgs
 node && install_node_pkgs
 node && install_cartridges
+node && remove_abrt_addon_python
 broker && install_rhc_pkg
 
 broker && enable_services_on_broker
