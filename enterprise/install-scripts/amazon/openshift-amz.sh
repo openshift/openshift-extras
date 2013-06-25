@@ -1812,12 +1812,12 @@ case "$CONF_INSTALL_METHOD" in
      yum-config-manager --setopt=rhel-x86_64-server-6.priority=2 rhel-x86_64-server-6 --save
      yum-config-manager --setopt="rhel-x86_64-server-6.exclude=tomcat6*" rhel-x86_64-server-6 --save
 
-     for channel in rhel-x86_64-server-6-osop-1.2-rhc rhel-x86_64-server-6-osop-1.2-infrastructure
+     for channel in rhel-x86_64-server-6-ose-1.2-rhc rhel-x86_64-server-6-ose-1.2-infrastructure
      do
        broker && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
        yum-config-manager --setopt=${channel}.priority=1 ${channel} --save
      done
-     for channel in rhel-x86_64-server-6-osop-1.2-node rhel-x86_64-server-6-osop-1.2-jbosseap
+     for channel in rhel-x86_64-server-6-ose-1.2-node rhel-x86_64-server-6-ose-1.2-jbosseap
      do
        node && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
        yum-config-manager --setopt=${channel}.priority=1 ${channel} --save
