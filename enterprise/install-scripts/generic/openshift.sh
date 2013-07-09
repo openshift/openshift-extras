@@ -2089,18 +2089,18 @@ case "$CONF_INSTALL_METHOD" in
   (rhn)
      echo "Register with RHN using an activation key"
      rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || exit 1
-     yum-config-manager --setopt=rhel-x86_64-server-6.priority=2 rhel-x86_64-server-6 --save
-     yum-config-manager --setopt="rhel-x86_64-server-6.exclude=tomcat6*" rhel-x86_64-server-6 --save
+     RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
+     echo -e "[rhel-x86_64-server-6]\npriority=2\nexclude=tomcat6*\n" >> $RHNPLUGINCONF
 
      for channel in rhel-x86_64-server-6-ose-1.2-rhc rhel-x86_64-server-6-ose-1.2-infrastructure
      do
        broker && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-       yum-config-manager --setopt=${channel}.priority=1 ${channel} --save
+       echo -e "[${channel}]\npriority=1\n" >> $RHNPLUGINCONF
      done
      for channel in rhel-x86_64-server-6-ose-1.2-node rhel-x86_64-server-6-ose-1.2-jbosseap
      do
        node && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-       yum-config-manager --setopt=${channel}.priority=1 ${channel} --save
+       echo -e "[${channel}]\npriority=1\n" >> $RHNPLUGINCONF
      done
      for channel in jbappplatform-6-x86_64-server-6-rpm jb-ews-1-x86_64-server-6-rpm
      do
