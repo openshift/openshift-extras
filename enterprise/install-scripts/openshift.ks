@@ -748,6 +748,7 @@ configure_pam_on_node()
     t="/etc/pam.d/$f"
     if ! grep -q "pam_namespace.so" "$t"
     then
+      echo -e "session\t\t[default=1 success=ignore]\tpam_succeed_if.so quiet shell = /usr/bin/oo-trap-user" >> "$t"
       echo -e "session\t\trequired\tpam_namespace.so no_unmount_on_close" >> "$t"
     fi
   done
