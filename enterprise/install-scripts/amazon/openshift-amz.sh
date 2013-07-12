@@ -1678,10 +1678,11 @@ case "$CONF_INSTALL_METHOD" in
      # add the necessary subscriptions
      subscription-manager attach --auto || exit 1
      subscription-manager attach --pool $CONF_SM_REG_POOL || exit 1
-     # have yum sync new list of repos from rhsm before changing settings
-     yum repolist
+     # have yum sync new list of repos from rhsm and disable all repos to start from scratch
+     yum repolist | sed -n '1,/repo id/d;/repolist:/q;p' | cut -d' ' -f 1 | xargs -n 1 yum-config-manager --disable
 
      # configure the RHEL subscription
+     yum-config-manager --enable rhel-6-server-rpms
      yum-config-manager --setopt="rhel-6-server-rpms.exclude=tomcat6*" rhel-6-server-rpms --save
      if is_true "$CONF_OPTIONAL_REPO"; then
        yum-config-manager --enable rhel-6-server-optional-rpms
@@ -1695,16 +1696,14 @@ case "$CONF_INSTALL_METHOD" in
        done
      fi
      if node; then
-       for channel in rhel-server-ose-node-6-rpms rhel-server-ose-jbosseap-6-rpms
+       for channel in rhel-server-ose-node-6-rpms rhel-server-ose-jbosseap-6-rpms jb-ews-2-for-rhel-6-server-rpms
        do
          yum-config-manager --enable ${channel}
        done
        # and JBoss subscriptions for the node (should ignore if not available)
-       for channel in jb-eap-6-for-rhel-6-server-rpms jb-ews-2-for-rhel-6-server-rpms
-       do
-         yum-config-manager --enable ${channel}
-         yum-config-manager --setopt="${channel}.exclude=tomcat6*" ${channel} --save
-       done
+       channel=jb-eap-6-for-rhel-6-server-rpms
+       yum-config-manager --enable ${channel}
+       yum-config-manager --setopt="${channel}.exclude=tomcat6*" ${channel} --save
        yum-config-manager --disable jb-ews-1-for-rhel-6-server-rpms
        yum-config-manager --disable jb-eap-5-for-rhel-6-server-rpms
      fi
