@@ -1393,8 +1393,7 @@ configure_controller()
       /etc/openshift/broker.conf
 
   # Configure the session secret for the console
-  if [ `grep -c SESSION_SECRET /etc/openshift/console.conf` -eq 0 ]
-  then
+  if [ `grep -c '^\s*SESSION_SECRET' /etc/openshift/console.conf` -eq 0 ]; then
     echo "SESSION_SECRET=${console_session_secret}" >> /etc/openshift/console.conf
   fi
 
@@ -1965,18 +1964,24 @@ case "$CONF_INSTALL_METHOD" in
   (rhn)
      echo "Register with RHN using an activation key"
      rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || exit 1
-     broker && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-rhc --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-     yum-config-manager --setopt="rhel-x86_64-server-6.exclude=tomcat6*" rhel-x86_64-server-6 --save
-     broker && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-infrastructure --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-     node && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-node --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-     node && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-     node && rhn-channel --add --channel jbappplatform-6-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-     yum-config-manager --setopt="jbappplatform-6-x86_64-server-6-rpm.exclude=httpd* mod_ssl" jbappplatform-6-x86_64-server-6-rpm --save
-     node && rhn-channel --add --channel jb-ews-1-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-     yum-config-manager --setopt="jb-ews-1-x86_64-server-6-rpm.exclude=httpd* mod_ssl" jb-ews-1-x86_64-server-6-rpm --save
+     userpass=" --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} "
+     # RHN method for setting yum excludes:
+     RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
+     # exclude tomcat6 from RHEL in favor of JBoss repos
+     echo -e "[rhel-x86_64-server-6]\nexclude=tomcat6*\n" >> $RHNPLUGINCONF
+
+     broker && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-rhc $userpass
+     broker && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-infrastructure $userpass
+     node && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-node $userpass
+     node && rhn-channel --add --channel rhel-x86_64-server-6-osop-1-jbosseap $userpass
+     node && for channel in jbappplatform-6-x86_64-server-6-rpm jb-ews-1-x86_64-server-6-rpm; do
+       rhn-channel --add --channel ${channel} $userpass
+       # exclude httpd from JBoss repos in favor of RHEL
+       echo -e "[${channel}]\nexclude=httpd* mod_ssl\n" >> $RHNPLUGINCONF
+     done
      if is_true "$CONF_OPTIONAL_REPO"
      then
-       rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+       rhn-channel --add --channel rhel-x86_64-server-optional-6 $userpass
      fi
      ;;
   (rhsm)
