@@ -2138,9 +2138,11 @@ case "$CONF_INSTALL_METHOD" in
   (rhn)
      echo "Register with RHN using an activation key"
      rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || exit 1
-     RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
-     echo -e "[rhel-x86_64-server-6]\npriority=2\nexclude=tomcat6*\n" >> $RHNPLUGINCONF
 
+     # RHN method for setting yum priorities and excludes:
+     RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
+
+     # OSE packages are first priority
      for channel in rhel-x86_64-server-6-ose-1.2-rhc rhel-x86_64-server-6-ose-1.2-infrastructure
      do
        broker && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
@@ -2151,10 +2153,13 @@ case "$CONF_INSTALL_METHOD" in
        node && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
        echo -e "[${channel}]\npriority=1\n" >> $RHNPLUGINCONF
      done
+     # RHEL packages are second priority
+     echo -e "[rhel-x86_64-server-6]\npriority=2\nexclude=tomcat6*\n" >> $RHNPLUGINCONF
+     # JBoss packages are third priority -- and all else is lower
      for channel in jbappplatform-6-x86_64-server-6-rpm jb-ews-1-x86_64-server-6-rpm
      do
        node && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-       yum-config-manager --setopt=${channel}.priority=3 ${channel} --save
+       echo -e "[${channel}]\npriority=3\n" >> $RHNPLUGINCONF
      done
 
      if is_true "$CONF_OPTIONAL_REPO"
