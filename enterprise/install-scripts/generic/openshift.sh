@@ -2108,7 +2108,7 @@ case "$CONF_INSTALL_METHOD" in
      # RHEL packages are second priority
      echo -e "[rhel-x86_64-server-6]\npriority=2\nexclude=tomcat6*\n" >> $RHNPLUGINCONF
      # JBoss packages are third priority -- and all else is lower
-     for channel in jbappplatform-6-x86_64-server-6-rpm jb-ews-1-x86_64-server-6-rpm
+     for channel in jbappplatform-6-x86_64-server-6-rpm jb-ews-2-x86_64-server-6-rpm
      do
        node && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
        echo -e "[${channel}]\npriority=3\n" >> $RHNPLUGINCONF
