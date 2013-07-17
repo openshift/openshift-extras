@@ -420,22 +420,23 @@ configure_pam_on_node()
     t="/etc/pam.d/$f"
     if ! grep -q "pam_namespace.so" "$t"
     then
+      # We add two rules.  The first checks whether the user's shell is
+      # /usr/bin/oo-trap-user, which indicates that this is a gear user,
+      # and skips the second rule if it is not.
       echo -e "session\t\t[default=1 success=ignore]\tpam_succeed_if.so quiet shell = /usr/bin/oo-trap-user" >> "$t"
+
+      # The second rule enables polyinstantiation so that the user gets
+      # private /tmp and /dev/shm directories.
       echo -e "session\t\trequired\tpam_namespace.so no_unmount_on_close" >> "$t"
     fi
   done
 
-  # if the user does not exist on the system an error will show up in
-  # /var/log/secure.
-  user_list="root,adm,apache"
-  for user in gdm activemq mongodb; do
-      id -u "$user" >/dev/null 2>&1
-      if [ X"$?" == X"0" ]; then
-          user_list="${user_list},${user}"
-      fi
-  done
-  echo "/tmp        \$HOME/.tmp/      user:iscript=/usr/sbin/oo-namespace-init ${user_list}" > /etc/security/namespace.d/tmp.conf
-  echo "/dev/shm  tmpfs  tmpfs:mntopts=size=5M:iscript=/usr/sbin/oo-namespace-init ${user_list}" > /etc/security/namespace.d/shm.conf
+  # Configure the pam_namespace module to polyinstantiate the /tmp and
+  # /dev/shm directories.  Above, we only enable pam_namespace for
+  # OpenShift users, but to be safe, blacklist the root and adm users
+  # to be sure we don't polyinstantiate their directories.
+  echo "/tmp        \$HOME/.tmp/      user:iscript=/usr/sbin/oo-namespace-init root,adm" > /etc/security/namespace.d/tmp.conf
+  echo "/dev/shm  tmpfs  tmpfs:mntopts=size=5M:iscript=/usr/sbin/oo-namespace-init root,adm" > /etc/security/namespace.d/shm.conf
 }
 
 configure_cgroups_on_node()
