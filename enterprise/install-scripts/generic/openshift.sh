@@ -332,6 +332,10 @@
 # hardware clock with that.
 synchronize_clock()
 {
+  # Install ntp and ntpdate because they may not be present in a RHEL
+  # minimal install.
+  yum install -y ntp ntpdate
+
   # Synchronize the system clock using NTP.
   ntpdate clock.redhat.com
 
@@ -2299,8 +2303,6 @@ configure_all()
   echo_installation_intentions
 #  configure_console_msg
 
-  is_false "$CONF_NO_NTP" && synchronize_clock
-
 
   # enable subscriptions / repositories according to requested method
   configure_repos
@@ -2311,6 +2313,8 @@ configure_all()
   yum install -y yum-plugin-priorities || exit 1
 
   yum update -y
+
+  is_false "$CONF_NO_NTP" && synchronize_clock
 
   # Note: configure_named must run before configure_controller if we are
   # installing both named and broker on the same host.
