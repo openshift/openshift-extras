@@ -417,10 +417,15 @@ YUM
 configure_client_tools_repo()
 {
   # Enable repo with the puddle for broker packages.
+  local baseurl="${repos_base}/Client/x86_64/os/"
+  if [ "${repos_base_type}" == 'release' ]
+  then
+    baseurl="${repos_base}/ose-rhc/1.2/os/"
+  fi
   cat > /etc/yum.repos.d/openshift-client.repo <<YUM
 [openshift_client]
 name=OpenShift Client
-baseurl=${repos_base}/Client/x86_64/os/
+baseurl=${baseurl}
 enabled=1
 gpgcheck=0
 priority=1
@@ -432,10 +437,15 @@ YUM
 configure_broker_repo()
 {
   # Enable repo with the puddle for broker packages.
+  local baseurl="${repos_base}/Infrastructure/x86_64/os/"
+  if [ "${repos_base_type}" == 'release' ]
+  then
+    baseurl="${repos_base}/ose-infra/1.2/os/"
+  fi
   cat > /etc/yum.repos.d/openshift-infrastructure.repo <<YUM
 [openshift_infrastructure]
 name=OpenShift Infrastructure
-baseurl=${repos_base}/Infrastructure/x86_64/os/
+baseurl=${baseurl}
 enabled=1
 gpgcheck=0
 priority=1
@@ -447,10 +457,15 @@ YUM
 configure_node_repo()
 {
   # Enable repo with the puddle for node packages.
+  local baseurl="${repos_base}/Node/x86_64/os/"
+  if [ "${repos_base_type}" == 'release' ]
+  then
+    baseurl="${repos_base}/ose-node/1.2/os/"
+  fi
   cat > /etc/yum.repos.d/openshift-node.repo <<YUM
 [openshift_node]
 name=OpenShift Node
-baseurl=${repos_base}/Node/x86_64/os/
+baseurl=${baseurl}
 enabled=1
 gpgcheck=0
 priority=1
@@ -462,10 +477,15 @@ YUM
 configure_jbosseap_cartridge_repo()
 {
   # Enable repo with the puddle for the JBossEAP cartridge package.
+  local baseurl="${repos_base}/JBoss_EAP6_Cartridge/x86_64/os/"
+  if [ "${repos_base_type}" == 'release' ]
+  then
+    baseurl="${repos_base}/ose-jbosseap/1.2/os/"
+  fi
   cat > /etc/yum.repos.d/openshift-jboss.repo <<YUM
 [openshift_jbosseap]
 name=OpenShift JBossEAP
-baseurl=${repos_base}/JBoss_EAP6_Cartridge/x86_64/os/
+baseurl=${baseurl}
 enabled=1
 gpgcheck=0
 priority=1
@@ -2124,6 +2144,13 @@ case "$CONF_INSTALL_METHOD" in
     if is_true "$CONF_OPTIONAL_REPO"
     then
       configure_optional_repo
+    fi
+
+    if [ "${CONF_RHEL_REPO%/}" == "${repos_base%/}/os" ]
+    then
+      repos_base_type=release
+    else
+      repos_base_type=nightly
     fi
 
     if activemq || broker || datastore
