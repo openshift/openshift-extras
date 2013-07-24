@@ -86,7 +86,7 @@ configure_client_tools_repo()
   cat > /etc/yum.repos.d/openshift-client.repo <<YUM
 [openshift_client]
 name=OpenShift Client
-baseurl=${CONF_REPOS_BASE}/Client/x86_64/os/
+baseurl=${repos_base}/Client/x86_64/os/
 enabled=1
 gpgcheck=0
 sslverify=false
@@ -102,7 +102,7 @@ configure_broker_repo()
   cat > /etc/yum.repos.d/openshift-infrastructure.repo <<YUM
 [openshift_infrastructure]
 name=OpenShift Infrastructure
-baseurl=${CONF_REPOS_BASE}/Infrastructure/x86_64/os/
+baseurl=${repos_base}/Infrastructure/x86_64/os/
 enabled=1
 gpgcheck=0
 sslverify=false
@@ -118,7 +118,7 @@ configure_node_repo()
   cat > /etc/yum.repos.d/openshift-node.repo <<YUM
 [openshift_node]
 name=OpenShift Node
-baseurl=${CONF_REPOS_BASE}/Node/x86_64/os/
+baseurl=${repos_base}/Node/x86_64/os/
 enabled=1
 gpgcheck=0
 sslverify=false
@@ -134,7 +134,7 @@ configure_jbosseap_cartridge_repo()
   cat > /etc/yum.repos.d/openshift-jboss.repo <<YUM
 [openshift_jbosseap]
 name=OpenShift JBossEAP
-baseurl=${CONF_REPOS_BASE}/JBoss_EAP6_Cartridge/x86_64/os/
+baseurl=${repos_base}/JBoss_EAP6_Cartridge/x86_64/os/
 enabled=1
 gpgcheck=0
 sslverify=false
