@@ -83,11 +83,9 @@ YUM
 configure_client_tools_repo()
 {
   # Enable repo with the puddle for broker packages.
-  local baseurl="${repos_base}/Client/x86_64/os/"
-  if [ "${repos_base_type}" == 'release' ]
-  then
-    baseurl="${repos_base}/ose-rhc/1.2/os/"
-  fi
+  [[ "${repos_base_type}" == 'release' ]] \
+    && local baseurl="${repos_base}/ose-rhc/1.2/os/" \
+    || local baseurl="${repos_base}/Client/x86_64/os/"
   cat > /etc/yum.repos.d/openshift-client.repo <<YUM
 [openshift_client]
 name=OpenShift Client
@@ -104,11 +102,9 @@ YUM
 configure_broker_repo()
 {
   # Enable repo with the puddle for broker packages.
-  local baseurl="${repos_base}/Infrastructure/x86_64/os/"
-  if [ "${repos_base_type}" == 'release' ]
-  then
-    baseurl="${repos_base}/ose-infra/1.2/os/"
-  fi
+  [[ "${repos_base_type}" == 'release' ]] \
+    && local baseurl="${repos_base}/ose-infra/1.2/os/" \
+    || local baseurl="${repos_base}/Infrastructure/x86_64/os/"
   cat > /etc/yum.repos.d/openshift-infrastructure.repo <<YUM
 [openshift_infrastructure]
 name=OpenShift Infrastructure
@@ -125,11 +121,9 @@ YUM
 configure_node_repo()
 {
   # Enable repo with the puddle for node packages.
-  local baseurl="${repos_base}/Node/x86_64/os/"
-  if [ "${repos_base_type}" == 'release' ]
-  then
-    baseurl="${repos_base}/ose-node/1.2/os/"
-  fi
+  [[ "${repos_base_type}" == 'release' ]] \
+    && local baseurl="${repos_base}/ose-node/1.2/os/" \
+    || local baseurl="${repos_base}/Node/x86_64/os/"
   cat > /etc/yum.repos.d/openshift-node.repo <<YUM
 [openshift_node]
 name=OpenShift Node
@@ -146,11 +140,9 @@ YUM
 configure_jbosseap_cartridge_repo()
 {
   # Enable repo with the puddle for the JBossEAP cartridge package.
-  local baseurl="${repos_base}/JBoss_EAP6_Cartridge/x86_64/os/"
-  if [ "${repos_base_type}" == 'release' ]
-  then
-    baseurl="${repos_base}/ose-jbosseap/1.2/os/"
-  fi
+  [[ "${repos_base_type}" == 'release' ]] \
+    && local baseurl="${repos_base}/ose-jbosseap/1.2/os/" \
+    || local baseurl="${repos_base}/JBoss_EAP6_Cartridge/x86_64/os/"
   cat > /etc/yum.repos.d/openshift-jboss.repo <<YUM
 [openshift_jbosseap]
 name=OpenShift JBossEAP
