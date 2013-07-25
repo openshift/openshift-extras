@@ -80,13 +80,26 @@ sslverify=false
 YUM
 }
 
+ose_yum_repo_url()
+{
+    channel=$1 #one of: Client,Infrastructure,Node,JBoss_EAP6_Cartridge
+    if [ "${CONF_RHEL_REPO%/}" == "${repos_base%/}/os" ] # same repo base as RHEL?
+    then # use the release CDN URLs
+      declare -A map
+      map=([Client]=ose-rhc [Infrastructure]=ose-infra [Node]=ose-node [JBoss_EAP6_Cartridge]=ose-jbosseap)
+      echo "$repos_base/${map[$channel]}/1.2/os"
+    else # use the nightly puddle URLs
+      echo "$repos_base/$channel/x86_64/os/"
+    fi
+}
+
 configure_client_tools_repo()
 {
   # Enable repo with the puddle for broker packages.
   cat > /etc/yum.repos.d/openshift-client.repo <<YUM
 [openshift_client]
 name=OpenShift Client
-baseurl=${CONF_REPOS_BASE}/Client/x86_64/os/
+baseurl=$(ose_yum_repo_url Client)
 enabled=1
 gpgcheck=0
 sslverify=false
@@ -102,7 +115,7 @@ configure_broker_repo()
   cat > /etc/yum.repos.d/openshift-infrastructure.repo <<YUM
 [openshift_infrastructure]
 name=OpenShift Infrastructure
-baseurl=${CONF_REPOS_BASE}/Infrastructure/x86_64/os/
+baseurl=$(ose_yum_repo_url Infrastructure)
 enabled=1
 gpgcheck=0
 sslverify=false
@@ -118,7 +131,7 @@ configure_node_repo()
   cat > /etc/yum.repos.d/openshift-node.repo <<YUM
 [openshift_node]
 name=OpenShift Node
-baseurl=${CONF_REPOS_BASE}/Node/x86_64/os/
+baseurl=$(ose_yum_repo_url Node)
 enabled=1
 gpgcheck=0
 sslverify=false
@@ -134,7 +147,7 @@ configure_jbosseap_cartridge_repo()
   cat > /etc/yum.repos.d/openshift-jboss.repo <<YUM
 [openshift_jbosseap]
 name=OpenShift JBossEAP
-baseurl=${CONF_REPOS_BASE}/JBoss_EAP6_Cartridge/x86_64/os/
+baseurl=$(ose_yum_repo_url JBoss_EAP6_Cartridge)
 enabled=1
 gpgcheck=0
 sslverify=false
