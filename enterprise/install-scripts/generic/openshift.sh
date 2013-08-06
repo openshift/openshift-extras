@@ -339,6 +339,40 @@ synchronize_clock()
 }
 
 
+configure_repos()
+{
+  case "$CONF_INSTALL_METHOD" in
+    (yum)
+      configure_yum_repos
+      ;;
+    (rhn)
+      configure_rhn_channels
+      ;;
+    (rhsm)
+      configure_rhsm_channels
+      ;;
+  esac
+}
+
+configure_yum_repos()
+{
+  configure_rhel_repo
+  if is_true "$CONF_OPTIONAL_REPO"
+  then
+    configure_optional_repo
+  fi
+
+  if activemq || broker || datastore
+  then
+    configure_broker_repo
+  fi
+  node && configure_node_repo
+  node && configure_jbosseap_cartridge_repo
+  node && configure_jbosseap_repo
+  node && configure_jbossews_repo
+  broker && configure_client_tools_repo
+}
+
 configure_rhel_repo()
 {
   # In order for the %post section to succeed, it must have a way of 
@@ -482,6 +516,82 @@ gpgcheck=0
 YUM
 
   fi
+}
+
+configure_rhn_channels()
+{
+  echo "Register with RHN using an activation key"
+  rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || exit 1
+
+  # RHN method for setting yum priorities and excludes:
+  RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
+
+  # OSE packages are first priority
+  for channel in rhel-x86_64-server-6-ose-1.2-rhc rhel-x86_64-server-6-ose-1.2-infrastructure
+  do
+    broker && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    echo -e "[${channel}]\npriority=1\n" >> $RHNPLUGINCONF
+  done
+  for channel in rhel-x86_64-server-6-ose-1.2-node rhel-x86_64-server-6-ose-1.2-jbosseap
+  do
+    node && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    echo -e "[${channel}]\npriority=1\n" >> $RHNPLUGINCONF
+  done
+  # RHEL packages are second priority
+  echo -e "[rhel-x86_64-server-6]\npriority=2\nexclude=tomcat6*\n" >> $RHNPLUGINCONF
+  # JBoss packages are third priority -- and all else is lower
+  for channel in jbappplatform-6-x86_64-server-6-rpm jb-ews-2-x86_64-server-6-rpm
+  do
+    node && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    echo -e "[${channel}]\npriority=3\n" >> $RHNPLUGINCONF
+  done
+
+  if is_true "$CONF_OPTIONAL_REPO"
+  then
+    rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+  fi
+}
+
+configure_rhsm_channels()
+{
+   echo "Register with RHSM using a pool ID"
+   subscription-manager register --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || exit 1
+   # add the necessary subscriptions
+   subscription-manager attach --auto || exit 1
+   subscription-manager attach --pool $CONF_SM_REG_POOL || exit 1
+   # have yum sync new list of repos from rhsm before changing settings
+   yum repolist
+
+   # configure the RHEL subscription
+   yum-config-manager --setopt=rhel-6-server-rpms.priority=2 rhel-6-server-rpms --save
+   yum-config-manager --setopt="rhel-6-server-rpms.exclude=tomcat6*" rhel-6-server-rpms --save
+   if is_true "$CONF_OPTIONAL_REPO"; then
+     yum-config-manager --enable rhel-6-server-optional-rpms
+   fi
+
+   # and the OpenShift subscription
+   if broker; then
+     for channel in rhel-server-ose-1.2-infra-6-rpms rhel-server-ose-1.2-rhc-6-rpms
+     do
+       yum-config-manager --enable ${channel}
+       yum-config-manager --setopt=${channel}.priority=1 ${channel} --save
+     done
+   fi
+   if node; then
+     for channel in rhel-server-ose-1.2-node-6-rpms rhel-server-ose-1.2-jbosseap-6-rpms
+     do
+       yum-config-manager --enable ${channel}
+       yum-config-manager --setopt=${channel}.priority=1 ${channel} --save
+     done
+     # and JBoss subscriptions for the node
+     for channel in jb-eap-6-for-rhel-6-server-rpms jb-ews-2-for-rhel-6-server-rpms
+     do
+       yum-config-manager --enable ${channel}
+       yum-config-manager --setopt=${channel}.priority=3 ${channel} --save
+     done
+     yum-config-manager --disable jb-ews-1-for-rhel-6-server-rpms
+     yum-config-manager --disable jb-eap-5-for-rhel-6-server-rpms
+   fi
 }
 
 yum_install_or_exit()
@@ -2088,97 +2198,7 @@ is_false "$CONF_NO_NTP" && synchronize_clock
 
 
 # enable subscriptions / repositories according to requested method
-case "$CONF_INSTALL_METHOD" in
-  (yum)
-    configure_rhel_repo
-    if is_true "$CONF_OPTIONAL_REPO"
-    then
-      configure_optional_repo
-    fi
-
-    if activemq || broker || datastore
-    then
-      configure_broker_repo
-    fi
-    node && configure_node_repo
-    node && configure_jbosseap_cartridge_repo
-    node && configure_jbosseap_repo
-    node && configure_jbossews_repo
-    broker && configure_client_tools_repo
-    ;;
-  (rhn)
-     echo "Register with RHN using an activation key"
-     rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || exit 1
-
-     # RHN method for setting yum priorities and excludes:
-     RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
-
-     # OSE packages are first priority
-     for channel in rhel-x86_64-server-6-ose-1.2-rhc rhel-x86_64-server-6-ose-1.2-infrastructure
-     do
-       broker && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-       echo -e "[${channel}]\npriority=1\n" >> $RHNPLUGINCONF
-     done
-     for channel in rhel-x86_64-server-6-ose-1.2-node rhel-x86_64-server-6-ose-1.2-jbosseap
-     do
-       node && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-       echo -e "[${channel}]\npriority=1\n" >> $RHNPLUGINCONF
-     done
-     # RHEL packages are second priority
-     echo -e "[rhel-x86_64-server-6]\npriority=2\nexclude=tomcat6*\n" >> $RHNPLUGINCONF
-     # JBoss packages are third priority -- and all else is lower
-     for channel in jbappplatform-6-x86_64-server-6-rpm jb-ews-2-x86_64-server-6-rpm
-     do
-       node && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-       echo -e "[${channel}]\npriority=3\n" >> $RHNPLUGINCONF
-     done
-
-     if is_true "$CONF_OPTIONAL_REPO"
-     then
-       rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-     fi
-     ;;
-  (rhsm)
-     echo "Register with RHSM using a pool ID"
-     subscription-manager register --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || exit 1
-     # add the necessary subscriptions
-     subscription-manager attach --auto || exit 1
-     subscription-manager attach --pool $CONF_SM_REG_POOL || exit 1
-     # have yum sync new list of repos from rhsm before changing settings
-     yum repolist
-
-     # configure the RHEL subscription
-     yum-config-manager --setopt=rhel-6-server-rpms.priority=2 rhel-6-server-rpms --save
-     yum-config-manager --setopt="rhel-6-server-rpms.exclude=tomcat6*" rhel-6-server-rpms --save
-     if is_true "$CONF_OPTIONAL_REPO"; then
-       yum-config-manager --enable rhel-6-server-optional-rpms
-     fi
-
-     # and the OpenShift subscription
-     if broker; then
-       for channel in rhel-server-ose-1.2-infra-6-rpms rhel-server-ose-1.2-rhc-6-rpms
-       do
-         yum-config-manager --enable ${channel}
-         yum-config-manager --setopt=${channel}.priority=1 ${channel} --save
-       done
-     fi
-     if node; then
-       for channel in rhel-server-ose-1.2-node-6-rpms rhel-server-ose-1.2-jbosseap-6-rpms
-       do
-         yum-config-manager --enable ${channel}
-         yum-config-manager --setopt=${channel}.priority=1 ${channel} --save
-       done
-       # and JBoss subscriptions for the node
-       for channel in jb-eap-6-for-rhel-6-server-rpms jb-ews-2-for-rhel-6-server-rpms
-       do
-         yum-config-manager --enable ${channel}
-         yum-config-manager --setopt=${channel}.priority=3 ${channel} --save
-       done
-       yum-config-manager --disable jb-ews-1-for-rhel-6-server-rpms
-       yum-config-manager --disable jb-eap-5-for-rhel-6-server-rpms
-     fi
-     ;;
-esac
+configure_repos
 
 # Install yum-plugin-priorities
 yum clean all
