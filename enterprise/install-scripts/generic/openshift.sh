@@ -355,7 +355,7 @@ configure_repos()
     need_optional_repo() { :; }
   fi
 
-  if activemq || broker || datastore
+  if activemq || broker || datastore || named
   then
     need_infra_repo() { :; }
   fi
