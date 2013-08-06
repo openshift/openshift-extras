@@ -341,6 +341,41 @@ synchronize_clock()
 
 configure_repos()
 {
+  # Determine which channels we need and define corresponding predicate
+  # functions.
+
+  # Make need_${repo}_repo return false by default.
+  for repo in optional infra node jbosseap_cartridge client_tools jbosseap jbossews
+  do
+      eval "need_${repo}_repo() { false; }"
+  done
+
+  if is_true "$CONF_OPTIONAL_REPO"
+  then
+    need_optional_repo() { :; }
+  fi
+
+  if activemq || broker || datastore
+  then
+    need_infra_repo() { :; }
+  fi
+
+  if broker
+  then
+    need_client_tools_repo() { :; }
+  fi
+
+  if node
+  then
+    need_node_repo() { :; }
+    need_jbosseap_cartridge_repo() { :; }
+    need_jbosseap_repo() { :; }
+    need_jbossews_repo() { :; }
+  fi
+
+  # The configure_yum_repos, configure_rhn_channels, and
+  # configure_rhsm_channels functions will use the need_${repo}_repo
+  # predicate functions define above.
   case "$CONF_INSTALL_METHOD" in
     (yum)
       configure_yum_repos
@@ -357,20 +392,41 @@ configure_repos()
 configure_yum_repos()
 {
   configure_rhel_repo
-  if is_true "$CONF_OPTIONAL_REPO"
+
+  if need_optional_repo
   then
     configure_optional_repo
   fi
 
-  if activemq || broker || datastore
+  if need_infra_repo
   then
     configure_broker_repo
   fi
-  node && configure_node_repo
-  node && configure_jbosseap_cartridge_repo
-  node && configure_jbosseap_repo
-  node && configure_jbossews_repo
-  broker && configure_client_tools_repo
+
+  if need_node_repo
+  then
+    configure_node_repo
+  fi
+
+  if need_jbosseap_cartridge_repo
+  then
+    configure_jbosseap_cartridge_repo
+  fi
+
+  if need_jbosseap_repo
+  then
+    configure_jbosseap_repo
+  fi
+
+  if need_jbossews_repo
+  then
+    configure_jbossews_repo
+  fi
+
+  if need_client_tools_repo
+  then
+    configure_client_tools_repo
+  fi
 }
 
 configure_rhel_repo()
@@ -527,26 +583,47 @@ configure_rhn_channels()
   RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
 
   # OSE packages are first priority
-  for channel in rhel-x86_64-server-6-ose-1.2-rhc rhel-x86_64-server-6-ose-1.2-infrastructure
-  do
-    broker && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-    echo -e "[${channel}]\npriority=1\n" >> $RHNPLUGINCONF
-  done
-  for channel in rhel-x86_64-server-6-ose-1.2-node rhel-x86_64-server-6-ose-1.2-jbosseap
-  do
-    node && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-    echo -e "[${channel}]\npriority=1\n" >> $RHNPLUGINCONF
-  done
+  if need_client_tools_repo
+  then
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-rhc --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    echo -e "[rhel-x86_64-server-6-ose-1.2-rhc]\npriority=1\n" >> $RHNPLUGINCONF
+  fi
+
+  if need_infra_repo
+  then
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-infrastructure --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    echo -e "[rhel-x86_64-server-6-ose-1.2-infrastructure]\npriority=1\n" >> $RHNPLUGINCONF
+  fi
+
+  if need_node_repo
+  then
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-node --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    echo -e "[rhel-x86_64-server-6-ose-1.2-node]\npriority=1\n" >> $RHNPLUGINCONF
+  fi
+
+  if need_jbosseap_repo
+  then
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    echo -e "[rhel-x86_64-server-6-ose-1.2-jbosseap]\npriority=1\n" >> $RHNPLUGINCONF
+  fi
+
   # RHEL packages are second priority
   echo -e "[rhel-x86_64-server-6]\npriority=2\nexclude=tomcat6*\n" >> $RHNPLUGINCONF
-  # JBoss packages are third priority -- and all else is lower
-  for channel in jbappplatform-6-x86_64-server-6-rpm jb-ews-2-x86_64-server-6-rpm
-  do
-    node && rhn-channel --add --channel ${channel} --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-    echo -e "[${channel}]\npriority=3\n" >> $RHNPLUGINCONF
-  done
 
-  if is_true "$CONF_OPTIONAL_REPO"
+  # JBoss packages are third priority -- and all else is lower
+  if need_jbosseap_repo
+  then
+    rhn-channel --add --channel jbappplatform-6-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    echo -e "[jbappplatform-6-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
+  fi
+
+  if need_jbossews_repo
+  then
+    rhn-channel --add --channel jb-ews-2-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    echo -e "[jb-ews-2-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
+  fi
+
+  if need_optional_repo
   then
     rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
   fi
@@ -565,32 +642,49 @@ configure_rhsm_channels()
    # configure the RHEL subscription
    yum-config-manager --setopt=rhel-6-server-rpms.priority=2 rhel-6-server-rpms --save
    yum-config-manager --setopt="rhel-6-server-rpms.exclude=tomcat6*" rhel-6-server-rpms --save
-   if is_true "$CONF_OPTIONAL_REPO"; then
+   if need_optional_repo
+   then
      yum-config-manager --enable rhel-6-server-optional-rpms
    fi
 
    # and the OpenShift subscription
-   if broker; then
-     for channel in rhel-server-ose-1.2-infra-6-rpms rhel-server-ose-1.2-rhc-6-rpms
-     do
-       yum-config-manager --enable ${channel}
-       yum-config-manager --setopt=${channel}.priority=1 ${channel} --save
-     done
+   if need_infra_repo
+   then
+     yum-config-manager --enable rhel-server-ose-1.2-infra-6-rpms
+     yum-config-manager --setopt=rhel-server-ose-1.2-infra-6-rpms.priority=1 rhel-server-ose-1.2-infra-6-rpms --save
    fi
-   if node; then
-     for channel in rhel-server-ose-1.2-node-6-rpms rhel-server-ose-1.2-jbosseap-6-rpms
-     do
-       yum-config-manager --enable ${channel}
-       yum-config-manager --setopt=${channel}.priority=1 ${channel} --save
-     done
-     # and JBoss subscriptions for the node
-     for channel in jb-eap-6-for-rhel-6-server-rpms jb-ews-2-for-rhel-6-server-rpms
-     do
-       yum-config-manager --enable ${channel}
-       yum-config-manager --setopt=${channel}.priority=3 ${channel} --save
-     done
-     yum-config-manager --disable jb-ews-1-for-rhel-6-server-rpms
+
+   if need_client_tools_repo
+   then
+     yum-config-manager --enable rhel-server-ose-1.2-rhc-6-rpms
+     yum-config-manager --setopt=rhel-server-ose-1.2-rhc-6-rpms.priority=1 rhel-server-ose-1.2-rhc-6-rpms --save
+   fi
+
+   if need_node_repo
+   then
+     yum-config-manager --enable rhel-server-ose-1.2-node-6-rpms
+     yum-config-manager --setopt=rhel-server-ose-1.2-node-6-rpms.priority=1 rhel-server-ose-1.2-node-6-rpms --save
+   fi
+
+   if need_jbosseap_cartridge_repo
+   then
+     yum-config-manager --enable rhel-server-ose-1.2-jbosseap-6-rpms
+     yum-config-manager --setopt=rhel-server-ose-1.2-jbosseap-6-rpms.priority=1 rhel-server-ose-1.2-jbosseap-6-rpms --save
+   fi
+
+   # and JBoss subscriptions for the node
+   if need_jbosseap_repo
+   then
+     yum-config-manager --enable jb-eap-6-for-rhel-6-server-rpms
+     yum-config-manager --setopt=jb-eap-6-for-rhel-6-server-rpms.priority=3 jb-eap-6-for-rhel-6-server-rpms --save
      yum-config-manager --disable jb-eap-5-for-rhel-6-server-rpms
+   fi
+
+   if need_jbossews_repo
+   then
+     yum-config-manager --enable jb-ews-2-for-rhel-6-server-rpms
+     yum-config-manager --setopt=jb-ews-2-for-rhel-6-server-rpms.priority=3 jb-ews-2-for-rhel-6-server-rpms
+     yum-config-manager --disable jb-ews-1-for-rhel-6-server-rpms
    fi
 }
 
