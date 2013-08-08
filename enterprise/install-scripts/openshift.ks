@@ -149,6 +149,23 @@
 # A given node can only accept either V1 or V2 cartridges.
 #CONF_NODE_V1_ENABLE=false
 
+# no_ntp / CONF_NO_NTP
+#   Default: false
+#   Enabling this option prevents the installation script from
+#   configuring NTP.  It is important that the time be synchronized
+#   across hosts because MCollective messages have a TTL of 60 seconds
+#   and may be dropped if the clocks are too far out of synch.  However,
+#   NTP is not necessary if the clock will be kept in synch by some
+#   other means.
+#CONF_NO_NTP=true
+
+# no_ssh_keys / CONF_NO_SSH_KEYS
+#   Default: false
+#   Enabling this option prevents the installation script from
+#   creating an initial authorized_keys file for ssh with a hardcoded
+#   ssh key (see install_ssh_keys).
+#CONF_NO_SSH_KEYS=true
+
 # Passwords used to secure various services. You are advised to specify
 # only alphanumeric values in this script as others may cause syntax
 # errors depending on context. If non-alphanumeric values are required,
