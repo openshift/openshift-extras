@@ -1706,7 +1706,7 @@ configure_console_msg()
 
 # Parse /proc/cmdline so that from, e.g., "foo=bar baz" we get
 # CONF_FOO=bar and CONF_BAZ=true in the environment.
-parse_cmdline()
+parse_kernel_cmdline()
 {
   for word in $(cat /proc/cmdline)
   do
@@ -1796,7 +1796,7 @@ is_false()
 #   node_hostname
 #   repos_base
 #
-# This function makes use of variables that may be set by parse_cmdline
+# This function makes use of variables that may be set by parse_kernel_cmdline
 # based on the content of /proc/cmdline or may be hardcoded by modifying
 # this file.  All of these variables are optional; best attempts are
 # made at determining reasonable defaults.
@@ -2062,9 +2062,9 @@ configure_all()
 
 ########################################################################
 
-# Note: parse_cmdline is only needed for kickstart and not if this %post
+# parse_kernel_cmdline is only needed for kickstart and not if this %post
 # section is extracted and executed on a running system.
-parse_cmdline
+parse_kernel_cmdline
 
 set_defaults
 
