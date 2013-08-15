@@ -84,7 +84,7 @@ configure_repos()
 
 configure_yum_repos()
 {
-  configure_rhel_repo
+#  configure_rhel_repo
 
   if need_optional_repo
   then
