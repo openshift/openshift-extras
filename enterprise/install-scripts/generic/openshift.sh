@@ -22,6 +22,14 @@
 
 # PARAMETER DESCRIPTIONS
 
+# actions / CONF_ACTIONS
+#   Default: configure_all
+#   Comma-separated list of functions that will be run.  This
+#   setting is intended to allow configuration steps defined within this
+#   file to be rerun selectively when the shell-script version of this
+#   file is used.  For a normal installation, this setting can be left
+#   at its default value.
+
 # install_components / CONF_INSTALL_COMPONENTS
 #   Comma-separated selections from the following:
 #     broker - installs the broker webapp and tools
@@ -2080,6 +2088,7 @@ is_false()
 #
 # The following variables will be defined:
 #
+#   actions
 #   activemq_hostname
 #   bind_key		# if bind_krb_keytab and bind_krb_principal unset
 #   bind_krb_keytab
@@ -2101,6 +2110,7 @@ is_false()
 #
 # The following variables are used:
 #
+#   CONF_ACTIONS
 #   CONF_ACTIVEMQ_HOSTNAME
 #   CONF_BIND_KEY
 #   CONF_BROKER_HOSTNAME
@@ -2116,6 +2126,10 @@ is_false()
 #   CONF_REPOS_BASE
 set_defaults()
 {
+  # By default, we run configure_all, which performs all the steps of
+  # a normal installation.
+  actions="${CONF_ACTIONS:-configure_all}"
+
   # Following are the different components that can be installed:
   components='broker node named activemq datastore'
 
@@ -2370,6 +2384,14 @@ parse_cmdline "$@"
 
 set_defaults
 
-configure_all
+for action in ${actions//,/ }
+do
+  if ! [ "$(type -t "$action")" = function ]
+  then
+    echo "Invalid action: ${action}"
+    exit 1
+  fi
+  "$action"
+done
 
 
