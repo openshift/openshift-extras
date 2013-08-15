@@ -2274,85 +2274,92 @@ set_defaults()
 
 ########################################################################
 
+configure_all()
+{
+  echo_installation_intentions
+#  configure_console_msg
+
+  is_false "$CONF_NO_NTP" && synchronize_clock
+
+
+  # enable subscriptions / repositories according to requested method
+  configure_repos
+
+  # Install yum-plugin-priorities
+  yum clean all
+  echo "Installing yum-plugin-priorities; if something goes wrong here, check your install source."
+  yum install -y yum-plugin-priorities || exit 1
+
+  yum update -y
+
+  # Note: configure_named must run before configure_controller if we are
+  # installing both named and broker on the same host.
+  named && configure_named
+
+  update_resolv_conf
+
+  configure_network
+  configure_hostname
+
+  datastore && configure_datastore
+
+  #broker && configure_qpid
+  activemq && configure_activemq
+
+  #broker && configure_mcollective_for_qpid_on_broker
+  broker && configure_mcollective_for_activemq_on_broker
+
+  #node && configure_mcollective_for_qpid_on_node
+  node && configure_mcollective_for_activemq_on_node
+
+  broker && install_broker_pkgs
+  node && install_node_pkgs
+  node && install_cartridges
+  node && remove_abrt_addon_python
+  broker && install_rhc_pkg
+
+  broker && enable_services_on_broker
+  node && enable_services_on_node
+
+  node && configure_pam_on_node
+  node && configure_cgroups_on_node
+  node && configure_quotas_on_node
+
+  broker && configure_selinux_policy_on_broker
+  node && configure_selinux_policy_on_node
+
+  node && configure_sysctl_on_node
+  node && configure_sshd_on_node
+
+  broker && configure_controller
+  broker && configure_remote_user_auth_plugin
+  broker && configure_access_keys_on_broker
+  #broker && configure_mongo_auth_plugin
+  broker && configure_messaging_plugin
+  broker && configure_dns_plugin
+  broker && configure_httpd_auth
+  broker && configure_broker_ssl_cert
+
+  node && configure_port_proxy
+  node && configure_gears
+  node && configure_node
+  node && configure_wildcard_ssl_cert_on_node
+  node && update_openshift_facts_on_node
+
+  node && broker && fix_broker_routing
+
+  echo "Installation and configuration is complete;"
+  echo "please reboot to start all services properly."
+}
+
+########################################################################
+
 # Note: parse_cmdline is only needed for kickstart and not if this %post
 # section is extracted and executed on a running system.
 parse_cmdline
 
 set_defaults
 
-echo_installation_intentions
-#configure_console_msg
-
-is_false "$CONF_NO_NTP" && synchronize_clock
-
-
-# enable subscriptions / repositories according to requested method
-configure_repos
-
-# Install yum-plugin-priorities
-yum clean all
-echo "Installing yum-plugin-priorities; if something goes wrong here, check your install source."
-yum install -y yum-plugin-priorities || exit 1
-
-yum update -y
-
-# Note: configure_named must run before configure_controller if we are
-# installing both named and broker on the same host.
-named && configure_named
-
-update_resolv_conf
-
-configure_network
-configure_hostname
-
-datastore && configure_datastore
-
-#broker && configure_qpid
-activemq && configure_activemq
-
-#broker && configure_mcollective_for_qpid_on_broker
-broker && configure_mcollective_for_activemq_on_broker
-
-#node && configure_mcollective_for_qpid_on_node
-node && configure_mcollective_for_activemq_on_node
-
-broker && install_broker_pkgs
-node && install_node_pkgs
-node && install_cartridges
-node && remove_abrt_addon_python
-broker && install_rhc_pkg
-
-broker && enable_services_on_broker
-node && enable_services_on_node
-
-node && configure_pam_on_node
-node && configure_cgroups_on_node
-node && configure_quotas_on_node
-
-broker && configure_selinux_policy_on_broker
-node && configure_selinux_policy_on_node
-
-node && configure_sysctl_on_node
-node && configure_sshd_on_node
-
-broker && configure_controller
-broker && configure_remote_user_auth_plugin
-broker && configure_access_keys_on_broker
-#broker && configure_mongo_auth_plugin
-broker && configure_messaging_plugin
-broker && configure_dns_plugin
-broker && configure_httpd_auth
-broker && configure_broker_ssl_cert
-
-node && configure_port_proxy
-node && configure_gears
-node && configure_node
-node && configure_wildcard_ssl_cert_on_node
-node && update_openshift_facts_on_node
-
-node && broker && fix_broker_routing
-
-echo "Installation and configuration is complete;"
-echo "please reboot to start all services properly."
+configure_all
 
 
