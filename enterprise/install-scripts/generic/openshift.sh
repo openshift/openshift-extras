@@ -67,6 +67,8 @@
 #   Default: https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<latest>
 #   The base URL for the OpenShift repositories used for the "yum" 
 #   install method - the part before Infrastructure/Node/etc.
+#   Note that if this is the same as CONF_RHEL_REPO (without "/os"), then the
+#   CDN format will be used instead, e.g. x86_64/ose-node/1.2/os
 #CONF_REPOS_BASE="https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<latest>"
 
 # rhel_repo / CONF_RHEL_REPO
@@ -337,19 +339,6 @@ synchronize_clock()
 }
 
 
-# Install SSH keys.  We hardcode a key used for internal OpenShift
-# development, but the hardcoded key can be replaced with another or
-# with a wget command to download a key from elsewhere.
-install_ssh_keys()
-{
-  mkdir -p /root/.ssh
-  chmod 700 /root/.ssh
-  cat >> /root/.ssh/authorized_keys << KEYS
-ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDkMc2jArUbWICi0071HXrt5uofQam11duqo5KEDWUZGtHuMTzuoZ0XEtzpqoRSidya9HjbJ5A4qUJBrvLZ07l0OIjENQ0Kvz83alVGFrEzVVUSZyiy6+yM9Ksaa/XAYUwCibfaFFqS9aVpVdY0qwaKrxX1ycTuYgNAw3WUvkHagdG54/79M8BUkat4uNiot0bKg6VLSI1QzNYV6cMJeOzz7WzHrJhbPrgXNKmgnAwIKQOkbATYB+YmDyHpA4m/O020dWDk9vWFmlxHLZqddCVGAXFyQnXoFTszFP4wTVOu1q2MSjtPexujYjTbBBxraKw9vrkE25YZJHvbZKMsNm2b libra_onprem
-KEYS
-}
-
-
 configure_rhel_repo()
 {
   # In order for the %post section to succeed, it must have a way of 
@@ -383,13 +372,26 @@ sslverify=false
 YUM
 }
 
+ose_yum_repo_url()
+{
+    channel=$1 #one of: Client,Infrastructure,Node,JBoss_EAP6_Cartridge
+    if [ "${CONF_RHEL_REPO%/}" == "${repos_base%/}/os" ] # same repo base as RHEL?
+    then # use the release CDN URLs
+      declare -A map
+      map=([Client]=ose-rhc [Infrastructure]=ose-infra [Node]=ose-node [JBoss_EAP6_Cartridge]=ose-jbosseap)
+      echo "$repos_base/${map[$channel]}/1.2/os"
+    else # use the nightly puddle URLs
+      echo "$repos_base/$channel/x86_64/os/"
+    fi
+}
+
 configure_client_tools_repo()
 {
   # Enable repo with the puddle for broker packages.
   cat > /etc/yum.repos.d/openshift-client.repo <<YUM
 [openshift_client]
 name=OpenShift Client
-baseurl=${CONF_REPOS_BASE}/Client/x86_64/os/
+baseurl=$(ose_yum_repo_url Client)
 enabled=1
 gpgcheck=0
 priority=1
@@ -404,7 +406,7 @@ configure_broker_repo()
   cat > /etc/yum.repos.d/openshift-infrastructure.repo <<YUM
 [openshift_infrastructure]
 name=OpenShift Infrastructure
-baseurl=${CONF_REPOS_BASE}/Infrastructure/x86_64/os/
+baseurl=$(ose_yum_repo_url Infrastructure)
 enabled=1
 gpgcheck=0
 priority=1
@@ -419,7 +421,7 @@ configure_node_repo()
   cat > /etc/yum.repos.d/openshift-node.repo <<YUM
 [openshift_node]
 name=OpenShift Node
-baseurl=${CONF_REPOS_BASE}/Node/x86_64/os/
+baseurl=$(ose_yum_repo_url Node)
 enabled=1
 gpgcheck=0
 priority=1
@@ -434,7 +436,7 @@ configure_jbosseap_cartridge_repo()
   cat > /etc/yum.repos.d/openshift-jboss.repo <<YUM
 [openshift_jbosseap]
 name=OpenShift JBossEAP
-baseurl=${CONF_REPOS_BASE}/JBoss_EAP6_Cartridge/x86_64/os/
+baseurl=$(ose_yum_repo_url JBoss_EAP6_Cartridge)
 enabled=1
 gpgcheck=0
 priority=1
@@ -717,22 +719,23 @@ configure_pam_on_node()
     t="/etc/pam.d/$f"
     if ! grep -q "pam_namespace.so" "$t"
     then
+      # We add two rules.  The first checks whether the user's shell is
+      # /usr/bin/oo-trap-user, which indicates that this is a gear user,
+      # and skips the second rule if it is not.
       echo -e "session\t\t[default=1 success=ignore]\tpam_succeed_if.so quiet shell = /usr/bin/oo-trap-user" >> "$t"
+
+      # The second rule enables polyinstantiation so that the user gets
+      # private /tmp and /dev/shm directories.
       echo -e "session\t\trequired\tpam_namespace.so no_unmount_on_close" >> "$t"
     fi
   done
 
-  # if the user does not exist on the system an error will show up in
-  # /var/log/secure.
-  user_list="root,adm,apache"
-  for user in gdm activemq mongodb; do
-      id -u "$user" >/dev/null 2>&1
-      if [ X"$?" == X"0" ]; then
-          user_list="${user_list},${user}"
-      fi
-  done
-  echo "/tmp        \$HOME/.tmp/      user:iscript=/usr/sbin/oo-namespace-init ${user_list}" > /etc/security/namespace.d/tmp.conf
-  echo "/dev/shm  tmpfs  tmpfs:mntopts=size=5M:iscript=/usr/sbin/oo-namespace-init ${user_list}" > /etc/security/namespace.d/shm.conf
+  # Configure the pam_namespace module to polyinstantiate the /tmp and
+  # /dev/shm directories.  Above, we only enable pam_namespace for
+  # OpenShift users, but to be safe, blacklist the root and adm users
+  # to be sure we don't polyinstantiate their directories.
+  echo "/tmp        \$HOME/.tmp/      user:iscript=/usr/sbin/oo-namespace-init root,adm" > /etc/security/namespace.d/tmp.conf
+  echo "/dev/shm  tmpfs  tmpfs:mntopts=size=5M:iscript=/usr/sbin/oo-namespace-init root,adm" > /etc/security/namespace.d/shm.conf
 }
 
 configure_cgroups_on_node()
@@ -2082,7 +2085,6 @@ echo_installation_intentions
 #configure_console_msg
 
 is_false "$CONF_NO_NTP" && synchronize_clock
-is_false "$CONF_NO_SSH_KEYS" && install_ssh_keys
 
 
 # enable subscriptions / repositories according to requested method
