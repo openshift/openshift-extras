@@ -161,13 +161,6 @@
 #   other means.
 #CONF_NO_NTP=true
 
-# no_ssh_keys / CONF_NO_SSH_KEYS
-#   Default: false
-#   Enabling this option prevents the installation script from
-#   creating an initial authorized_keys file for ssh with a hardcoded
-#   ssh key (see install_ssh_keys).
-#CONF_NO_SSH_KEYS=true
-
 # Passwords used to secure various services. You are advised to specify
 # only alphanumeric values in this script as others may cause syntax
 # errors depending on context. If non-alphanumeric values are required,
