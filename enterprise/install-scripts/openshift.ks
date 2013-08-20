@@ -1696,6 +1696,8 @@ configure_access_keys_on_broker()
   # the broker.
   openssl genrsa -out /etc/openshift/server_priv.pem 2048
   openssl rsa -in /etc/openshift/server_priv.pem -pubout > /etc/openshift/server_pub.pem
+  chown apache:apache /etc/openshift/server_pub.pem
+  chmod 640 /etc/openshift/server_pub.pem
 
   # If a key pair already exists, delete it so that the ssh-keygen
   # command will not have to ask the user what to do.
