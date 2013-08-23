@@ -1657,7 +1657,7 @@ configure_access_keys_on_broker()
 
   # Generate a key pair for moving gears between nodes from the broker
   ssh-keygen -t rsa -b 2048 -P "" -f /root/.ssh/rsync_id_rsa
-  cp ~/.ssh/rsync_id_rsa* /etc/openshift/
+  cp /root/.ssh/rsync_id_rsa* /etc/openshift/
   # the .pub key needs to go on nodes, but there is no good way
   # to script that generically. Nodes should not have password-less 
   # access to brokers to copy the .pub key, but this can be performed
