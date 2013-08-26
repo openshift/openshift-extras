@@ -1,6 +1,6 @@
 require 'pathname'
 
-module Originator
+module Installer
   module Helpers
     def self.file_check(filepath)
       # Test for the presence of the config file

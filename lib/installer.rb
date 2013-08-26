@@ -1,17 +1,10 @@
 require 'logger'
-require 'installer/version'
+require 'pp'
 
 module Installer
-  attr_accessor :config
-
-  def originate(config)
-    self.config = config
-    if self.config.role.nil?
-      Installer::Assistant.run
-    else
-      puts "Performing unattended #{self.config.role} installation."
-      Installer::Task.install
-    end
-  end
+  autoload :Assistant, 'installer/assistant'
+  autoload :Config,    'installer/config'
+  autoload :Helpers,   'installer/helpers'
+  autoload :Task,      'installer/task'
+  autoload :VERSION,   'installer/version'
 end
-

@@ -9,12 +9,12 @@ module Installer
 
     def initialize init_file_path=nil, init_role=nil
       @default_dir = ENV['HOME'] + '/.openshift'
-      @default_file = '/oo-installer-cfg.yml'
-      @file_template = Installer::Helpers::gem_root_dir + '/conf/oo-installer-cfg.yml.example'
+      @default_file = '/oo-install-cfg.yml'
+      @file_template = Installer::Helpers::gem_root_dir + '/conf/oo-install-cfg.yml.example'
       if init_file_path.nil?
         self.file_path = default_dir + default_file
         unless Installer::Helpers::file_check(self.file_path)
-          install_default(file_path)
+          install_default
         end
       else
         self.file_path = init_file_path
