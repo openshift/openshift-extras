@@ -1,0 +1,41 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+require 'installer'
+require 'installer/config'
+require 'installer/helpers'
+
+roles = %w(broker node messaging)
+config = Installer::Config.new
+p = OptionParser.new do |opts|
+  opts.banner = "Usage: oo-install [args]"
+  opts.separator ''
+  opts.on('-c', '--config-file FILEPATH', 'The path to an alternate config file') do |filepath|
+    if Installer::Helpers::file_check(filepath)
+      config.file_path = filepath
+    else
+      puts "Config file '#{filepath}' cannot be found or is not readable. Exiting."
+      exit 1
+    end
+  end
+  opts.on('-r', '--role ROLENAME', "The OpenShift role for automated deployment on this host. Supported values: #{roles.join(', ')}.") do |rolename|
+    if roles.include?(rolename)
+      # Automated deployment can only be done with a config file. Make sure the
+      # config file exists.
+      unless Installer::Helpers::file_check(config.file_path)
+        puts "Automated role deployment requires a configuration file.\nProvide a path to a configuration file or put one at the default location: '#{default_config}'.\nExiting."
+        exit 1
+      end
+      config.role = rolename
+    else
+      puts "Unknown role type '#{rolename}'. Exiting."
+      exit 1
+    end
+  end
+end.parse!
+unless config.is_valid?
+  puts "Could not process config file at '#{config.file_path}'. Exiting."
+  exit 1
+end
+Installer.originate(config)
+exit

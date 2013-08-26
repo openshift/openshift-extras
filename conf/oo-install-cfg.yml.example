@@ -1,0 +1,25 @@
+---
+Name: OpenShift Origin - Originator Configuration
+Vendor: OpenShift Origin Community
+Description: This is the default Originator configuration file, which represents the Origin configuration that ships on the OpenShift Origin VM.
+Version: 0.0.1
+Brokers:
+  - host: localhost
+    port: 443
+    host_auth: simple
+    host_user: admin
+    host_pass: admin
+    messaging_port: ???
+MQServers:
+  - host: localhost
+    host_auth: simple
+    host_user: admin
+    host_pass: admin
+    messaging_port: ???
+Nodes:
+  - host: localhost
+    host_auth: simple
+    host_user: admin
+    host_pass: admin
+    messaging_port: ???
+
