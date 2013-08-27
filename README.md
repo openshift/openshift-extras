@@ -26,8 +26,8 @@ Security Notice
 ----------------------
 There were a few vulnerabilities with these scripts discovered by the Red Hat
 Security Team.  They were addressed in this repository on the date the CVEs
-were filed.  We believe the chance of these being exploited is vanishing small
-but we would like users of these scripts to be aware nonetheless:
+were filed.  We believe the chance of these being exploited is vanishingly
+small but we would like users of these scripts to be aware nonetheless:
 
 * [CVE-2013-4253](https://access.redhat.com/security/cve/CVE-2013-4253).
 * [CVE-2013-4281](https://access.redhat.com/security/cve/CVE-2013-4281).
