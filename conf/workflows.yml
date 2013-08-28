@@ -1,0 +1,32 @@
+---
+Name: VM role setup
+Description: Use this VM in a multi-instance deployment
+ID: vm_role
+Questions:
+  - Text: What role should this VM fill in the Origin system?
+    Variable: role
+    AnswerType: role
+Executable: <workflow_path>/originator <q:role>
+---
+Name: Remote system configuration
+Description: Install an OpenShift component on another system
+ID: remote_deploy
+Questions:
+  - Text: Which host do you want to deploy?
+    Variable: deployment_host
+    AnswerType: deployment_host
+Executable: <workflow_path>/remote_deploy <q:deployment_host>
+ExecuteOnTarget: Y
+---
+Name: Puppet templates
+Description: Download Puppet templates
+ID: puppet_templates
+SkipDeploymentCheck: Y
+Executable: <workflow_path>/puppet_info
+---
+Name: Login info
+Description: See login information for this Origin VM
+ID: login_info
+SkipDeploymentCheck: Y
+Executable: <workflow_path>/login_info
+

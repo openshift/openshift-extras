@@ -1,4 +1,5 @@
 require 'pathname'
+require 'yaml'
 
 module Installer
   module Helpers
@@ -9,6 +10,9 @@ module Installer
     end
     def self.gem_root_dir
       @gem_root_dir ||= File.expand_path '../../../', __FILE__
+    end
+    def self.worflow_ids
+      @workflow_ids ||= YAML.load_stream(open(gem_root_dir + '/conf/workflows.yml')).map{ |workflow| workflow['ID'] }
     end
   end
 end

@@ -5,13 +5,13 @@ require 'yaml'
 module Installer
   class Config
     attr_reader :default_dir, :default_file, :file_template
-    attr_accessor :file_path, :role
+    attr_accessor :file_path, :workflow
 
-    def initialize init_file_path=nil, init_role=nil
+    def initialize file_path=nil, workflow=nil
       @default_dir = ENV['HOME'] + '/.openshift'
       @default_file = '/oo-install-cfg.yml'
       @file_template = Installer::Helpers::gem_root_dir + '/conf/oo-install-cfg.yml.example'
-      if init_file_path.nil?
+      if file_path.nil?
         self.file_path = default_dir + default_file
         unless Installer::Helpers::file_check(self.file_path)
           install_default
@@ -19,7 +19,7 @@ module Installer
       else
         self.file_path = init_file_path
       end
-      role = init_role
+      self.workflow = workflow
     end
 
     def settings

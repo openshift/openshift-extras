@@ -5,7 +5,6 @@ require 'installer'
 require 'installer/config'
 require 'installer/helpers'
 
-roles = %w(broker node messaging)
 config = Installer::Config.new
 p = OptionParser.new do |opts|
   opts.banner = "Usage: oo-install [args]"
@@ -18,17 +17,17 @@ p = OptionParser.new do |opts|
       exit 1
     end
   end
-  opts.on('-r', '--role ROLENAME', "The OpenShift role for automated deployment on this host. Supported values: #{roles.join(', ')}.") do |rolename|
-    if roles.include?(rolename)
+  opts.on('-w', '--workflow WORKFLOW_ID', 'The installer workflow for automated deployment on this host.' do |workflow_id|
+    if Install::Helpers::workflow_ids.include?(workflow_id)
       # Automated deployment can only be done with a config file. Make sure the
       # config file exists.
       unless Installer::Helpers::file_check(config.file_path)
-        puts "Automated role deployment requires a configuration file.\nProvide a path to a configuration file or put one at the default location: '#{default_config}'.\nExiting."
+        puts "Automated deployment requires a configuration file.\nProvide a path to a configuration file or put one at the default location: '#{default_config}'.\nExiting."
         exit 1
       end
-      config.role = rolename
+      config.workflow_id = workflow_id
     else
-      puts "Unknown role type '#{rolename}'. Exiting."
+      puts "Unknown workflow ID '#{workflow_id}'. Valid values are:\n#{Install::Helpers::Exiting."
       exit 1
     end
   end
