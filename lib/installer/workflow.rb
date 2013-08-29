@@ -1,7 +1,12 @@
 require 'installer/exceptions'
+require 'installer/helpers'
+require 'installer/executable'
+require 'installer/question'
 
 module Installer
   class Workflow
+    include Installer::Helpers
+
     class << self
       def ids
         @ids ||= file_cache.map{ |workflow| workflow['ID'] }
@@ -16,6 +21,10 @@ module Installer
       end
 
       private
+      def file_path
+        @file_path ||= gem_root_dir + '/conf/workflows.yml'
+      end
+
       def file_cache
         @file_cache ||= validate_and_return_config
       end
@@ -24,16 +33,22 @@ module Installer
         %w{ID Name Description Executable}
       end
 
+      def parse_config_file
+        unless File.exists?(file_path)
+          raise Installer::WorkflowFileNotFoundException.new
+        end
+        YAML.load_stream(open(file_path))
+      end
+
       def validate_and_return_config
-        workflow_list = YAML.load_stream(open(gem_root_dir + '/conf/workflows.yml'))
-        workflow_list.each do |workflow|
+        parse_config_file.each do |workflow|
           required_fields.each do |field|
-            if not workflow.has_key?(field) or workflow[field].blank?
-              raise Installer::WorkflowMissingRequiredSettingException "Required field #{field} missing from workflow entry:\n#{workflow.inspect}\n\n"
+            if not workflow.has_key?(field)
+              raise Installer::WorkflowMissingRequiredSettingException.new "Required field #{field} missing from workflow entry:\n#{workflow.inspect}\n\n"
             end
           end
         end
-        workflow_list
+        parse_config_file
       end
     end
 
@@ -43,9 +58,9 @@ module Installer
       @id = config['ID']
       @name = config['Name']
       @description = config['Description']
-      @questions = config.has_key?('Questions') ? config['Questions'].map{ |q| Installer::Question.new(q) } : []
+      @questions = config.has_key?('Questions') ? config['Questions'].map{ |q| Installer::Question.new(id, q) } : []
       @executable = Installer::Executable.new(id, config['Executable'])
-      @remote_execute = (config.has_key?('ExecuteOnTarget') and config['ExecuteOnTarget'].downcase == 'y') ? true : false
+      @remote_execute = (config.has_key?('ExecuteOnTarget') and config['ExecuteOnTarget'].downcase == 'n') ? false : true
       @check_deployment = (config.has_key?('SkipDeploymentCheck') and config['SkipDeploymentCheck'].downcase == 'y') ? false : true
     end
 

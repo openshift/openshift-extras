@@ -3,11 +3,11 @@ module Installer
     attr_accessor :config
 
     def initialize config
-      self.config = config
+      @config = config
     end
 
     def run
-      if self.config.role.nil?
+      if self.config.workflow.nil?
         puts "Running assisted"
       else
         puts "Running headless"

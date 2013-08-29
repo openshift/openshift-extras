@@ -4,30 +4,33 @@ require 'optparse'
 require 'installer'
 require 'installer/config'
 require 'installer/helpers'
+require 'installer/workflow'
+
+include Installer::Helpers
 
 config = Installer::Config.new
 p = OptionParser.new do |opts|
   opts.banner = "Usage: oo-install [args]"
   opts.separator ''
   opts.on('-c', '--config-file FILEPATH', 'The path to an alternate config file') do |filepath|
-    if Installer::Helpers::file_check(filepath)
+    if file_check(filepath)
       config.file_path = filepath
     else
       puts "Config file '#{filepath}' cannot be found or is not readable. Exiting."
       exit 1
     end
   end
-  opts.on('-w', '--workflow WORKFLOW_ID', 'The installer workflow for automated deployment on this host.' do |workflow_id|
-    if Install::Helpers::workflow_ids.include?(workflow_id)
+  opts.on('-w', '--workflow WORKFLOW_ID', 'The installer workflow for automated deployment on this host.') do |workflow_id|
+    if Installer::Workflow.ids.include?(workflow_id)
       # Automated deployment can only be done with a config file. Make sure the
       # config file exists.
-      unless Installer::Helpers::file_check(config.file_path)
+      unless file_check(config.file_path)
         puts "Automated deployment requires a configuration file.\nProvide a path to a configuration file or put one at the default location: '#{default_config}'.\nExiting."
         exit 1
       end
       config.workflow_id = workflow_id
     else
-      puts "Unknown workflow ID '#{workflow_id}'. Valid values are:\n#{Install::Helpers::Exiting."
+      puts "Unknown workflow ID '#{workflow_id}'. Valid values are:\n\n#{Installer::Workflow.ids.map{ |i| "* #{i}" }.join("\n")}\n\nExiting."
       exit 1
     end
   end
