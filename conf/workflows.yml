@@ -12,11 +12,32 @@ Name: Remote system configuration
 Description: Install an OpenShift component on another system
 ID: remote_deploy
 Questions:
+  - Text: Which role do you want to deploy?
+    Variable: role
+    AnswerType: role
   - Text: Which host do you want to deploy?
-    Variable: deployment_host
-    AnswerType: deployment_host
-Executable: <workflow_path>/remote_deploy <q:deployment_host>
-ExecuteOnTarget: Y
+    Variable: rolehost
+    AnswerType: rolehost
+Executable: <workflow_path>/remote_deploy -r <q:role> -t <q:rolehost>
+RemoteDeployment: Y
+---
+Name: Local system configuration
+Description: Install an OpenShift component on this system
+ID: local_deploy
+Questions:
+  - Text: Which role do you want to deploy?
+    Variable: role
+    AnswerType: role
+Executable: <workflow_path>/local_deploy <q:role>
+---
+Name: Kickstart Demo
+Description: Install an OpenShift component using Kickstart
+ID: kickstart_demo
+Questions:
+  - Text: Which role do you want to deploy?
+    Variable: role
+    AnswerType: role
+Executable: <workflow_path>/openshift.ks
 ---
 Name: Puppet templates
 Description: Download Puppet templates

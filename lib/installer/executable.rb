@@ -30,6 +30,7 @@ module Installer
     end
 
     def expand_path exec_string
+      #TODO: add URL handling
       expand_map =
       { '<wokflow_id>' => workflow.id,
         '<gem_root_dir>' => gem_root_dir,

@@ -40,6 +40,26 @@ module Installer
       true
     end
 
+    def get_question_value workflow_id, question_id
+      if settings.has_key?('Workflows') and settings['Workflows'].has_key?(workflow_id) and settings['Workflows'][workflow_id].has_key?(question_id)
+        return settings['Workflows'][workflow_id][question_id]
+      end
+      nil
+    end
+
+    def set_question_value workflow_id, question_id, value
+      settings['Workflows'] = {} unless settings.has_key?('Workflows')
+      settings['Workflows'][workflow_id] = {} unless settings['Workflows'].has_key(workflow_id)
+      settings['Workflows'][workflow_id][question_id] = value
+      save_to_disk
+    end
+
+    def save_to_disk
+      File.open(file_path, 'w') do |file|
+        file.write settings.to_yaml
+      end
+    end
+
     private
     def install_default
       unless Dir.exists?(default_dir)
