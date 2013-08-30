@@ -13,6 +13,12 @@ module Installer
     end
   end
 
+  class WorkflowNotFoundException < Exception
+    def initialize(message="A workflow with the provided ID could not be found.", code=1)
+      super(message, code)
+    end
+  end
+
   class WorkflowMissingRequiredSettingException < Exception
     def initialize(message="A workflow is missing a required configuration setting.", code=1)
       super(message, code)

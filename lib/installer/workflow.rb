@@ -17,6 +17,9 @@ module Installer
       end
 
       def find id
+        unless ids.include?(id)
+          raise Installer::WorkflowNotFoundException.new "Could not find a workflow with id #{id}."
+        end
         new(file_cache.find{ |workflow| workflow['ID'] == id })
       end
 
@@ -52,16 +55,17 @@ module Installer
       end
     end
 
-    attr_reader :name, :description, :id, :questions, :executable
+    attr_reader :name, :description, :id, :questions, :executable, :path
 
     def initialize config
       @id = config['ID']
       @name = config['Name']
       @description = config['Description']
-      @questions = config.has_key?('Questions') ? config['Questions'].map{ |q| Installer::Question.new(id, q) } : []
-      @executable = Installer::Executable.new(id, config['Executable'])
       @remote_execute = (config.has_key?('ExecuteOnTarget') and config['ExecuteOnTarget'].downcase == 'n') ? false : true
       @check_deployment = (config.has_key?('SkipDeploymentCheck') and config['SkipDeploymentCheck'].downcase == 'y') ? false : true
+      @path = gem_root_dir + "/workflows/" + id
+      @questions = config.has_key?('Questions') ? config['Questions'].map{ |q| Installer::Question.new(self, q) } : []
+      @executable = Installer::Executable.new(self, config['Executable'])
     end
 
     def check_deployment?

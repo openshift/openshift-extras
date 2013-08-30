@@ -1,6 +1,9 @@
 require 'rspec'
+require 'installer/helpers'
 
 module SpecHelpers
+  include Installer::Helpers
+
   def test_workflows
     [
       { 'ID' => 'test1',

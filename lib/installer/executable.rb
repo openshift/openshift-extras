@@ -5,27 +5,52 @@ module Installer
   class Executable
     include Installer::Helpers
 
-    attr_reader :command
+    attr_reader :command, :status
 
-    def initialize workflow_id, exec_string
+    def initialize workflow, exec_string
+      @workflow = workflow
+      @status = nil
       #Test to make sure the executable is present and runnable
-      exec_file = which(exec_string.split(' ')[0])
+      expanded_exec = expand_path(exec_string)
+      exec_file = which(expanded_exec.split(' ')[0])
       if exec_file.nil?
-        raise Installer::WorkflowExecutableException, "Executable '#{exec_string}' for workflow '#{workflow_id}' could not be found or is not executable."
+        raise Installer::WorkflowExecutableException, "Executable command '#{exec_string}' for workflow '#{workflow.id}' could not be found or is not executable."
       end
       @command = exec_string
     end
 
     def run
-      IO.popen(command).each do |line|
-        p line.chomp
-      end
+      system command
+      @status = $?.exitstatus
     end
 
     private
-    # SOURCE for #which:
+    def workflow
+      @workflow
+    end
+
+    def expand_path exec_string
+      expand_map =
+      { '<wokflow_id>' => workflow.id,
+        '<gem_root_dir>' => gem_root_dir,
+        '<workflow_path>' => workflow.path,
+      }
+      work_string = exec_string.dup
+      expand_map.each_pair do |k,v|
+        work_string.sub!(/#{k}/, v)
+      end
+      work_string
+    end
+
+    # Original source for #which:
     # http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
     def which(cmd)
+      # First, a basic test to handle absolute paths to scripts
+      if File.exists?(cmd) and File.executable?(cmd)
+        return cmd
+      end
+
+      # Now the full smarts
       exts = ENV['PATHEXT'] ? ENV['PATHEXT'].split(';') : ['']
       ENV['PATH'].split(File::PATH_SEPARATOR).each do |path|
         exts.each { |ext|

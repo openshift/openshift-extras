@@ -25,10 +25,6 @@ module Installer
       end
       return nil
     end
-
-    def path_expand(path_string)
-
-    end
   end
 end
 

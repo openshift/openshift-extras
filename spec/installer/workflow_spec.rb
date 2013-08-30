@@ -35,7 +35,10 @@ describe Installer::Workflow do
         subject_list[i].should have_same_hash_contents_as test_list[i]
       end
     end
-    it 'should instantiate the requested workflow' do
+    it 'should raise an error when an undefined worflow is requested' do
+      expect { Installer::Workflow.find('foobar') }.to raise_error(Installer::WorkflowNotFoundException)
+    end
+    it 'should instantiate a valid requested workflow' do
       Installer::Workflow.ids.each do |id|
         test_item = test_workflows.find{ |w| w['ID'] == id }
         workflow = Installer::Workflow.find(id)
@@ -43,6 +46,7 @@ describe Installer::Workflow do
         workflow.name.should == test_item['Name']
         workflow.description.should == test_item['Description']
         workflow.executable.should be_kind_of(Installer::Executable)
+        workflow.path.should == gem_root_dir + '/workflows/' + id
         workflow.questions.each do |question|
           question.should be_kind_of(Installer::Question)
         end
