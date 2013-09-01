@@ -1,8 +1,11 @@
+require 'i18n'
 require 'pathname'
 require 'yaml'
 
 module Installer
   module Helpers
+    include I18n
+
     def file_check(filepath)
       # Test for the presence of the config file
       pn = Pathname.new(filepath)
@@ -24,6 +27,18 @@ module Installer
         }
       end
       return nil
+    end
+
+    def i18n_configured?
+      @i18n_configured ||= false
+    end
+
+    def translate text
+      unless i18n_configured?
+        I18n.load_path += Dir[gem_root_dir + '/config/locales/*.yml']
+        @i18n_configured = true
+      end
+      I18n.t text
     end
   end
 end

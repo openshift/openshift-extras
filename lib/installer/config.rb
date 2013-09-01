@@ -60,6 +60,24 @@ module Installer
       end
     end
 
+    def complete_deployment?
+      unless settings.has_key?('Deployment')
+        return false
+      end
+      %w{Brokers Nodes MQServers DBServers}.each do |group|
+        unless settings['Deployment'].has_key?(group)
+          return false
+        end
+        unless settings['Deployment'][group].length > 0
+          return false
+        end
+      end
+      true
+    end
+
+    def valid_deployment?
+    end
+
     private
     def install_default
       unless Dir.exists?(default_dir)
