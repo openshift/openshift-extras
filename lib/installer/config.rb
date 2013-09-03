@@ -60,6 +60,14 @@ module Installer
       end
     end
 
+    def get_deployment
+      Installer::Deployment.new(self, (settings.has_key?('Deployment') ? settings['Deployment'] : {}))
+    end
+
+    def set_deployment deployment
+      settings['Deployment'] = deployment.to_hash
+    end
+
     def complete_deployment?
       unless settings.has_key?('Deployment')
         return false

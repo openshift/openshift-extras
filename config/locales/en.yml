@@ -7,3 +7,5 @@ en:
   info_wait_config_validation: "Please wait while your deployment configuration is validated."
   exit_no_deployment: "Cannot perform unattended install; your deployment configuration is incomplete.\nRerun the workflow manually and try again."
   info_force_run_deployment_setup: "Your system deployment configuration is incomplete.\nBefore continuing, you must describe your OpenShift deployment."
+  deployment_summary: "Here are the details of your current deployment."
+  invalid_port_number_response: "Enter a valid port number in the range 1 to 65535"

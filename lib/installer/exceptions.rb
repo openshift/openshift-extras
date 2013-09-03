@@ -30,4 +30,10 @@ module Installer
       super(message, code)
     end
   end
+
+  class SystemRoleIncompatibleException < Exception
+    def initialize(message="An attempt was made to add a system of the wrong role type to the deployment role list", code=1)
+      super(message, code)
+    end
+  end
 end

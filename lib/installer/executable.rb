@@ -39,7 +39,6 @@ module Installer
       work_string = exec_string.dup
       expand_map.each_pair do |k,v|
         work_string.sub!(/#{k}/, v)
-        puts "WS: #{work_string}"
       end
       work_string
     end

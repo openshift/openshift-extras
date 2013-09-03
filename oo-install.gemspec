@@ -18,6 +18,7 @@ Gem::Specification.new do |spec|
   spec.test_files    = spec.files.grep(%r{^(test|spec|features)/})
   spec.require_paths = ["lib"]
 
+  #spec.add_dependency "curses"
   spec.add_dependency "highline", "~> 1.6.11"
   spec.add_dependency "i18n"
   spec.add_dependency "versionomy", "~> 0.4.4"
