@@ -11,10 +11,16 @@ module Installer
       @type = question_config['AnswerType']
     end
 
-    def run config
-      previous_answer = config.get_question_value(workflow.id, id)
-      response = previous_answer ? ask(text, type){ |q| q.default = previous_answer } : ask(text, type)
-      config.set_question_value(workflow.id, id, response)
+    def valid? value
+      if type == 'remotehost'
+
+      elsif type == 'mongodbhost'
+
+      elsif type == 'role'
+
+      elsif type == 'rolehost'
+
+      end
     end
   end
 end

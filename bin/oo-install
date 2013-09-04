@@ -2,6 +2,7 @@
 
 require 'optparse'
 require 'installer'
+require 'installer/assistant'
 require 'installer/config'
 require 'installer/helpers'
 require 'installer/workflow'

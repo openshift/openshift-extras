@@ -1,29 +1,45 @@
 require 'highline/import'
 require 'installer/deployment'
 require 'installer/helpers'
+require 'installer/host_instance'
 require 'installer/workflow'
 
 module Installer
   class Assistant
     include Installer::Helpers
 
-    attr_accessor :config, :deployment, :workflow
+    attr_accessor :config, :deployment, :workflow, :workflow_cfg, :unattended
 
     def initialize config
       @config = config
       @deployment = config.get_deployment
+      @unattended = config.workflow.nil? ? false : true
     end
 
     def run
-      if config.workflow.nil?
+      if not unattended
         ui_welcome_screen
       else
-        unless config.complete_deployment?
+        unless deployment.is_complete?
           puts translate :exit_no_deployment
           return 1
         end
         puts translate :info_wait_config_validation
+        begin
+          deployment.is_valid?(:full)
+        rescue Exception => msg
+          say "\nThe deployment validity test returned an an error:\n#{msg.inspect}\nUnattended deployment terminated.\n"
+        end
       end
+    end
+
+    def workflow_cfg_complete?
+      return false if workflow.nil? or workflow_cfg.nil? or workflow_cfg.empty?
+      workflow.questions.each do |q|
+        return false if not workflow_cfg.has_key?(q.id) or not q.valid_answer? workflow_cfg[q.id]
+      end
+      return false is workflow.questions.length != workflow_cfg.keys.length
+      true
     end
 
     def ui_title
@@ -52,27 +68,49 @@ module Installer
 
     def ui_workflow id
       @workflow = Installer::Workflow.find(id)
+      @workflow_cfg = config.get_workflow_cfg(id)
       ui_newpage
       if workflow.check_deployment?
-        if not config.complete_deployment?
-          puts translate :info_force_run_deployment_setup
+        if not deployment.is_complete?
+          say translate :info_force_run_deployment_setup
           ui_edit_deployment
         else
           ui_show_deployment
         end
+        while agree("\nDo you want to make any changes to your deployment?(Y/N) ", true)
+          ui_edit_deployment
+          ui_show_deployment
+        end
       end
-      while agree("\nDo you want to make any changes to your deployment?(Y/N) ", true)
-        ui_edit_deployment
-        ui_show_deployment
-      end
+      ui_edit_workflow
       return 0
+    end
+
+    def ui_edit_workflow
+      if not workflow_cfg.empty?
+        ui_show_workflow
+      end
+      begin
+        workflow.questions.each do |question|
+          ask_workflow_question question
+        end
+    end
+
+    def ui_show_workflow
+      ui_newpage
+      say translate :workflow_summary
+      puts "\n"
+      workflow.questions.each do |question|
+        if workflow_cfg.has_key?(question.id)
+          say "#{question.id}: #{answer}"
+      end
     end
 
     def ui_edit_deployment
       Installer::Deployment.role_map.each_pair do |role,hkey|
         list_count = list_role role
         if list_count == 0
-          say "\nYou must add a system to the #{hkey} list."
+          say "\nYou must add a host instance to the #{hkey} list."
           ui_modify_role_list role
         end
         while agree("\nDo you want to modify the #{hkey} list?(Y/N) ", true)
@@ -95,117 +133,114 @@ module Installer
         if role == :node
           say "\nModifying the " + Installer::Deployment.role_map[role] + " list.\n\n"
           choose do |menu|
-            menu.header = "Select the number of the system that you wish to modify"
+            menu.header = "Select the number of the #{role.to_s} host instance that you wish to modify"
             for i in 0..(list.length - 1)
-              system = list[i]
-              menu.choice(system.summarize) { ui_add_edit_system role, list.length, i }
+              menu.choice(list[i].summarize) { ui_edit_host_instance list[i], list.length, i }
             end
-            menu.choice("Add a new #{role.to_s}") { ui_add_edit_system role, list.length }
+            menu.choice("Add a new #{role.to_s}") { ui_edit_host_instance Installer::HostInstance.new(role) }
           end
         else
-          ui_add_edit_system role, list.length, 0
+          ui_edit_host_instance list[0], list.length, 0
         end
       else
         say "Add a new #{role.to_s}"
-        ui_add_edit_system role, 0
+        ui_edit_host_instance Installer::HostInstance.new(role)
       end
     end
 
-    def ui_add_edit_system role, role_count, index=nil
-      rolename = Installer::Deployment.role_map[role].chop
+    def ui_edit_host_instance host_instance, role_count=0, index=nil
+      rolename = Installer::Deployment.role_map[host_instance.role].chop
       puts "\n"
       if index.nil?
         say "Adding a new #{rolename}"
-      elsif role == :node
+      elsif host_instance.role == :node
         say "Modifying #{rolename} number #{index + 1}"
       else
         say "Modifying #{rolename}"
       end
-      perform_edit = false
-      if role == :node and role_count > 1 and not index.nil?
+      if host_instance.role == :node and role_count > 1
         choose do |menu|
           menu.header = "Do you want to delete this #{rolename} or update it?"
-          menu.choice("Update it") { say "Proceeding with update"; perform_edit = true }
-          menu.choice("Delete it") { deployment.remove_system role, index }
+          menu.choice("Update it") {
+            edit_host_instance host_instance
+            deployment.update_host_instance! host_instance, index
+            say "Updated the #{rolename} host instance."
+          }
+          menu.choice("Delete it") {
+            deployment.remove_host_instance! host_instance, index
+            say "Deleted the #{rolename} host instance."
+          }
         end
       else
-        perform_edit = true
+        edit_host_instance host_instance
+        if index.nil?
+          deployment.add_host_instance! host_instance
+        else
+          deployment.update_host_instance! host_instance, index
+        end
       end
-      if perform_edit
-        system = index.nil? ? Installer::System.new(role) : deployment.get_role_list(role)[index]
-        system_is_valid = false
-        while not system_is_valid
-          system.host = ask("#{rolename} host name: ") { |q|
-            if not system.host.nil?
-              q.default = system.host
-            end
-            q.validate = lambda { |p| is_valid_hostname_or_ip_addr?(p) }
-            q.responses[:not_valid] = "Enter a valid hostname or IP address"
-          }
-          if role == :broker
-            system.port = ask('REST API port: ', Integer) { |q|
-              q.default = system.port.nil? ? 443 : system.port
-              q.validate = lambda { |p| is_valid_port_number?(p) }
-              q.responses[:not_valid] = translate :invalid_port_number_response
-            }
+      puts "\n"
+      list_role host_instance.role
+    end
+
+    def edit_host_instance host_instance
+      host_instance_is_valid = false
+      while not host_instance_is_valid
+        host_instance.host = ask("Host name: ") { |q|
+          if not host_instance.host.nil?
+            q.default = host_instance.host
           end
-          system.user = ask("OpenShift username on #{system.host}: ") { |q|
-            if not system.user.nil?
-              q.default = system.user
+          q.validate = lambda { |p| is_valid_hostname_or_ip_addr?(p) }
+          q.responses[:not_valid] = "Enter a valid hostname or IP address"
+        }
+        if host_instance.role == :broker
+          host_instance.port = ask('REST API port: ', Integer) { |q|
+            q.default = host_instance.port.nil? ? 443 : host_instance.port
+            q.validate = lambda { |p| is_valid_port_number?(p) }
+            q.responses[:not_valid] = translate :invalid_port_number_response
+          }
+        end
+        host_instance.user = ask("OpenShift username on #{host_instance.host}: ") { |q|
+          if not host_instance.user.nil?
+            q.default = host_instance.user
+          end
+          q.validate = lambda { |p| is_valid_username?(p) }
+          q.responses[:not_valid] = "Enter a valid linux username"
+        }
+        if host_instance.role == :dbserver
+          host_instance.db_port = ask("Database access port: ", Integer) { |q|
+            q.default = host_instance.db_port.nil? ? 27017 : host_instance.db_port
+            q.validate = lambda { |p| is_valid_port_number?(p) }
+            q.responses[:not_valid] = translate :invalid_port_number_reponse
+          }
+          host_instance.db_user = ask("Database username: ") { |q|
+            if not host_instance.db_user.nil?
+              q.default = host_instance.db_user
             end
             q.validate = lambda { |p| is_valid_username?(p) }
-            q.responses[:not_valid] = "Enter a valid linux system username"
+            q.responses[:not_valid] = "Enter a valid database username"
           }
-          if role == :dbserver
-            system.db_port = ask("Database access port: ", Integer) { |q|
-              q.default = system.db_port.nil? ? 27017 : system.db_port
-              q.validate = lambda { |p| is_valid_port_number?(p) }
-              q.responses[:not_valid] = translate :invalid_port_number_reponse
-            }
-            system.db_user = ask("Database username: ") { |q|
-              if not system.db_user.nil?
-                q.default = system.db_user
-              end
-              q.validate = lambda { |p| is_valid_username?(p) }
-              q.responses[:not_valid] = "Enter a valid database username"
-            }
-          else
-            system.messaging_port = ask("MCollective client port: ", Integer) { |q|
-              q.default = system.messaging_port.nil? ? 61616 : system.messaging_port
-              q.validate = lambda { |p| is_valid_port_number?(p) }
-              q.responses[:not_valid] = translate :invalid_port_number_response
-            }
-          end
-          if (role == :broker and system.port == system.messaging_port)
-            say "The REST API and the messaging client cannot listen on the same port (#{system.port}). Reconfigure this system."
-          else
-            system_is_valid = true
-          end
-        end
-        puts "\n"
-        if index.nil?
-          deployment.add_system role, system
-          say "Added new #{rolename} system."
         else
-          list = deployment.get_role_list role
-          list[index - 1] = system
-          deployment.set_role_list role, list
-          say "Updated the #{rolename} system."
+          host_instance.messaging_port = ask("MCollective client port: ", Integer) { |q|
+            q.default = host_instance.messaging_port.nil? ? 61616 : host_instance.messaging_port
+            q.validate = lambda { |p| is_valid_port_number?(p) }
+            q.responses[:not_valid] = translate :invalid_port_number_response
+          }
         end
-      else
-        say "Deleted the #{rolename} system."
+        if (host_instance.role == :broker and host_instance.port == host_instance.messaging_port)
+          say "The REST API and the messaging client cannot listen on the same port (#{host_instance.port}). Reconfigure this host instance."
+        else
+          host_instance_is_valid = true
+        end
       end
-      config.set_deployment deployment
-      config.save_to_disk
-      list_role role
     end
 
     def list_role role
       puts "\n" + Installer::Deployment.role_map[role] + "\n"
       list = deployment.get_role_list(role)
       if list.length
-        list.each do |system|
-          list_system system
+        list.each do |host_instance|
+          list_host_instance host_instance
         end
       else
         puts "\t[None]\n"
@@ -213,13 +248,15 @@ module Installer
       list.length
     end
 
-    def list_system system
-      Installer::System.attrs.each do |attr|
-        value = system.send(attr)
+    def list_host_instance host_instance
+      lines = []
+      Installer::HostInstance.attrs.each do |attr|
+        value = host_instance.send(attr)
         if not value.nil?
-          say "\t#{attr.to_s.split('_').map{ |word| word == 'db' ? 'DB' : word.capitalize}.join(' ')}: #{value}\n"
+          lines << "#{attr.to_s.split('_').map{ |word| word == 'db' ? 'DB' : word.capitalize}.join(' ')}: #{value}"
         end
       end
+      puts "  * " + lines.join("\n    ")
     end
   end
 end

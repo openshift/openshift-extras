@@ -31,8 +31,26 @@ module Installer
     end
   end
 
-  class SystemRoleIncompatibleException < Exception
-    def initialize(message="An attempt was made to add a system of the wrong role type to the deployment role list", code=1)
+  class HostInstanceHostNameException < Exception
+    def initialize(message="A system in the deployment has an invalid hostname or IP address.", code=1)
+      super(message, code)
+    end
+  end
+
+  class HostInstanceUserNameException < Exception
+    def initialize(message="A system in the deployment has an invalid user name.", code=1)
+      super(message, code)
+    end
+  end
+
+  class HostInstancePortNumberException < Exception
+    def initialize(message="A system in the deployment has an invalid port number.", code=1)
+      super(message, code)
+    end
+  end
+
+  class HostInstancePortDuplicateException < Exception
+    def initialize(message="A system in the deployment has multiple services listening on the same port.", code=1)
       super(message, code)
     end
   end

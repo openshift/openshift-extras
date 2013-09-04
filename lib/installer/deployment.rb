@@ -16,29 +16,29 @@ module Installer
     def initialize config, deployment
       @config = config
       self.class.role_map.each_pair do |role, hkey|
-        set_role_list role, (deployment.has_key?(hkey) ? deployment[hkey].map{ |i| Installer::System.new(role, i) } : [])
+        set_role_list role, (deployment.has_key?(hkey) ? deployment[hkey].map{ |i| Installer::HostInstance.new(role, i) } : [])
       end
     end
 
-    def add_system role, item
-      list = get_role_list role
-      if item.is_a?(Installer::System)
-        if item.role == role
-          list << item
-        else
-          raise Installer::SystemRoleIncompatibleException.new("Tried to add a system of role #{item.role} to the #{role.to_s} list")
-        end
-      else
-        list << Installer::System.new(role, item)
-      end
-      set_role_list role, list
-      save_to_disk
+    def add_host_instance! host_instance
+      list = get_role_list host_instance.role
+      list << host_instance
+      set_role_list host_instance.role, list
+      save_to_disk!
     end
 
-    def remove_system role, index
-      list = get_role_list role
+    def update_host_instance! host_instance, index
+      list = get_role_list host_instance.role
+      list[index] = host_instance
+      set_role_list host_instance.role, list
+      save_to_disk!
+    end
+
+    def remove_host_instance! host_instance, index
+      list = get_role_list host_instance.role
       list.delete_at(index)
-      set_role_list role, list
+      set_role_list host_instance.role, list
+      save_to_disk!
     end
 
     def to_hash
@@ -49,9 +49,9 @@ module Installer
       }
     end
 
-    def save_to_disk
+    def save_to_disk!
       config.set_deployment self
-      config.save_to_disk
+      config.save_to_disk!
     end
 
     def get_role_list role
@@ -63,47 +63,29 @@ module Installer
       listname = "#{role.to_s}s".to_sym
       self.send("#{listname}=", list)
     end
-  end
 
-  class System
-    include Installer::Helpers
-
-    attr_reader :role
-    attr_accessor :host, :port, :ssh_port, :user, :messaging_port, :db_user
-
-    def self.attrs
-      %w{host port ssh_port user messaging_port db_user}.map{ |a| a.to_sym }
-    end
-
-    def initialize role, item={}
-      @role = role
-      self.class.attrs.each do |attr|
-        self.send("#{attr}=", (item.has_key?(attr.to_s) ? item[attr.to_s] : nil))
-      end
-    end
-
-    def to_hash
-      Hash[self.class.attrs.map{ |attr| self.send(attr).nil? ? [] : [attr.to_s, self.send(attr)] }]
-    end
-
-    def summarize
-      to_hash.each_pair.map{ |k,v| k.split('_').map{ |word| ['db','ssh'].include?(word) ? word.upcase : word.capitalize }.join(' ') + ': ' + v.to_s }.join(', ')
-    end
-
-    def valid?
-      unless is_valid_hostname_or_ip_addr?(host) and is_valid_username?(user)
-        return false
-      end
-      if role == :dbserver and (not is_valid_port_number?(db_port) or not is_valid_username?(db_user))
-        return false
-      end
-      if role != :dbserver and not is_valid_port_number?(messaging_port)
-        return false
-      end
-      if role == :broker and (not is_valid_port_number?(port) or port == messaging_port)
-        return false
+    def is_complete?
+      [:brokers, :nodes, :mqservers, :dbservers].each do |group|
+        list = self.send(group)
+        if list.length == 0
+          return false
+        end
       end
       true
+    end
+
+    def is_valid?(check=:basic)
+      [:brokers, :nodes, :mqservers, :dbservers].each do |group|
+        list = self.send(group)
+        role = group.to_s.chop.to_sym
+        list.each do |host_instance|
+          if host_instance.role != role
+            return false if check == :basic
+            raise Installer::HostInstanceRoleIncompatibleException.new("Found a host instance of type '#{host_instance.role.to_s}' in the #{group.to_s} list.")
+          end
+          host_instance.is_valid?(check)
+        end
+      end
     end
   end
 end

@@ -40,21 +40,7 @@ module Installer
       true
     end
 
-    def get_question_value workflow_id, question_id
-      if settings.has_key?('Workflows') and settings['Workflows'].has_key?(workflow_id) and settings['Workflows'][workflow_id].has_key?(question_id)
-        return settings['Workflows'][workflow_id][question_id]
-      end
-      nil
-    end
-
-    def set_question_value workflow_id, question_id, value
-      settings['Workflows'] = {} unless settings.has_key?('Workflows')
-      settings['Workflows'][workflow_id] = {} unless settings['Workflows'].has_key(workflow_id)
-      settings['Workflows'][workflow_id][question_id] = value
-      save_to_disk
-    end
-
-    def save_to_disk
+    def save_to_disk!
       File.open(file_path, 'w') do |file|
         file.write settings.to_yaml
       end
@@ -68,22 +54,15 @@ module Installer
       settings['Deployment'] = deployment.to_hash
     end
 
-    def complete_deployment?
-      unless settings.has_key?('Deployment')
-        return false
-      end
-      %w{Brokers Nodes MQServers DBServers}.each do |group|
-        unless settings['Deployment'].has_key?(group)
-          return false
-        end
-        unless settings['Deployment'][group].length > 0
-          return false
-        end
-      end
-      true
+    def get_workflow_cfg id
+      (settings.has_key?('Workflows') and settings['Workflows'].has_key?(id)) ? settings['Workflows'][id] : {}
     end
 
-    def valid_deployment?
+    def set_workflow_cfg id, workflow_cfg
+      if not settings.has_key?('Workflows')
+        settings['Workflows'] = {}
+      end
+      settings['Workflows'][id] = workflow_cfg
     end
 
     private
