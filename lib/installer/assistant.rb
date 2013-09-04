@@ -92,8 +92,9 @@ module Installer
       end
       begin
         workflow.questions.each do |question|
-          ask_workflow_question question
+          question.ask(workflow_cfg)
         end
+      end while not agree("\nDo you want to make any changes to your answers?(Y/N) ", true)
     end
 
     def ui_show_workflow

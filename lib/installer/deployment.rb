@@ -13,6 +13,14 @@ module Installer
       }
     end
 
+    def self.list_map
+      { :broker => :brokers,
+        :node => :nodes,
+        :mqserver => :mqservers,
+        :dbserver => :dbservers,
+      }
+    end
+
     def initialize config, deployment
       @config = config
       self.class.role_map.each_pair do |role, hkey|
@@ -62,6 +70,29 @@ module Installer
     def set_role_list role, list
       listname = "#{role.to_s}s".to_sym
       self.send("#{listname}=", list)
+    end
+
+    def find_host_instance_for_workflow host_instance_key=nil
+      all_host_instances = []
+      self.class.list_map.each_pair do |role,lsym|
+        list = self.send(lsym)
+        group = self.class.role_map[role].chop
+        for i in 0..(list.length - 1)
+          current_key = "#{role.to_s}::#{i.to_s}"
+          if not host_instance_key.nil? and host_instance_key == current_key
+            return list[i]
+          end
+          all_host_instances << { :text => "#{group} - #{list[i].summarize}", :value => current_key }
+        end
+      end
+      if not host_instance_key.nil?
+        return nil
+      end
+      all_host_instances
+    end
+
+    def list_host_instances_for_workflow
+      find_host_instance_for_workflow
     end
 
     def is_complete?

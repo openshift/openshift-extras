@@ -49,6 +49,33 @@ module Installer
       text.match VALID_IP_ADDR_RE or text.match VALID_HOSTNAME_RE
     end
 
+    def is_valid_remotehost? text
+      user = text.split('@')[0]
+      hostport = text.split('@')[1]
+      host = hostport.split(':')[0]
+      port = hostport.split(':')[1]
+      is_valid_username?(user) and is_valid_hostname_or_ip_addr?(host) and (port.nil? or is_valid_port_number?(port))
+    end
+
+    def is_valid_mongodbhost? text
+      hostportlist = []
+      if text.include?('@')
+        user = text.split('@')[0].split(':')[0]
+        return false if not is_valid_username?(user)
+        pass = text.split('@')[0].split(':')[1]
+        hostportlist = text.split('@')[1].split(',')
+      else
+        hostportlist = text.split(',')
+      end
+      hostportlist.each do |hostport|
+        host = hostport.split(':')[0]
+        return false if not is_valid_hostname_or_ip_addr?(host)
+        port = hostport.split(':')[1]
+        return false if not port.nil? and not is_valid_port_number?(port)
+      end
+      true
+    end
+
     def is_valid_port_number? text
       text.to_i > 0 and text.to_i <= 65535
     end
