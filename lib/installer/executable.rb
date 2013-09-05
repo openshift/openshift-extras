@@ -16,11 +16,11 @@ module Installer
       if exec_file.nil?
         raise Installer::WorkflowExecutableException, "Executable command '#{exec_string}' for workflow '#{workflow.id}' could not be found or is not executable."
       end
-      @command = exec_string
+      @command = expanded_exec
     end
 
-    def run
-      system command
+    def run workflow_cfg
+      system expand_workflow_variables(workflow_cfg)
       @status = $?.exitstatus
     end
 
@@ -39,6 +39,15 @@ module Installer
       work_string = exec_string.dup
       expand_map.each_pair do |k,v|
         work_string.sub!(/#{k}/, v)
+      end
+      work_string
+    end
+
+    def expand_workflow_variables workflow_cfg
+      work_string = command.dup
+      workflow_cfg.each_pair do |k,v|
+        qtag = "<q\:#{k}>"
+        work_string.sub!(/#{qtag}/, v)
       end
       work_string
     end

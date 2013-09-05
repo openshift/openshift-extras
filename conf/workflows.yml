@@ -12,9 +12,6 @@ Name: Remote system configuration
 Description: Install an OpenShift component on another system
 ID: remote_deploy
 Questions:
-  - Text: Which role do you want to deploy?
-    Variable: role
-    AnswerType: role
   - Text: Which host do you want to deploy?
     Variable: rolehost
     AnswerType: rolehost
@@ -43,11 +40,13 @@ Name: Puppet templates
 Description: Download Puppet templates
 ID: puppet_templates
 SkipDeploymentCheck: Y
+NonDeployment: Y
 Executable: <workflow_path>/puppet_info
 ---
 Name: Login info
 Description: See login information for this Origin VM
 ID: login_info
 SkipDeploymentCheck: Y
+NonDeployment: Y
 Executable: <workflow_path>/login_info
 

@@ -34,11 +34,17 @@ module Installer
     end
 
     def workflow_cfg_complete?
-      return false if workflow.nil? or workflow_cfg.nil? or workflow_cfg.empty?
-      workflow.questions.each do |q|
-        return false if not workflow_cfg.has_key?(q.id) or not q.valid_answer? workflow_cfg[q.id]
+      if workflow.nil? or workflow_cfg.nil? or workflow_cfg.empty?
+        return false
       end
-      return false is workflow.questions.length != workflow_cfg.keys.length
+      workflow.questions.each do |q|
+        if not workflow_cfg.has_key?(q.id) or not q.valid_answer? workflow_cfg[q.id]
+          return false
+        end
+      end
+      if workflow.questions.length != workflow_cfg.keys.length
+        return false
+      end
       true
     end
 
@@ -70,6 +76,8 @@ module Installer
       @workflow = Installer::Workflow.find(id)
       @workflow_cfg = config.get_workflow_cfg(id)
       ui_newpage
+
+      # Deployment check
       if workflow.check_deployment?
         if not deployment.is_complete?
           say translate :info_force_run_deployment_setup
@@ -82,19 +90,42 @@ module Installer
           ui_show_deployment
         end
       end
-      ui_edit_workflow
+
+      # Workflow questions
+      if workflow.questions.length > 0
+        ui_edit_workflow
+      end
+
+      # Workflow remote systems preflight
+      if workflow.remote_execute?
+        say "\nPreflight check: verifying remote system availability."
+        deployment.check_remote_ssh
+      end
+
+      unless workflow.non_deployment?
+        say "\nDeploying workflow '#{id}'."
+      end
+
+      # Hand it off to the workflow executable
+      workflow.executable.run workflow_cfg
       return 0
     end
 
     def ui_edit_workflow
       if not workflow_cfg.empty?
+        say "\nThese are your current settings for this workflow:"
         ui_show_workflow
       end
-      begin
+      asked_workflow = false
+      while not asked_workflow or agree("\nDo you want to make any changes to your answers?(Y/N) ", true)
         workflow.questions.each do |question|
+          puts "\n"
           question.ask(workflow_cfg)
         end
-      end while not agree("\nDo you want to make any changes to your answers?(Y/N) ", true)
+        asked_workflow = true
+      end
+      config.set_workflow_cfg workflow.id, workflow_cfg
+      config.save_to_disk!
     end
 
     def ui_show_workflow
@@ -104,6 +135,7 @@ module Installer
       workflow.questions.each do |question|
         if workflow_cfg.has_key?(question.id)
           say "#{question.id}: #{answer}"
+        end
       end
     end
 

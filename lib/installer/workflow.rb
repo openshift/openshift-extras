@@ -63,6 +63,13 @@ module Installer
       @description = config['Description']
       @remote_execute = (config.has_key?('RemoteDeployment') and config['RemoteDeployment'].downcase == 'y') ? true : false
       @check_deployment = (config.has_key?('SkipDeploymentCheck') and config['SkipDeploymentCheck'].downcase == 'y') ? false : true
+      if config.has_key?('NonDeployment') and config['NonDeployment'].downcase == 'y'
+        @non_deployment = true
+        @remote_execute = false
+        @check_deployment = false
+      else
+        @non_deployment = false
+      end
       @path = gem_root_dir + "/workflows/" + id
       @questions = config.has_key?('Questions') ? config['Questions'].map{ |q| Installer::Question.new(self, q) } : []
       @executable = Installer::Executable.new(self, config['Executable'])
@@ -74,6 +81,10 @@ module Installer
 
     def remote_execute?
       @remote_execute
+    end
+
+    def non_deployment?
+      @non_deployment
     end
   end
 end

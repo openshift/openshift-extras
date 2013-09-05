@@ -95,6 +95,9 @@ module Installer
       find_host_instance_for_workflow
     end
 
+    def check_remote_ssh
+    end
+
     def is_complete?
       [:brokers, :nodes, :mqservers, :dbservers].each do |group|
         list = self.send(group)

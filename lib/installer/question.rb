@@ -6,7 +6,7 @@ module Installer
 
     def initialize workflow, question_config
       @workflow = workflow
-      @id = question_config['ID']
+      @id = question_config['Variable']
       @text = question_config['Text']
       @type = question_config['AnswerType']
     end
@@ -14,7 +14,7 @@ module Installer
     def ask workflow_cfg
       if type == 'role'
         choose do |menu|
-          menu.prompt = text
+          menu.header = text
           Installer::Deployment.role_map.each_pair do |role,group|
             menu.choice(group.chop) { workflow_cfg[id] = role.to_s }
           end
@@ -22,7 +22,7 @@ module Installer
       elsif type == 'rolehost'
         deployment = workflow.config.get_deployment
         choose do |menu|
-          menu.prompt = text
+          menu.header = text
           deployment.list_host_instances_for_workflow.each do |item|
             menu.choice(item[:text]) { workflow_cfg[id] = item[:value] }
           end
@@ -43,7 +43,6 @@ module Installer
           q.validate = lambda { |p| is_valid_mongodbhost?(p) }
           q.responses[:not_valid] = "Provide a value in the form [username:password@]host1[:port1][,host2[:port2],...[,hostN[:portN]]]"
         }
-      end
       elsif type == 'Integer'
         workflow_cfg[id] = ask(text, Integer) { |q|
           if workflow_cfg.has_key?(id)
