@@ -134,7 +134,7 @@ module Installer
       puts "\n"
       workflow.questions.each do |question|
         if workflow_cfg.has_key?(question.id)
-          say "#{question.id}: #{answer}"
+          say "#{question.id}: #{workflow_cfg[question.id]}"
         end
       end
     end
