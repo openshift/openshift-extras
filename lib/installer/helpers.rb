@@ -83,6 +83,15 @@ module Installer
     def is_valid_username? text
       text.match VALID_USERNAME_RE
     end
+
+    def is_valid_role_list? text
+      text.split(',').each do |item|
+        if not item.strip == 'all' and not Installer::Deployment.roles.include?(item.strip)
+          return false
+        end
+      end
+      true
+    end
   end
 end
 

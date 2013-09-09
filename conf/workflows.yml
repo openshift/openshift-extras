@@ -27,14 +27,14 @@ Questions:
     AnswerType: role
 Executable: <workflow_path>/local_deploy <q:role>
 ---
-Name: Kickstart Demo
-Description: Install an OpenShift component using Kickstart
-ID: kickstart_demo
+Name: RHEL Demo
+Description: Install OpenShift Enterprise
+ID: rhel_demo
 Questions:
-  - Text: Which role do you want to deploy?
+  - Text: Which roles do you want to deploy?
     Variable: role
-    AnswerType: role
-Executable: <workflow_path>/openshift.ks
+    AnswerType: rolelist
+Executable: <workflow_path>/launcher.rb
 ---
 Name: Puppet templates
 Description: Download Puppet templates

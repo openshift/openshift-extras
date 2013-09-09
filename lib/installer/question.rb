@@ -1,4 +1,4 @@
-require 'highline/import'
+require 'highline'
 
 module Installer
   class Question
@@ -19,6 +19,16 @@ module Installer
             menu.choice(group.chop) { workflow_cfg[id] = role.to_s }
           end
         end
+      elsif type == 'rolelist'
+        legal_values = Installer::Deployment.roles.join(', ') + ', all'
+        qtext = [text, ' [', legal_values, ']'].join
+        workflow_cfg[id] = HighLine.ask(qtext) { |q|
+          if workflow_cfg.has_key?(id)
+            q.default = workflow_cfg[id]
+          end
+          q.validate = lambda { |p| is_valid_role_list?(p) }
+          q.responses[:not_valid] = "Provide a value or list of values from: #{legal_values}."
+        }
       elsif type == 'rolehost'
         deployment = workflow.config.get_deployment
         choose do |menu|
@@ -28,7 +38,7 @@ module Installer
           end
         end
       elsif type == 'remotehost'
-        workflow_cfg[id] = ask(text) { |q|
+        workflow_cfg[id] = HighLine.ask(text) { |q|
           if workflow_cfg.has_key?(id)
             q.default = workflow_cfg[id]
           end
@@ -36,7 +46,7 @@ module Installer
           q.responses[:not_valid] = "Provide a value in the form <username>@<hostname>[:<ssh_port>]"
         }
       elsif type == 'mongodbhost'
-        workflow_cfg[id] = ask(text) { |q|
+        workflow_cfg[id] = HighLine.ask(text) { |q|
           if workflow_cfg.has_key?(id)
             q.default = workflow_cfg[id]
           end
@@ -44,7 +54,7 @@ module Installer
           q.responses[:not_valid] = "Provide a value in the form [username:password@]host1[:port1][,host2[:port2],...[,hostN[:portN]]]"
         }
       elsif type == 'Integer'
-        workflow_cfg[id] = ask(text, Integer) { |q|
+        workflow_cfg[id] = HighLine.ask(text, Integer) { |q|
           if workflow_cfg.has_key?(id)
             q.default = workflow_cfg[id]
           end

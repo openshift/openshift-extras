@@ -1,3 +1,4 @@
+#!/bin/bash
 # This script configures a host system with OpenShift components. It may
 # be used either as a RHEL6 kickstart script, or the %post section may 
 # be extracted and run directly to install on top of an installed RHEL6
@@ -315,55 +316,6 @@
 #    hosts, just keep the keys from the image).
 
 
-#Begin Kickstart Script
-install
-text
-skipx
-
-# NB: Be sure to change the password before running this script.
-rootpw  --iscrypted $6$QgevUVWY7.dTjKz6$jugejKU4YTngbFpfNlqrPsiE4sLJSj/ahcfqK8fE5lO0jxDhvdg59Qjk9Qn3vNPAUTWXOp9mchQDy6EV9.XBW1
-
-lang en_US.UTF-8
-keyboard us
-timezone --utc America/New_York
-
-services --enabled=ypbind,ntpd,network,logwatch
-network --onboot yes --device eth0
-firewall --service=ssh
-authconfig --enableshadow --passalgo=sha512
-selinux --enforcing
-
-bootloader --location=mbr --driveorder=vda --append=" rhgb crashkernel=auto quiet console=ttyS0"
-
-clearpart --all --initlabel
-firstboot --disable
-reboot
-
-part /boot --fstype=ext4 --size=500
-part pv.253002 --grow --size=1
-volgroup vg_vm1 --pesize=4096 pv.253002
-logvol / --fstype=ext4 --name=lv_root --vgname=vg_vm1 --grow --size=1024 --maxsize=51200
-logvol swap --name=lv_swap --vgname=vg_vm1 --grow --size=2016 --maxsize=4032
-
-%packages
-@core
-@server-policy
-ntp
-git
-
-%post --log=/root/anaconda-post.log
-
-# During a kickstart you can tail the log file showing %post execution
-# by using the following command:
-#    tailf /mnt/sysimage/root/anaconda-post.log
-
-# You can use sed to extract just the %post section:
-#    sed -e '0,/^%post/d;/^%end/,$d'
-# Be sure to reboot after installation if using the %post this way.
-
-# Log the command invocations (and not merely output) in order to make
-# the log more useful.
-set -x
 
 
 ########################################################################
@@ -2125,7 +2077,7 @@ parse_cmdline
 set_defaults
 
 echo_installation_intentions
-configure_console_msg
+#configure_console_msg
 
 is_false "$CONF_NO_NTP" && synchronize_clock
 
@@ -2289,5 +2241,4 @@ node && broker && fix_broker_routing
 echo "Installation and configuration is complete;"
 echo "please reboot to start all services properly."
 
-%end
 

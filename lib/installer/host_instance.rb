@@ -10,6 +10,7 @@ module Installer
     end
 
     def initialize role, item={}
+      puts "ITEM: #{item.inspect}"
       @role = role
       self.class.attrs.each do |attr|
         self.send("#{attr}=", (item.has_key?(attr.to_s) ? item[attr.to_s] : nil))
@@ -17,7 +18,12 @@ module Installer
     end
 
     def to_hash
-      Hash[self.class.attrs.map{ |attr| self.send(attr).nil? ? [] : [attr.to_s, self.send(attr)] }]
+      output = {}
+      self.class.attrs.each do |attr|
+        next if self.send(attr).nil?
+        output[attr.to_s] = self.send(attr)
+      end
+      output
     end
 
     def summarize

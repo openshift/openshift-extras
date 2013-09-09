@@ -21,6 +21,10 @@ module Installer
       }
     end
 
+    def self.roles
+      @roles ||= self.role_map.keys.map{ |role| role.to_s }
+    end
+
     def initialize config, deployment
       @config = config
       self.class.role_map.each_pair do |role, hkey|
