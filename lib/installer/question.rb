@@ -8,11 +8,17 @@ module Installer
       @workflow = workflow
       @id = question_config['Variable']
       @text = question_config['Text']
-      @type = question_config['AnswerType']
+      @type = question_config['AnswerType'] || 'text'
     end
 
     def ask workflow_cfg
-      if type == 'role'
+      if type == 'text'
+        workflow_cfg[id] = HighLine.ask(text) { |q|
+          if workflow_cfg.has_key?(id)
+            q.default = workflow_cfg[id]
+          end
+        }
+      elsif type == 'role'
         choose do |menu|
           menu.header = text
           Installer::Deployment.role_map.each_pair do |role,group|

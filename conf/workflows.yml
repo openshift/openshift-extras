@@ -31,6 +31,9 @@ Name: RHEL Demo
 Description: Install OpenShift Enterprise
 ID: rhel_demo
 Questions:
+  - Text: What network domain will OpenShift be deployed in?
+    Variable: domain
+    AnswerType: text
   - Text: Which roles do you want to deploy?
     Variable: role
     AnswerType: rolelist
