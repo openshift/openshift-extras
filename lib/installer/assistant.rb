@@ -116,13 +116,11 @@ module Installer
         say "\nThese are your current settings for this workflow:"
         ui_show_workflow
       end
-      asked_workflow = false
-      while not asked_workflow or agree("\nDo you want to make any changes to your answers?(Y/N) ", true)
+      while workflow_cfg.empty? or agree("\nDo you want to make any changes to your answers?(Y/N) ", true)
         workflow.questions.each do |question|
           puts "\n"
           question.ask(workflow_cfg)
         end
-        asked_workflow = true
       end
       config.set_workflow_cfg workflow.id, workflow_cfg
       config.save_to_disk!
