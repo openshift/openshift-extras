@@ -5,6 +5,8 @@ sed -e '1i #!/bin/bash
 /^%end/ d
 ' $1 > $2
 
+sed -i -e 's/^parse_kernel_cmdline$/#&/' $2
+sed -i -e 's/^#parse_cmdline "\$@"$/parse_cmdline "\$@"/' $2
 sed -i -e 's/^\s*configure_console_msg$/#&/' $2
 
 chmod +x $2

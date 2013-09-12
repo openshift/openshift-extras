@@ -9,6 +9,8 @@ generic/openshift.sh: openshift.ks
 amazon/openshift-amz.sh: openshift.ks amazon/openshift-amz.sh.conf
 	sed -e '0,/^%post/d;/^%end/,$$d' openshift.ks > $@
 	sed -i -e 's/2012-10-22/2012-10-23/g' $@
+	sed -i -e 's/^\s*parse_kernel_cmdline$$/#&/' $@
+	sed -i -e 's/^#parse_cmdline "\$$@"$$/parse_cmdline "\$$@"/' $@
 	sed -i -e 's/^\s*configure_rhel_repo$$/#&/' $@
 	sed -i -e 's/^\s*configure_hostname$$/#&/' $@
 	sed -i -e 's/^\s*configure_console_msg$$/#&/' $@
