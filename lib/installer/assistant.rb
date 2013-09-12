@@ -13,24 +13,41 @@ module Installer
     def initialize config
       @config = config
       @deployment = config.get_deployment
-      @unattended = config.workflow.nil? ? false : true
+      @unattended = config.workflow_id.nil? ? false : true
     end
 
     def run
       if not unattended
         ui_welcome_screen
       else
+        # Check the Deployment
         unless deployment.is_complete?
           puts translate :exit_no_deployment
           return 1
         end
         puts translate :info_wait_config_validation
+        deployment.is_valid?(:full)
         begin
           deployment.is_valid?(:full)
         rescue Exception => msg
           say "\nThe deployment validity test returned an an error:\n#{msg.inspect}\nUnattended deployment terminated.\n"
+          return 1
         end
+
+        # Check the Workflow settings
+        puts translate(:info_config_is_valid)
+        @workflow = Installer::Workflow.find(config.workflow_id)
+        @workflow_cfg = config.get_workflow_cfg(config.workflow_id)
+        if not workflow_cfg_complete?
+          say translate :error_unattended_workflow
+          return 1
+        end
+        say translate :info_unattended_workflow_start
+
+        # Hand it off to the workflow executable
+        workflow.executable.run workflow_cfg
       end
+      0
     end
 
     def workflow_cfg_complete?
@@ -38,7 +55,7 @@ module Installer
         return false
       end
       workflow.questions.each do |q|
-        if not workflow_cfg.has_key?(q.id) or not q.valid_answer? workflow_cfg[q.id]
+        if not workflow_cfg.has_key?(q.id) or not q.valid? workflow_cfg[q.id]
           return false
         end
       end

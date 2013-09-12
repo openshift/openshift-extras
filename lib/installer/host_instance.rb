@@ -10,7 +10,6 @@ module Installer
     end
 
     def initialize role, item={}
-      puts "ITEM: #{item.inspect}"
       @role = role
       self.class.attrs.each do |attr|
         self.send("#{attr}=", (item.has_key?(attr.to_s) ? item[attr.to_s] : nil))

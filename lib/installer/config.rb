@@ -7,9 +7,9 @@ module Installer
     include Installer::Helpers
 
     attr_reader :default_dir, :default_file, :file_template
-    attr_accessor :file_path, :workflow
+    attr_accessor :file_path, :workflow_id
 
-    def initialize file_path=nil, workflow=nil
+    def initialize file_path=nil, workflow_id=nil
       @default_dir = ENV['HOME'] + '/.openshift'
       @default_file = '/oo-install-cfg.yml'
       @file_template = gem_root_dir + '/conf/oo-install-cfg.yml.example'
@@ -21,7 +21,7 @@ module Installer
       else
         self.file_path = init_file_path
       end
-      self.workflow = workflow
+      self.workflow_id = workflow_id
     end
 
     def settings
