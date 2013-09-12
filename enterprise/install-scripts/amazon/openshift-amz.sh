@@ -1697,18 +1697,12 @@ configure_console_msg()
 
 ########################################################################
 
-#
-# Parse the kernel command-line, define variables with the parameters
-# specified on it, and define functions broker() and node(), which
-# return true or false as appropriate based on whether we are
-# configuring the host as a broker or as a node.
-#
-
-# Parse /proc/cmdline so that from, e.g., "foo=bar baz" we get
-# CONF_FOO=bar and CONF_BAZ=true in the environment.
-parse_kernel_cmdline()
+# Given a list of arguments, define variables with the parameters
+# specified on it so that from, e.g., "foo=bar baz" we get CONF_FOO=bar
+# and CONF_BAZ=true in the environment.
+parse_args()
 {
-  for word in $(cat /proc/cmdline)
+  for word in "$@"
   do
     key="${word%%\=*}"
     case "$word" in
@@ -1717,6 +1711,12 @@ parse_kernel_cmdline()
     esac
     eval "CONF_${key^^}"'="$val"'
   done
+}
+
+# Parse the kernel command-line using parse_args.
+parse_kernel_cmdline()
+{
+  parse_args $(cat /proc/cmdline)
 }
 
 is_true()
