@@ -1021,8 +1021,8 @@ configure_sshd_on_node()
   echo 'AcceptEnv GIT_SSH' >> /etc/ssh/sshd_config
 
   # Up the limits on the number of connections to a given node.
-  perl -p -i -e "s/^#MaxSessions .*$/MaxSessions 40/" /etc/ssh/sshd_config
-  perl -p -i -e "s/^#MaxStartups .*$/MaxStartups 40/" /etc/ssh/sshd_config
+  sed -i -e "s/^#MaxSessions .*$/MaxSessions 40/" /etc/ssh/sshd_config
+  sed -i -e "s/^#MaxStartups .*$/MaxStartups 40/" /etc/ssh/sshd_config
 }
 
 # Configure MongoDB datastore.
@@ -1032,7 +1032,7 @@ configure_datastore()
   yum_install_or_exit -y mongodb-server
 
   # Require authentication.
-  perl -p -i -e "s/^#auth = .*$/auth = true/" /etc/mongodb.conf
+  sed -i -e "s/^#auth = .*$/auth = true/" /etc/mongodb.conf
 
   # Use a smaller default size for databases.
   if [ "x`fgrep smallfiles=true /etc/mongodb.conf`x" != "xsmallfiles=truex" ]
@@ -1054,7 +1054,7 @@ configure_datastore()
     lokkit --nostart --port=27017:tcp
 
     echo 'Configuring mongod to listen on external interfaces...'
-    perl -p -i -e "s/^bind_ip = .*$/bind_ip = 0.0.0.0/" /etc/mongodb.conf
+    sed -i -e "s/^bind_ip = .*$/bind_ip = 0.0.0.0/" /etc/mongodb.conf
   fi
 
   # Configure mongod to start on boot.
