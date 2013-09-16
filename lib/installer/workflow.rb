@@ -25,7 +25,7 @@ module Installer
 
       private
       def file_path
-        @file_path ||= gem_root_dir + '/conf/workflows.yml'
+        @file_path ||= gem_root_dir + '/conf/' + workflow_cfg_file
       end
 
       def file_cache
