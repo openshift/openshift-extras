@@ -58,7 +58,7 @@ describe Installer::Workflow do
       test_yaml.has_key?('ExecuteOnTarget').should be_false
       subject_obj = Installer::Workflow.find('test1')
       subject_obj.check_deployment?.should be_true
-      subject_obj.remote_execute?.should be_true
+      subject_obj.remote_execute?.should be_false
     end
   end
 end
