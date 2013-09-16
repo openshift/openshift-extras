@@ -27,18 +27,6 @@ Questions:
     AnswerType: role
 Executable: <workflow_path>/local_deploy <q:role>
 ---
-Name: RHEL Demo
-Description: Install OpenShift Enterprise
-ID: rhel_demo
-Questions:
-  - Text: What network domain will OpenShift be deployed in?
-    Variable: domain
-    AnswerType: text
-  - Text: Which roles do you want to deploy?
-    Variable: role
-    AnswerType: rolelist
-Executable: <workflow_path>/launcher.rb
----
 Name: Puppet templates
 Description: Download Puppet templates
 ID: puppet_templates
@@ -52,4 +40,3 @@ ID: login_info
 SkipDeploymentCheck: Y
 NonDeployment: Y
 Executable: <workflow_path>/login_info
-
