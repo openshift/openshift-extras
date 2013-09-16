@@ -1,0 +1,25 @@
+---
+Name: OpenShift Installer Configuration
+Vendor: OpenShift Origin Community
+Description: This is the configuration file for the OpenShift Installer.
+Version: 0.0.1
+Deployment:
+  Brokers:
+    - host: localhost
+      port: 443
+      user: admin
+      messaging_port: 61616
+  MQServers:
+    - host: localhost
+      user: admin
+      messaging_port: 61616
+  DBServers:
+    - host: localhost
+      port: 27017
+      user: admin
+      db_user: admin
+  Nodes:
+    - host: localhost
+      user: admin
+      messaging_port: 61616
+
