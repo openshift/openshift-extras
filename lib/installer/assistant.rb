@@ -165,6 +165,13 @@ module Installer
           ui_modify_role_list role
         end
       end
+      unless deployment.dns.keys.length > 0
+        say "\nYou must set some DNS-specific values."
+        ui_modify_dns
+      end
+      while agree("\nDo you want to change the DNS settings?(Y/N) ", true)
+        ui_modify_dns
+      end
     end
 
     def ui_show_deployment
@@ -173,6 +180,7 @@ module Installer
       Installer::Deployment.role_map.each_pair do |role,hkey|
         list_role role
       end
+      list_dns
     end
 
     def ui_modify_role_list role
@@ -195,6 +203,20 @@ module Installer
         ui_edit_host_instance Installer::HostInstance.new(role)
       end
     end
+
+    def ui_modify_dns
+      new_dns = {}
+      new_dns['app_domain'] = ask('What domain will be used for hosted applications?') { |q|
+        if deployment.dns.has_key?('app_domain')
+          q.default = deployment.dns['app_domain']
+        end
+        q.validate = lambda { |p| is_valid_domain?(p) }
+        q.responses[:not_valid] = "Enter a valid domain"
+      }
+      deployment.set_dns new_dns
+      deployment.save_to_disk!
+    end
+
 
     def ui_edit_host_instance host_instance, role_count=0, index=nil
       rolename = Installer::Deployment.role_map[host_instance.role].chop
@@ -283,6 +305,15 @@ module Installer
       end
     end
 
+    def list_dns
+      puts "\nDNS Settings\n"
+      if deployment.dns.has_key?('app_domain')
+        puts "  * App Domain: #{deployment.dns['app_domain']}"
+      else
+        puts "  [Not set]"
+      end
+    end
+
     def list_role role
       puts "\n" + Installer::Deployment.role_map[role] + "\n"
       list = deployment.get_role_list(role)
@@ -291,7 +322,7 @@ module Installer
           list_host_instance host_instance
         end
       else
-        puts "\t[None]\n"
+        puts "  [None]\n"
       end
       list.length
     end

@@ -22,4 +22,5 @@ Deployment:
     - host: localhost
       user: admin
       messaging_port: 61616
-
+  DNS:
+    app_domain: example.com

@@ -2,8 +2,10 @@ require 'installer/helpers'
 
 module Installer
   class Deployment
+    include Installer::Helpers
+
     attr_reader :config
-    attr_accessor :brokers, :nodes, :mqservers, :dbservers
+    attr_accessor :brokers, :nodes, :mqservers, :dbservers, :dns
 
     def self.role_map
       { :broker => 'Brokers',
@@ -30,6 +32,7 @@ module Installer
       self.class.role_map.each_pair do |role, hkey|
         set_role_list role, (deployment.has_key?(hkey) ? deployment[hkey].map{ |i| Installer::HostInstance.new(role, i) } : [])
       end
+      set_dns (deployment.has_key?('dns') ? deployment['dns'] : {})
     end
 
     def add_host_instance! host_instance
@@ -58,6 +61,7 @@ module Installer
         'Nodes' => nodes.map{ |n| n.to_hash },
         'MQServers' => mqservers.map{ |m| m.to_hash },
         'DBServers' => dbservers.map{ |d| d.to_hash },
+        'DNS' => dns,
       }
     end
 
@@ -74,6 +78,10 @@ module Installer
     def set_role_list role, list
       listname = "#{role.to_s}s".to_sym
       self.send("#{listname}=", list)
+    end
+
+    def set_dns dns
+      @dns = dns
     end
 
     def find_host_instance_for_workflow host_instance_key=nil
@@ -109,10 +117,14 @@ module Installer
           return false
         end
       end
+      if not dns.has_key?('app_domain')
+        return false
+      end
       true
     end
 
     def is_valid?(check=:basic)
+      # Check the host lists
       [:brokers, :nodes, :mqservers, :dbservers].each do |group|
         list = self.send(group)
         role = group.to_s.chop.to_sym
@@ -124,6 +136,11 @@ module Installer
           host_instance.is_valid?(check)
         end
       end
+      # Check the DNS setup
+      if not dns.has_key?('app_domain') or not is_valid_domain?(dns['app_domain'])
+        return false if check == :basic
+      end
+      true
     end
   end
 end
