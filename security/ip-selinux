@@ -1,0 +1,77 @@
+#!/usr/bin/env oo-ruby
+
+# This script will lock down the host so only specific users are allowed to bind to specific IP addresses
+# It can be called with:
+#
+# [ $(semanage node -l | grep -c 255.255.255.128) -lt 1000 ] && ./rhc-ip-prep.sh
+
+# lock down the localhost ip addresses
+# The maximum UID our allocation mechanism scales to is 262143
+
+require 'tempfile'
+require 'rubygems'
+require 'openshift-origin-common'
+require 'openshift-origin-node/utils/shell_exec'
+require 'openshift-origin-node/utils/selinux'
+require 'openshift-origin-node/utils/node_logger'
+
+
+min_uid = 500
+max_uid = 16000
+
+# Deterministically constructs a network and netmask for the given UID
+#
+# The global user IP range begins at 0x7F000000.
+#
+# Returns an IP network and netmask in dotted-quad notation.
+def get_ip_network(uid)
+  raise "Invalid UID specified" unless uid && uid.is_a?(Integer)
+
+  if uid.to_i < 0 || uid.to_i > 262143
+    raise "User uid #{@uid} is outside the working range 0-262143"
+  end
+  # Generate the network (32-bit unsigned) for the user's range
+  ip = 0x7F000000 + (uid.to_i << 7)
+
+  # Return the network/netmask in dotted-quad notation
+  [ "#{ip >> 24}.#{ip >> 16 & 0xFF}.#{ip >> 8 & 0xFF}.#{ip & 0xFF}", "255.255.255.128" ]
+end
+
+# The mcs label generator is too expensive to keep entering with
+# different UIDs.
+
+exitstatus = 0
+reader, writer = IO.pipe
+cpid = Process.fork
+if cpid.nil?
+  out = err = ""
+  rc = 255
+  writer.close
+  begin
+    Process.setrlimit(Process::RLIMIT_NOFILE , 131070)
+    cmd = "semanage -S targeted -i -"
+    out, err, rc = OpenShift::Runtime::Utils::oo_spawn(cmd, {:chdir=> '/', :in => reader})
+  rescue => e
+    err << "An exception ocurred: #{e.inspect}"
+    rc = 255
+  end
+  $stdout.write(out)
+  $stderr.write(err)
+  $stdout.flush
+  $stderr.flush
+  exit!(rc)
+end
+
+reader.close
+OpenShift::Runtime::Utils::SELinux.mcs_labels.each do |uid, mcs_label|
+  break if uid > max_uid
+  next  if uid < min_uid
+  network, netmask = get_ip_network(uid)
+  writer.puts("node -a -t node_t -r #{mcs_label} -M #{netmask} -p ipv4 #{network}")
+end
+writer.puts("node -a -t node_t -r s0:c1023 -M  255.0.0.0 -p ipv4 127.0.0.0")
+writer.puts("node -a -t node_t -r s0:c1023 -M  255.0.0.0 -p ipv4 10.0.0.0")
+writer.puts("node -a -t node_t -r s0:c1023 -M  0.0.0.0 -p ipv4 0.0.0.0")
+writer.close
+Process.waitpid(cpid, 0)
+exit($?.exitstatus)
