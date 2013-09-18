@@ -32,7 +32,7 @@ module Installer
       self.class.role_map.each_pair do |role, hkey|
         set_role_list role, (deployment.has_key?(hkey) ? deployment[hkey].map{ |i| Installer::HostInstance.new(role, i) } : [])
       end
-      set_dns (deployment.has_key?('dns') ? deployment['dns'] : {})
+      set_dns (deployment.has_key?('DNS') ? deployment['DNS'] : {})
     end
 
     def add_host_instance! host_instance
@@ -128,10 +128,17 @@ module Installer
       [:brokers, :nodes, :mqservers, :dbservers].each do |group|
         list = self.send(group)
         role = group.to_s.chop.to_sym
+        seen_hosts = []
         list.each do |host_instance|
           if host_instance.role != role
             return false if check == :basic
             raise Installer::HostInstanceRoleIncompatibleException.new("Found a host instance of type '#{host_instance.role.to_s}' in the #{group.to_s} list.")
+          end
+          if seen_hosts.include?(host_instance.host)
+            return false if check == :basic
+            raise Installer::HostInstanceDuplicateTargetHostException.new("Multiple host instances in the #{group.to_s} list have the same target host or IP address")
+          else
+            seen_hosts << host_instance.host
           end
           host_instance.is_valid?(check)
         end
