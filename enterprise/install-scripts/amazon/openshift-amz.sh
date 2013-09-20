@@ -762,15 +762,127 @@ install_datastore_pkgs()
   yum_install_or_exit -y mongodb-server
 }
 
+# The init script lies to us as of version 2.0.2-1.el6_3: The start 
+# and restart actions return before the daemon is ready to accept
+# connections (appears to take time to initialize the journal). Thus
+# we need the following to wait until the daemon is really ready.
+wait_for_mongod()
+{
+  echo "Waiting for MongoDB to start ($(date +%H:%M:%S))..."
+  while :
+  do
+    echo exit | mongo && break
+    sleep 5
+  done
+  echo "MongoDB is ready! ($(date +%H:%M:%S))"
+}
+
+# $1 = commands
+execute_mongodb()
+{
+  echo "Running commands on MongoDB:"
+  echo "---"
+  echo "$1"
+  echo "---"
+
+  echo "$1" | mongo
+}
+
+# This configuration step should only be performed if MongoDB is not
+# replicated or if this host is the primary in a replicated setup.
+configure_datastore_add_users()
+{
+  wait_for_mongod
+
+  execute_mongodb "$(
+    if [[ ${datastore_replicants} =~ , ]]
+    then
+      echo 'while (rs.isMaster().primary == null) { sleep(500); }'
+    fi
+    if is_false "$CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST"
+    then
+      # Add an administrative user.
+      echo 'use admin'
+      echo "db.addUser('${mongodb_admin_user}', '${mongodb_admin_password}')"
+      echo "db.auth('${mongodb_admin_user}', '${mongodb_admin_password}')"
+    fi
+
+    # Add the user that the broker will use.
+    echo "use ${mongodb_name}"
+    echo "db.addUser('${mongodb_broker_user}', '${mongodb_broker_password}')"
+  )"
+}
+
+# This configuration step should only be performed on the primary in
+# a replicated setup.
+configure_datastore_add_replicants()
+{
+  wait_for_mongod
+
+  # Configure the replica set.
+  execute_mongodb "$(
+    echo 'rs.initiate({'
+    echo "  '_id' : '${mongodb_replset}',"
+    echo "  'members': ["
+    i=0
+    for replicant in ${datastore_replicants//,/ }
+    do
+      if [[ $i -ne 0 ]]
+      then
+        echo ','
+      fi
+      # Because of a bug in Bash, we need to do weird quoting around the comma
+      # to inhibit brace expansion.
+      # https://bugzilla.redhat.com/show_bug.cgi?id=1012015
+      echo -n "    {'_id' : ${i}"," 'host' : '${replicant}'}"
+      ((++i))
+    done
+    echo
+    echo '  ]'
+    echo '})'
+  )"
+
+}
+
+# $1 = setting name
+# $2 = value
+set_mongodb()
+{
+  if ! grep -q "^\\s*$1\\s*=\\s*$2" /etc/mongodb.conf
+  then
+    sed -i -e "s/^\\s*$1 = /#&/" /etc/mongodb.conf
+    echo "$1 = $2" >> /etc/mongodb.conf
+  fi
+}
+
 configure_datastore()
 {
   # Require authentication.
-  sed -i -e "s/^#auth = .*$/auth = true/" /etc/mongodb.conf
+  set_mongodb auth true
 
   # Use a smaller default size for databases.
-  if [ "x`fgrep smallfiles=true /etc/mongodb.conf`x" != "xsmallfiles=truex" ]
+  set_mongodb smallfiles true
+
+  if [[ ${datastore_replicants} =~ , ]]
   then
-    echo 'smallfiles=true' >> /etc/mongodb.conf
+    # This mongod will be part of a replicated setup.
+
+    # Enable the REST API.
+    set_mongodb rest true
+
+    # Enable journaling for writes.
+    set_mongodb journal true
+
+    # Enable replication.
+    set_mongodb replSet "${mongodb_replset}"
+
+    # Configure a key for the replica set.
+    set_mongodb keyFile /etc/mongodb.keyfile
+
+    rm -f /etc/mongodb.keyfile
+    echo "${mongodb_key}" > /etc/mongodb.keyfile
+    chown -v mongodb.mongodb /etc/mongodb.keyfile
+    chmod -v 400 /etc/mongodb.keyfile
   fi
 
   # Iff mongod is running on a separate host from the broker, open up
@@ -796,36 +908,10 @@ configure_datastore()
   # Start mongod so we can perform some administration now.
   service mongod start
 
-  # The init script lies to us as of version 2.0.2-1.el6_3: The start 
-  # and restart actions return before the daemon is ready to accept
-  # connections (appears to take time to initialize the journal). Thus
-  # we need the following to wait until the daemon is really ready.
-  echo "Waiting for MongoDB to start ($(date +%H:%M:%S))..."
-  while :
-  do
-    echo exit | mongo && break
-    sleep 5
-  done
-  echo "MongoDB is ready! ($(date +%H:%M:%S))"
-
-  if is_false "$CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST"
+  if ! [[ ${datastore_replicants} =~ , ]]
   then
-    # Add an administrative user and a user that the broker will use.
-    mongo <<EOF
-use admin
-db.addUser("${mongodb_admin_user}", "${mongodb_admin_password}")
-
-db.auth("${mongodb_admin_user}", "${mongodb_admin_password}")
-
-use ${mongodb_name}
-db.addUser("${mongodb_broker_user}", "${mongodb_broker_password}")
-EOF
-  else
-    # Add a user that the broker will use.
-    mongo <<EOF
-use ${mongodb_name}
-db.addUser("${mongodb_broker_user}", "${mongodb_broker_password}")
-EOF
+    # This mongod will _not_ be part of a replicated setup.
+    configure_datastore_add_users
   fi
 }
 
@@ -1353,7 +1439,7 @@ configure_controller()
   if ! datastore
   then
     #mongo not installed locally, so point to given hostname
-    sed -i -e "s/^MONGO_HOST_PORT=.*$/MONGO_HOST_PORT=\"${datastore_hostname}:27017\"/" /etc/openshift/broker.conf
+    sed -i -e "s/^MONGO_HOST_PORT=.*$/MONGO_HOST_PORT=\"${datastore_replicants}\"/" /etc/openshift/broker.conf
   fi
 
   # configure MongoDB access
@@ -1866,6 +1952,14 @@ set_defaults()
   # Generate a random session secret for console sessions.
   broker && console_session_secret="${CONF_CONSOLE_SESSION_SECRET:-${randomized}}"
 
+  # If no list of replicants is provided, assume there is only one
+  # datastore host.
+  datastore_replicants="${CONF_DATASTORE_REPLICANTS:-$datastore_hostname:27017}"
+
+  # For each replicant that does not have an explicit port number
+  # specified, append :27017 to its host name.
+  datastore_replicants="$(echo "${datastore_replicants}" | sed -e 's/\([^:,]\+\)\(,\|$\)/\1:27017\2/g')"
+
   # Set default passwords
   #
   #   This is the admin password for the ActiveMQ admin console, which 
@@ -1892,6 +1986,13 @@ set_defaults()
   #   values.
   mongodb_broker_user="${CONF_MONGODB_BROKER_USER:-openshift}"
   mongodb_broker_password="${CONF_MONGODB_BROKER_PASSWORD:-${CONF_MONGODB_PASSWORD:-mongopass}}"
+
+  #   In replicated setup, this is the key that slaves will use to
+  #   authenticate with the master.
+  mongodb_key="${CONF_MONGODB_KEY:-OSEnterprise}"
+
+  #   In replicated setup, this is the name of the replica set.
+  mongodb_replset="${CONF_MONGODB_REPLSET:-ose}"
 
   #   This is the name of the database in MongoDB in which the broker
   #   will store data.
