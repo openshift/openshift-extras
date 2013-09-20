@@ -861,68 +861,6 @@ enable_services_on_broker()
   chown apache:root /var/log/mcollective-client.log
 }
 
-
-# Configure mcollective on the broker to use qpid.
-configure_mcollective_for_qpid_on_broker()
-{
-  yum_install_or_exit -y mcollective-client
-
-  cat <<EOF > /etc/mcollective/client.cfg
-topicprefix = /topic/
-main_collective = mcollective
-collectives = mcollective
-libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
-loglevel = debug
-logfile = /var/log/mcollective-client.log
-
-# Plugins
-securityprovider = psk
-plugin.psk = unset
-connector = qpid
-plugin.qpid.host = ${broker_hostname}
-plugin.qpid.secure = false
-plugin.qpid.timeout = 5
-
-# Facts
-factsource = yaml
-plugin.yaml = /etc/mcollective/facts.yaml
-EOF
-
-}
-
-
-# Configure mcollective on the broker to use qpid.
-configure_mcollective_for_qpid_on_node()
-{
-  yum_install_or_exit -y mcollective openshift-origin-msg-node-mcollective
-
-  cat <<EOF > /etc/mcollective/server.cfg
-topicprefix = /topic/
-main_collective = mcollective
-collectives = mcollective
-libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
-logfile = /var/log/mcollective.log
-loglevel = debug
-daemonize = 1
-direct_addressing = n
-
-# Plugins
-securityprovider = psk
-plugin.psk = unset
-connector = qpid
-plugin.qpid.host = ${broker_hostname}
-plugin.qpid.secure = false
-plugin.qpid.timeout = 5
-
-# Facts
-factsource = yaml
-plugin.yaml = /etc/mcollective/facts.yaml
-EOF
-
-  chkconfig mcollective on
-}
-
-
 # Configure mcollective on the broker to use ActiveMQ.
 configure_mcollective_for_activemq_on_broker()
 {
@@ -1194,25 +1132,6 @@ EOF
   chkconfig activemq on
 }
 
-
-# Configure qpid. Deprecated for ActiveMQ.
-configure_qpid()
-{
-  if [[ "x`fgrep auth= /etc/qpidd.conf`" == xauth* ]]
-  then
-    sed -i -e 's/auth=yes/auth=no/' /etc/qpidd.conf
-  else
-    echo "auth=no" >> /etc/qpidd.conf
-  fi
-
-  # Allow connections to qpidd.
-  lokkit --nostart --port=5672:tcp
-
-  # Configure qpidd to start on boot.
-  chkconfig qpidd on
-}
-
-
 # Configure BIND.
 configure_named()
 {
@@ -1423,49 +1342,6 @@ configure_controller()
 configure_remote_user_auth_plugin()
 {
   cp /etc/openshift/plugins.d/openshift-origin-auth-remote-user.conf{.example,}
-}
-
-# Configure the broker to use the MongoDB-based authentication plugin.
-#
-# NB: It is assumed that configure_datastore has previously been run on
-# this host to install and configure MongoDB.
-configure_mongo_auth_plugin()
-{
-  cp /etc/openshift/plugins.d/openshift-origin-auth-mongo.conf{.example,}
-
-  if ! datastore
-  then
-    # MongoDB is running on a remote host, so we must modify the
-    # plug-in configuration to point it to that host.
-    sed -i -e "s/^MONGO_HOST_PORT=.*$/MONGO_HOST_PORT=\"${datastore_hostname}:27017\"/" /etc/openshift/plugins.d/openshift-origin-auth-mongo.conf
-  fi
-
-  # We must specify the --host, --username, and --password options iff the
-  # datastore is being installed on the current host.
-  if datastore
-  then
-    mongo_opts=""
-  else
-    mongo_opts="--host ${datastore_hostname} --username openshift --password mooo"
-  fi
-
-  # The init script is broken as of version 2.0.2-1.el6_3: The start 
-  # and restart actions return before the daemon is ready to accept
-  # connections (it appears to take time to initialize the journal).
-  # Thus we need the following hack to wait until the daemon is ready.
-  echo "Waiting for MongoDB to start ($(date +%H:%M:%S))..."
-  while :
-  do
-    echo exit | mongo $mongo_opts && break
-    sleep 5
-  done
-  echo "MongoDB is ready! ($(date +%H:%M:%S))"
-
-  hashed_password="$(printf 'admin' | md5sum -b | cut -d' ' -f1)"
-  hashed_salted_password="$(printf '%s' "$hashed_password$broker_auth_salt" | md5sum | cut -d' ' -f1)"
-
-  # Add user "admin" with password "admin" for oo-register-user.
-  mongo $mongodb_name $mongo_opts --eval 'db.auth_user.update({"_id":"admin"}, {"_id":"admin","user":"admin","password":"'"$hashed_salted_password"'"}, true)'
 }
 
 configure_messaging_plugin()
@@ -2027,13 +1903,10 @@ configure_all()
 
   datastore && configure_datastore
 
-  #broker && configure_qpid
   activemq && configure_activemq
 
-  #broker && configure_mcollective_for_qpid_on_broker
   broker && configure_mcollective_for_activemq_on_broker
 
-  #node && configure_mcollective_for_qpid_on_node
   node && configure_mcollective_for_activemq_on_node
 
   broker && install_broker_pkgs
@@ -2058,7 +1931,6 @@ configure_all()
   broker && configure_controller
   broker && configure_remote_user_auth_plugin
   broker && configure_access_keys_on_broker
-  #broker && configure_mongo_auth_plugin
   broker && configure_messaging_plugin
   broker && configure_dns_plugin
   broker && configure_httpd_auth
