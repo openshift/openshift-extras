@@ -107,7 +107,19 @@ module Installer
       find_host_instance_for_workflow
     end
 
+    # Expectations: this method will attempt to connect to the remote hosts via SSH
+    # It notes if the remote system asks for a password.
     def check_remote_ssh
+      failed_hosts = []
+      by_target_host.each_pair do |host,instance_list|
+        user = instance_list[0].user
+        puts "\nChecking connection to #{host} with user #{user}...\n"
+        success = system("ssh -oPasswordAuthentication=no -t -l #{user} #{host} 'sudo -n hostname'")
+        if not success
+          failed_hosts << "#{host} (user: #{user})"
+        end
+      end
+      failed_hosts
     end
 
     def is_complete?
@@ -148,6 +160,20 @@ module Installer
         return false if check == :basic
       end
       true
+    end
+
+    # Return the host instance elements keyed by target host
+    def by_target_host
+      by_target_host = {}
+      self.class.list_map.each_pair do |role,list|
+        self.send(list).each do |host_instance|
+          if not by_target_host.has_key?(host_instance.host)
+            by_target_host[host_instance.host] = []
+          end
+          by_target_host[host_instance.host] << host_instance
+        end
+      end
+      by_target_host
     end
   end
 end
