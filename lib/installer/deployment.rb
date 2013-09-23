@@ -32,7 +32,7 @@ module Installer
       self.class.role_map.each_pair do |role, hkey|
         set_role_list role, (deployment.has_key?(hkey) ? deployment[hkey].map{ |i| Installer::HostInstance.new(role, i) } : [])
       end
-      set_dns (deployment.has_key?('dns') ? deployment['dns'] : {})
+      set_dns (deployment.has_key?('DNS') ? deployment['DNS'] : {})
     end
 
     def add_host_instance! host_instance
@@ -107,7 +107,19 @@ module Installer
       find_host_instance_for_workflow
     end
 
+    # Expectations: this method will attempt to connect to the remote hosts via SSH
+    # It notes if the remote system asks for a password.
     def check_remote_ssh
+      failed_hosts = []
+      by_target_host.each_pair do |host,instance_list|
+        user = instance_list[0].user
+        puts "\nChecking connection to #{host} with user #{user}...\n"
+        success = system("ssh -oPasswordAuthentication=no -t -l #{user} #{host} 'sudo -n hostname'")
+        if not success
+          failed_hosts << "#{host} (user: #{user})"
+        end
+      end
+      failed_hosts
     end
 
     def is_complete?
@@ -128,10 +140,17 @@ module Installer
       [:brokers, :nodes, :mqservers, :dbservers].each do |group|
         list = self.send(group)
         role = group.to_s.chop.to_sym
+        seen_hosts = []
         list.each do |host_instance|
           if host_instance.role != role
             return false if check == :basic
             raise Installer::HostInstanceRoleIncompatibleException.new("Found a host instance of type '#{host_instance.role.to_s}' in the #{group.to_s} list.")
+          end
+          if seen_hosts.include?(host_instance.host)
+            return false if check == :basic
+            raise Installer::HostInstanceDuplicateTargetHostException.new("Multiple host instances in the #{group.to_s} list have the same target host or IP address")
+          else
+            seen_hosts << host_instance.host
           end
           host_instance.is_valid?(check)
         end
@@ -141,6 +160,20 @@ module Installer
         return false if check == :basic
       end
       true
+    end
+
+    # Return the host instance elements keyed by target host
+    def by_target_host
+      by_target_host = {}
+      self.class.list_map.each_pair do |role,list|
+        self.send(list).each do |host_instance|
+          if not by_target_host.has_key?(host_instance.host)
+            by_target_host[host_instance.host] = []
+          end
+          by_target_host[host_instance.host] << host_instance
+        end
+      end
+      by_target_host
     end
   end
 end

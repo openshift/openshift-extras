@@ -39,9 +39,22 @@ module Installer
         @workflow = Installer::Workflow.find(config.workflow_id)
         @workflow_cfg = config.get_workflow_cfg(config.workflow_id)
         if not workflow_cfg_complete?
-          say translate :error_unattended_workflow
+          say translate :error_unattended_workflow_cfg
+          say translate :unattended_not_possible
           return 1
         end
+
+        # Reach out to the remote hosts
+        if workflow.remote_execute?
+          failed_hosts = deployment.check_remote_ssh
+          if not failed_hosts.empty?
+            say translate :error_unattended_workflow_remote
+            puts "  * " + failed_hosts.join("\n  * ") + "\n"
+            say translate :unattended_not_possible
+            return 1
+          end
+        end
+
         say translate :info_unattended_workflow_start
 
         # Hand it off to the workflow executable
@@ -51,7 +64,7 @@ module Installer
     end
 
     def workflow_cfg_complete?
-      if workflow.nil? or workflow_cfg.nil? or workflow_cfg.empty?
+      if workflow.nil? or (workflow.questions.length > 0 and (workflow_cfg.nil? or workflow_cfg.empty?))
         return false
       end
       workflow.questions.each do |q|
@@ -116,7 +129,18 @@ module Installer
       # Workflow remote systems preflight
       if workflow.remote_execute?
         say "\nPreflight check: verifying remote system availability."
-        deployment.check_remote_ssh
+        failed_hosts = deployment.check_remote_ssh
+        if not failed_hosts.empty?
+          say "\n" + translate(:warning_ssh_issues)
+          failed_hosts.each do |host_info|
+            puts "  * #{host_info}"
+          end
+          say "\n" + translate(:unattended_not_possible)
+          if not agree("Do you want to proceed anyway?(Y/N) ", true)
+            say "\nExiting."
+            exit
+          end
+        end
       end
 
       unless workflow.non_deployment?
