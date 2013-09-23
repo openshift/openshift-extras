@@ -24,9 +24,6 @@ set -x
 # hardware clock with that.
 synchronize_clock()
 {
-  # Install ntp and ntpdate because they may not be present in a RHEL
-  # minimal install.
-  yum install -y ntp ntpdate
 
   # Synchronize the system clock using NTP.
   ntpdate clock.redhat.com
@@ -38,6 +35,7 @@ synchronize_clock()
 
 configure_repos()
 {
+  echo "OpenShift: Begin configuring repos."
   # Determine which channels we need and define corresponding predicate
   # functions.
 
@@ -84,6 +82,12 @@ configure_repos()
       configure_rhsm_channels
       ;;
   esac
+
+  # Install yum-plugin-priorities
+  yum clean all
+  echo "Installing yum-plugin-priorities; if something goes wrong here, check your install source."
+  yum install -y yum-plugin-priorities || abort_install
+  echo "OpenShift: Completed configuring repos."
 }
 
 configure_yum_repos()
@@ -393,20 +397,27 @@ configure_rhsm_channels()
    fi
 }
 
+abort_install()
+{
+  # don't change this; could be used as an automation cue.
+  echo "Aborting OpenShift Installation."
+  exit 1
+}
+
 yum_install_or_exit()
 {
   yum install $*
   if [ $? -ne 0 ]
   then
-    echo "yum install failed; aborting installation. Please ensure you have configured the relevant repos/subscriptions."
-    exit 1
+    echo "yum install failed; aborting installation. Please ensure relevant repos/subscriptions are configured."
+    abort_install
   fi
 }
 
 # Install the client tools.
 install_rhc_pkg()
 {
-  yum install -y rhc
+  yum_install_or_exit -y rhc
   # set up the system express.conf so this broker will be used by default
   echo -e "\nlibra_server = '${broker_hostname}'" >> /etc/openshift/express.conf
 }
@@ -417,9 +428,11 @@ install_broker_pkgs()
   pkgs="openshift-origin-broker"
   pkgs="$pkgs openshift-origin-broker-util"
   pkgs="$pkgs rubygem-openshift-origin-msg-broker-mcollective"
+  pkgs="$pkgs mcollective-client"
   pkgs="$pkgs rubygem-openshift-origin-auth-remote-user"
   pkgs="$pkgs rubygem-openshift-origin-dns-nsupdate"
   pkgs="$pkgs openshift-origin-console"
+
 
   yum_install_or_exit -y $pkgs
 }
@@ -430,6 +443,8 @@ install_node_pkgs()
   pkgs="rubygem-openshift-origin-node ruby193-rubygem-passenger-native"
   pkgs="$pkgs openshift-origin-port-proxy"
   pkgs="$pkgs openshift-origin-node-util"
+  pkgs="$pkgs mcollective openshift-origin-msg-node-mcollective"
+
   # We use semanage in this script, so we need to install
   # policycoreutils-python.
   pkgs="$pkgs policycoreutils-python"
@@ -443,7 +458,7 @@ install_node_pkgs()
 remove_abrt_addon_python()
 {
   if grep 'Enterprise Linux Server release 6.4' /etc/redhat-release && rpm -q abrt-addon-python && rpm -q openshift-origin-cartridge-python; then
-    yum remove -y abrt-addon-python
+    yum remove -y abrt-addon-python || abort_install
   fi
 }
 
@@ -512,42 +527,42 @@ install_cartridges()
     # Note: Be sure to subscribe to the JBossEWS entitlements during the
     # base install or in configure_jbossews_repo.
     carts="$carts openshift-origin-cartridge-jbossews"
- 
+
     # JBossEAP support.
     # Note: Be sure to subscribe to the JBossEAP entitlements during the
     # base install or in configure_jbosseap_repo.
     carts="$carts openshift-origin-cartridge-jbosseap"
- 
+
     # Jenkins server for continuous integration.
     carts="$carts openshift-origin-cartridge-jenkins"
- 
+
     # Embedded jenkins client.
     carts="$carts openshift-origin-cartridge-jenkins-client"
- 
+
     # Embedded MySQL.
     carts="$carts openshift-origin-cartridge-mysql"
- 
+
     # mod_perl support.
     carts="$carts openshift-origin-cartridge-perl"
-  
+
     # PHP support.
     carts="$carts openshift-origin-cartridge-php"
-  
+
     # Embedded PostgreSQL.
     carts="$carts openshift-origin-cartridge-postgresql"
-  
+
     # Python support.
     carts="$carts openshift-origin-cartridge-python"
-  
+
     # Ruby Rack support running on Phusion Passenger
     carts="$carts openshift-origin-cartridge-ruby"
   fi
 
   # When dependencies are missing, e.g. JBoss subscriptions,
   # still install as much as possible.
-  carts="$carts --skip-broken"
+  #carts="$carts --skip-broken"
 
-  yum install -y $carts
+  yum_install_or_exit -y $carts
 }
 
 # Fix up SELinux policy on the broker.
@@ -725,12 +740,15 @@ configure_sshd_on_node()
   sed -i -e "s/^#MaxStartups .*$/MaxStartups 40/" /etc/ssh/sshd_config
 }
 
-# Configure MongoDB datastore.
-configure_datastore()
+install_datastore_pkgs()
 {
   # Install MongoDB.
   yum_install_or_exit -y mongodb-server
+}
 
+# Configure MongoDB datastore.
+configure_datastore()
+{
   # Require authentication.
   sed -i -e "s/^#auth = .*$/auth = true/" /etc/mongodb.conf
 
@@ -864,8 +882,6 @@ enable_services_on_broker()
 # Configure mcollective on the broker to use ActiveMQ.
 configure_mcollective_for_activemq_on_broker()
 {
-  yum_install_or_exit -y mcollective-client
-
   cat <<EOF > /etc/mcollective/client.cfg
 topicprefix = /topic/
 main_collective = mcollective
@@ -897,8 +913,6 @@ EOF
 # Configure mcollective on the node to use ActiveMQ.
 configure_mcollective_for_activemq_on_node()
 {
-  yum_install_or_exit -y mcollective openshift-origin-msg-node-mcollective
-
   cat <<EOF > /etc/mcollective/server.cfg
 topicprefix = /topic/
 main_collective = mcollective
@@ -931,11 +945,14 @@ EOF
 
 
 # Configure ActiveMQ.
-configure_activemq()
+install_activemq_pkgs()
 {
   # Install the service.
   yum_install_or_exit -y activemq
+}
 
+configure_activemq()
+{
   cat <<EOF > /etc/activemq/activemq.xml
 <!--
     Licensed to the Apache Software Foundation (ASF) under one or more
@@ -1132,10 +1149,14 @@ EOF
   chkconfig activemq on
 }
 
+install_named_pkgs()
+{
+  yum_install_or_exit -y bind bind-utils
+}
+
 # Configure BIND.
 configure_named()
 {
-  yum_install_or_exit -y bind bind-utils
 
   # $keyfile will contain a new DNSSEC key for our domain.
   keyfile=/var/named/${domain}.key
@@ -1436,7 +1457,7 @@ EOF
 
 configure_access_keys_on_broker()
 {
-  # Generate a broker access key for remote apps (Jenkins) to access 
+  # Generate a broker access key for remote apps (Jenkins) to access
   # the broker.
   openssl genrsa -out /etc/openshift/server_priv.pem 2048
   openssl rsa -in /etc/openshift/server_priv.pem -pubout > /etc/openshift/server_pub.pem
@@ -1451,7 +1472,7 @@ configure_access_keys_on_broker()
   ssh-keygen -t rsa -b 2048 -P "" -f /root/.ssh/rsync_id_rsa
   cp /root/.ssh/rsync_id_rsa* /etc/openshift/
   # the .pub key needs to go on nodes, but there is no good way
-  # to script that generically. Nodes should not have password-less 
+  # to script that generically. Nodes should not have password-less
   # access to brokers to copy the .pub key, but this can be performed
   # manually:
   #   # scp root@broker:/etc/openshift/rsync_id_rsa.pub /root/.ssh/
@@ -1706,9 +1727,9 @@ is_false()
 #   CONF_REPOS_BASE
 set_defaults()
 {
-  # By default, we run configure_all, which performs all the steps of
+  # By default, we run do_all_actions, which performs all the steps of
   # a normal installation.
-  actions="${CONF_ACTIONS:-configure_all}"
+  actions="${CONF_ACTIONS:-do_all_actions}"
 
   # Following are the different components that can be installed:
   components='broker node named activemq datastore'
@@ -1873,61 +1894,84 @@ set_defaults()
 
 
 ########################################################################
+#
+# These top-level steps also emit cues for automation to track progress.
+# Please don't change output wording arbitrarily.
 
-configure_all()
+init_message()
 {
   echo_installation_intentions
 #  configure_console_msg
+}
 
+validate_preflight()
+{
+  echo "OpenShift: Begin preflight validation."
+  failure=
+  # Test that this isn't RHEL < 6 or Fedora
+  # Test that SELinux is at least present and not Disabled
+  # Test that rpm/yum exists and isn't totally broken
+  # Test that known problematic RPMs aren't present
+  # Test that DNS resolution is sane
+  # ... ?
+  [ "$failure" ] && abort_install
+  echo "OpenShift: Completed preflight validation."
+}
 
-  # enable subscriptions / repositories according to requested method
-  configure_repos
+install_rpms()
+{
+  echo "OpenShift: Begin installing RPMs."
+  # we often rely on latest selinux policy and other updates
+  yum update -y || abort_install
+  # Install ntp and ntpdate because they may not be present in a RHEL
+  # minimal install.
+  yum_install_or_exit -y ntp ntpdate
 
-  # Install yum-plugin-priorities
-  yum clean all
-  echo "Installing yum-plugin-priorities; if something goes wrong here, check your install source."
-  yum install -y yum-plugin-priorities || exit 1
-
-  yum update -y
-
-  is_false "$CONF_NO_NTP" && synchronize_clock
-
-  # Note: configure_named must run before configure_controller if we are
-  # installing both named and broker on the same host.
-  named && configure_named
-
-#  update_resolv_conf
-
-  configure_network
-#  configure_hostname
-
-  datastore && configure_datastore
-
-  activemq && configure_activemq
-
-  broker && configure_mcollective_for_activemq_on_broker
-
-  node && configure_mcollective_for_activemq_on_node
-
+  # install what we need for various components
+  named && install_named_pkgs
+  datastore && install_datastore_pkgs
+  activemq && install_activemq_pkgs
   broker && install_broker_pkgs
   node && install_node_pkgs
   node && install_cartridges
   node && remove_abrt_addon_python
   broker && install_rhc_pkg
+  echo "OpenShift: Completed installing RPMs."
+}
 
+configure_host()
+{
+  echo "OpenShift: Begin configuring host."
+  is_false "$CONF_NO_NTP" && synchronize_clock
+  # Note: configure_named must run before configure_controller if we are
+  # installing both named and broker on the same host.
+  named && configure_named
+#  update_resolv_conf
+  configure_network
+#  configure_hostname
+  echo "OpenShift: Completed configuring host."
+}
+
+configure_openshift()
+{
+  echo "OpenShift: Begin configuring OpenShift."
+
+  # prepare services the broker and node depend on
+  datastore && configure_datastore
+  activemq && configure_activemq
+  broker && configure_mcollective_for_activemq_on_broker
+  node && configure_mcollective_for_activemq_on_node
+
+  # configure broker and/or node
   broker && enable_services_on_broker
   node && enable_services_on_node
-
   node && configure_pam_on_node
   node && configure_cgroups_on_node
   node && configure_quotas_on_node
-
   broker && configure_selinux_policy_on_broker
   node && configure_selinux_policy_on_node
-
   node && configure_sysctl_on_node
   node && configure_sshd_on_node
-
   broker && configure_controller
   broker && configure_remote_user_auth_plugin
   broker && configure_access_keys_on_broker
@@ -1944,8 +1988,26 @@ configure_all()
 
   node && broker && fix_broker_routing
 
+  echo "OpenShift: Completed configuring OpenShift."
+}
+
+reboot_after()
+{
+  echo "OpenShift: Rebooting after install."
+  reboot
+}
+
+do_all_actions()
+{
+  init_message
+  validate_preflight
+  configure_repos
+  install_rpms
+  configure_host
+  configure_openshift
   echo "Installation and configuration is complete;"
   echo "please reboot to start all services properly."
+  echo "Then validate brokers/nodes with oo-diagnostics."
 }
 
 ########################################################################
