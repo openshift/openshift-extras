@@ -155,6 +155,7 @@
 #       repos_base / CONF_REPOS_BASE -- see below
 #       rhel_repo / CONF_RHEL_REPO -- see below
 #       jboss_repo_base / CONF_JBOSS_REPO_BASE -- see below
+#       rhscl_repo_base / CONF_RHSCL_REPO_BASE -- see below
 #       rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO -- see below
 #     rhsm - use subscription-manager
 #       sm_reg_name / CONF_SM_REG_NAME
@@ -424,6 +425,7 @@ configure_repos()
   if activemq || broker || datastore || named
   then
     need_infra_repo() { :; }
+    need_rhscl_repo() { :; }
   fi
 
   if broker
@@ -437,6 +439,7 @@ configure_repos()
     need_jbosseap_cartridge_repo() { :; }
     need_jbosseap_repo() { :; }
     need_jbossews_repo() { :; }
+    need_rhscl_repo() { :; }
   fi
 
   # The configure_yum_repos, configure_rhn_channels, and
@@ -493,6 +496,11 @@ configure_yum_repos()
   if need_jbossews_repo
   then
     configure_jbossews_repo
+  fi
+
+  if need_rhscl_repo
+  then
+    configure_rhscl_repo
   fi
 
   if need_client_tools_repo
@@ -646,6 +654,25 @@ YUM
   fi
 }
 
+configure_rhscl_repo()
+{
+  # The JBossEWS cartridge depends on Red Hat's JBoss packages.
+  if [ "x${CONF_RHSCL_REPO_BASE}" != "x" ]
+  then
+  ## configure JBossEWS repo
+    cat <<YUM > /etc/yum.repos.d/rhscl.repo
+[rhscl]
+name=rhscl
+baseurl=${CONF_RHSCL_REPO_BASE}/rhscl/1/os/
+enabled=1
+priority=3
+gpgcheck=0
+
+YUM
+
+  fi
+}
+
 configure_rhn_channels()
 {
   if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
@@ -699,6 +726,13 @@ configure_rhn_channels()
     rhn-channel --add --channel jb-ews-2-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[jb-ews-2-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
   fi
+
+  if need_rhscl_repo
+  then
+    rhn-channel --add --channel rhscl-1-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    echo -e "[jb-ews-2-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
+  fi
+
 
   if need_optional_repo
   then
@@ -773,6 +807,11 @@ configure_rhsm_channels()
      yum-config-manager --enable jb-ews-2-for-rhel-6-server-rpms
      yum-config-manager --setopt=jb-ews-2-for-rhel-6-server-rpms.priority=3 jb-ews-2-for-rhel-6-server-rpms
      yum-config-manager --disable jb-ews-1-for-rhel-6-server-rpms
+   fi
+
+   if need_rhscl_repo
+   then
+     yum-config-manager --enable rhscl-1-for-rhel-6-server-rpms
    fi
 }
 
@@ -2291,6 +2330,7 @@ set_defaults()
   # subscriptions via RHN. Internally we use private systems.
   rhel_repo="$CONF_RHEL_REPO"
   jboss_repo_base="$CONF_JBOSS_REPO_BASE"
+  rhscl_repo_base="$CONF_RHSCL_REPO_BASE"
   rhel_optional_repo="$CONF_RHEL_OPTIONAL_REPO"
 
   # The domain name for the OpenShift Enterprise installation.
