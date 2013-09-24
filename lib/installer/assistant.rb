@@ -2,19 +2,23 @@ require 'highline/import'
 require 'installer/deployment'
 require 'installer/helpers'
 require 'installer/host_instance'
+require 'installer/subscription'
 require 'installer/workflow'
+require 'terminal-table'
 
 module Installer
   class Assistant
     include Installer::Helpers
 
-    attr_accessor :config, :deployment, :subscription, :workflow, :workflow_cfg, :unattended
+    attr_accessor :config, :deployment, :cli_subscription, :cfg_subscription, :workflow, :workflow_cfg, :unattended
 
-    def initialize config
+    def initialize config, workflow_id=nil, cli_subscription=nil
       @config = config
       @deployment = config.get_deployment
-      @subscription = config.get_subscription
-      @unattended = config.workflow_id.nil? ? false : true
+      @cfg_subscription = config.get_subscription
+      @cli_subscription = cli_subscription
+      @unattended = workflow_id.nil? ? false : true
+      @save_subscription = true
     end
 
     def run
@@ -27,11 +31,10 @@ module Installer
           return 1
         end
         puts translate :info_wait_config_validation
-        deployment.is_valid?(:full)
         begin
           deployment.is_valid?(:full)
         rescue Exception => msg
-          say "\nThe deployment validity test returned an an error:\n#{msg.inspect}\nUnattended deployment terminated.\n"
+          say "\nThe deployment validity test returned an error:\n#{msg.inspect}\nUnattended deployment terminated.\n"
           return 1
         end
 
@@ -43,6 +46,16 @@ module Installer
           say translate :error_unattended_workflow_cfg
           say translate :unattended_not_possible
           return 1
+        end
+
+        # Check the subscription info
+        if workflow.check_subscription?
+          begin
+            merged_subscription.is_valid?(:full)
+          rescue Exception => msg
+            say "\nThe subscription settings check returned an error:\n#{msg.inspect}\nUnattended deployment terminated.\n"
+            return 1
+          end
         end
 
         # Reach out to the remote hosts
@@ -79,6 +92,10 @@ module Installer
       true
     end
 
+    def save_subscription?
+      @save_subscription
+    end
+
     def ui_title
       ui_newpage
       say translate(:title)
@@ -113,6 +130,7 @@ module Installer
         if not deployment.is_complete?
           say translate :info_force_run_deployment_setup
           ui_edit_deployment
+          ui_show_deployment
         else
           ui_show_deployment
         end
@@ -123,14 +141,26 @@ module Installer
       end
 
       # Subscription check
+      ui_newpage
       if workflow.check_subscription?
-        if not subscription.is_complete?
+        if not merged_subscription.is_complete?
           say translate :info_force_run_subscription_setup
+          puts "\n"
+          choose do |menu|
+            menu.header = translate :select_subscription
+            menu.choice('Add subscription settings to the installer configuration file') { say "\nEditing installer subscription settings" }
+            menu.choice('Enter subscription settings now without saving them to disk') { @save_subscription = false; say "\nGetting subscription settings for this installation" }
+          end
           ui_edit_subscription
-        else
+        end
+        ui_show_subscription
+        while agree("\nDo you want to make any changes to the subscription info in the configuration file?(Y/N) ", true)
+          @save_subscription = true
+          ui_edit_subscription
           ui_show_subscription
         end
-        while agree("\nDo you want to make any changes to your subscription info?(Y/N) ", true)
+        while agree("\nDo you want to set any temporary subscription settings for this installation only?(Y/N) ", true)
+          @save_subscription = false
           ui_edit_subscription
           ui_show_subscription
         end
@@ -220,6 +250,71 @@ module Installer
         list_role role
       end
       list_dns
+    end
+
+    def ui_edit_subscription
+      ui_newpage
+      tgt_subscription = save_subscription? ? cfg_subscription : cli_subscription
+      valid_types = Installer::Subscription.subscription_types.keys.map{ |t| t.to_s }.join(', ')
+      tgt_subscription.subscription_type = ask("What type of subscription should be used? (#{valid_types}) ") { |q|
+        if not merged_subscription.subscription_type.nil?
+          q.default = merged_subscription.subscription_type
+        end
+        q.validate = lambda { |p| Installer::Subscription.subscription_types.has_key?(p.to_sym) }
+        q.responses[:not_valid] = "Valid subscription types are #{valid_types}"
+      }
+      Installer::Subscription.subscription_types[tgt_subscription.subscription_type.to_sym][:attrs].each_pair do |attr,desc|
+        question = (attr == :rh_password and not save_subscription?) ? '<%= @key %>' : "#{desc}? "
+        if save_subscription? or not [:rh_username, :rh_password].include?(attr)
+          question << "(Use '-' to leave unset) "
+        end
+        tgt_subscription.send "#{attr.to_s}=".to_sym, ask(question) { |q|
+          if not merged_subscription.send(attr).nil?
+            q.default = merged_subscription.send(attr)
+          elsif save_subscription? or not [:rh_username, :rh_password].include?(attr)
+            q.default = '-'
+          end
+          if attr == :rh_password
+            q.echo = '*'
+            if not save_subscription?
+              q.verify_match = true
+              q.gather = {
+                "Red Hat Account password? " => '',
+                "Type password again to verify: " => '',
+              }
+            end
+          end
+          q.validate = lambda { |p| p == '-' or Installer::Subscription.valid_attr?(attr, p) }
+          q.responses[:not_valid] = "This response is not valid for the '#{attr.to_s}' setting."
+        }
+        # Set cleared responses to nil
+        if tgt_subscription.send(attr) == '-'
+          tgt_subscription.send("#{attr.to_s}=".to_sym, nil)
+        end
+      end
+      if save_subscription?
+        config.set_subscription cfg_subscription
+        config.save_to_disk!
+      end
+    end
+
+    def ui_show_subscription
+      table = Terminal::Table.new do |t|
+        t.add_row ['Setting','Value']
+        t.add_separator
+        Installer::Subscription.object_attrs.each do |attr|
+          value = merged_subscription.send(attr)
+          if value.nil?
+            value = '-'
+          elsif attr == :rh_password
+            value = '******'
+          end
+          t << [attr.to_s, value]
+        end
+      end
+      ui_newpage
+      say translate :subscription_summary
+      puts table
     end
 
     def ui_modify_role_list role
@@ -376,14 +471,29 @@ module Installer
     end
 
     def list_host_instance host_instance
-      lines = []
-      Installer::HostInstance.attrs.each do |attr|
-        value = host_instance.send(attr)
-        if not value.nil?
-          lines << "#{attr.to_s.split('_').map{ |word| word == 'db' ? 'DB' : word.capitalize}.join(' ')}: #{value}"
+      table = Terminal::Table.new do |t|
+        Installer::HostInstance.attrs.each do |attr|
+          value = host_instance.send(attr)
+          if not value.nil?
+            t.add_row [attr.to_s.split('_').map{ |word| ['db','ssh'].include?(word) ? word.upcase : word.capitalize}.join(' '), value]
+          end
         end
       end
-      puts "  * " + lines.join("\n    ")
+      puts table
+    end
+
+    def merged_subscription
+      @merged_subscription = Installer::Subscription.new(config)
+      Installer::Subscription.object_attrs.each do |attr|
+        value = cli_subscription.send(attr)
+        if value.nil?
+          value = cfg_subscription.send(attr)
+        end
+        if not value.nil?
+          @merged_subscription.send("#{attr.to_s}=".to_sym, value)
+        end
+      end
+      @merged_subscription
     end
   end
 end

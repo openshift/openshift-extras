@@ -11,7 +11,8 @@ module Installer
     VALID_USERNAME_RE = Regexp.new('^[a-z][-a-z0-9]*$')
     VALID_DOMAIN_RE = Regexp.new('^[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,6}$')
     VALID_URL_RE = Regexp.new('((([A-Za-z]{3,9}:(?:\/\/)?)(?:[-;:&=\+\$,\w]+@)?[A-Za-z0-9.-]+|(?:www.|[-;:&=\+\$,\w]+@)[A-Za-z0-9.-]+)((?:\/[\+~%\/.\w-_]*)?\??(?:[-\+=&;%@.\w_]*)#?(?:[.\!\/\\w]*))?)')
-    VALID_STRING_RE = Regexp.new('[/S*]')
+    VALID_EMAIL_RE = Regexp.new('@')
+    BLANK_STRING_RE = Regexp.new('^\s*$')
 
     def file_check(filepath)
       # Test for the presence of the config file
@@ -55,6 +56,10 @@ module Installer
         @i18n_configured = true
       end
       I18n.t text
+    end
+
+    def sym_to_arg value
+      value.to_s.gsub('_','-')
     end
 
     def is_valid_hostname_or_ip_addr? text
@@ -104,8 +109,13 @@ module Installer
       text.match VALID_USERNAME_RE
     end
 
+    def is_valid_email_addr? text
+      text.match VALID_EMAIL_RE
+    end
+
     def is_valid_string? text
-      text.match VALID_STRING_RE
+      return false if text.empty? or text.match BLANK_STRING_RE
+      true
     end
 
     def is_valid_role_list? text

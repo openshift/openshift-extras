@@ -21,6 +21,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "highline", "~> 1.6.11"
   spec.add_dependency "i18n"
   spec.add_dependency "net-ssh"
+  spec.add_dependency "terminal-table"
   spec.add_dependency "versionomy", "~> 0.4.4"
 
   spec.add_development_dependency "bundler", "~> 1.3"
