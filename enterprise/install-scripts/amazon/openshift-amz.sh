@@ -445,7 +445,7 @@ install_broker_pkgs()
   pkgs="openshift-origin-broker"
   pkgs="$pkgs openshift-origin-broker-util"
   pkgs="$pkgs rubygem-openshift-origin-msg-broker-mcollective"
-  pkgs="$pkgs mcollective-client"
+  pkgs="$pkgs ruby193-mcollective-client"
   pkgs="$pkgs rubygem-openshift-origin-auth-remote-user"
   pkgs="$pkgs rubygem-openshift-origin-dns-nsupdate"
   pkgs="$pkgs openshift-origin-console"
@@ -647,7 +647,8 @@ configure_selinux_policy_on_node()
 
 
   restorecon -rv /var/run
-  restorecon -rv /usr/sbin/mcollectived /var/log/mcollective.log /var/run/mcollectived.pid
+  # TODO: see if this line is still needed
+  restorecon -rv /opt/rh/ruby193/root/usr/sbin/mcollectived /var/log/ruby193-mcollective.log /opt/rh/ruby193/root/var/run/mcollectived.pid
   restorecon -rv /var/lib/openshift /etc/openshift/node.conf /etc/httpd/conf.d/openshift
 }
 
@@ -976,8 +977,8 @@ enable_services_on_broker()
 
   # make sure mcollective client log is created with proper ownership.
   # if root owns it, the broker (apache user) can't log to it.
-  touch /var/log/mcollective-client.log
-  chown apache:root /var/log/mcollective-client.log
+  touch /var/log/ruby193-mcollective-client.log
+  chown apache:root /var/log/ruby193-mcollective-client.log
 }
 
 
@@ -1002,12 +1003,12 @@ plugin.activemq.pool.${num_replicants}.password = ${mcollective_password}
 # Configure mcollective on the broker to use ActiveMQ.
 configure_mcollective_for_activemq_on_broker()
 {
-  cat <<EOF > /etc/mcollective/client.cfg
+  cat <<EOF > /opt/rh/ruby193/root/etc/mcollective/client.cfg
 topicprefix = /topic/
 main_collective = mcollective
 collectives = mcollective
 libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
-logfile = /var/log/mcollective-client.log
+logfile = /var/log/ruby193-mcollective-client.log
 loglevel = debug
 direct_addressing = 1
 
@@ -1020,7 +1021,7 @@ $(generate_mcollective_pools_configuration)
 
 # Facts
 factsource = yaml
-plugin.yaml = /etc/mcollective/facts.yaml
+plugin.yaml = /opt/rh/ruby193/root/etc/mcollective/facts.yaml
 
 EOF
 }
@@ -1029,12 +1030,12 @@ EOF
 # Configure mcollective on the node to use ActiveMQ.
 configure_mcollective_for_activemq_on_node()
 {
-  cat <<EOF > /etc/mcollective/server.cfg
+  cat <<EOF > /opt/rh/ruby193/root/etc/mcollective/server.cfg
 topicprefix = /topic/
 main_collective = mcollective
 collectives = mcollective
 libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
-logfile = /var/log/mcollective.log
+logfile = /var/log/ruby193-mcollective.log
 loglevel = debug
 
 daemonize = 1
@@ -1049,10 +1050,10 @@ $(generate_mcollective_pools_configuration)
 
 # Facts
 factsource = yaml
-plugin.yaml = /etc/mcollective/facts.yaml
+plugin.yaml = /opt/rh/ruby193/root/etc/mcollective/facts.yaml
 EOF
 
-  chkconfig mcollective on
+  chkconfig ruby193-mcollective on
 }
 
 
