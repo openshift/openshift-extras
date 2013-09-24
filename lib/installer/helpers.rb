@@ -10,6 +10,9 @@ module Installer
     VALID_HOSTNAME_RE = Regexp.new('^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$')
     VALID_USERNAME_RE = Regexp.new('^[a-z][-a-z0-9]*$')
     VALID_DOMAIN_RE = Regexp.new('^[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,6}$')
+    VALID_URL_RE = Regexp.new('((([A-Za-z]{3,9}:(?:\/\/)?)(?:[-;:&=\+\$,\w]+@)?[A-Za-z0-9.-]+|(?:www.|[-;:&=\+\$,\w]+@)[A-Za-z0-9.-]+)((?:\/[\+~%\/.\w-_]*)?\??(?:[-\+=&;%@.\w_]*)#?(?:[.\!\/\\w]*))?)')
+    VALID_EMAIL_RE = Regexp.new('@')
+    BLANK_STRING_RE = Regexp.new('^\s*$')
 
     def file_check(filepath)
       # Test for the presence of the config file
@@ -22,7 +25,7 @@ module Installer
     end
 
     def workflow_cfg_file
-      ['workflows_oe.yml','workflows.yml'].each do |cfg_file|
+      ['workflows_ose.yml','workflows.yml'].each do |cfg_file|
         if File.exists?("#{gem_root_dir}/conf/#{cfg_file}")
           return cfg_file
         end
@@ -55,12 +58,20 @@ module Installer
       I18n.t text
     end
 
+    def sym_to_arg value
+      value.to_s.gsub('_','-')
+    end
+
     def is_valid_hostname_or_ip_addr? text
       text.match VALID_IP_ADDR_RE or text.match VALID_HOSTNAME_RE
     end
 
     def is_valid_domain? text
       text.match VALID_DOMAIN_RE
+    end
+
+    def is_valid_url? text
+      text.match VALID_URL_RE
     end
 
     def is_valid_remotehost? text
@@ -96,6 +107,15 @@ module Installer
 
     def is_valid_username? text
       text.match VALID_USERNAME_RE
+    end
+
+    def is_valid_email_addr? text
+      text.match VALID_EMAIL_RE
+    end
+
+    def is_valid_string? text
+      return false if text.empty? or text.match BLANK_STRING_RE
+      true
     end
 
     def is_valid_role_list? text

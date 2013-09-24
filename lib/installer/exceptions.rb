@@ -66,4 +66,28 @@ module Installer
       super(message, code)
     end
   end
+
+  class SubscriptionTypeNotRecognizedException < Exception
+    def initialize(message="The specified subscription type is not recognized by the installer.", code=1)
+      super(message, code)
+    end
+  end
+
+  class InvalidSubscriptionSettingException < Exception
+    def initialize(message="The subscription config contains invalid settings for the subscription type.", code=1)
+      super(message, code)
+    end
+  end
+
+  class SubscriptionSettingNotValidException < Exception
+    def initialize(message="The subscription config contains an invlid setting value.", code=1)
+      super(message, code)
+    end
+  end
+
+  class SubscriptionSettingMissingException < Exception
+    def initialize(message="The subscription config is missing a required setting for the specified config type.", code=1)
+      super(message, code)
+    end
+  end
 end
