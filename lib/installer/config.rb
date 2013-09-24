@@ -50,8 +50,16 @@ module Installer
       Installer::Deployment.new(self, (settings.has_key?('Deployment') ? settings['Deployment'] : {}))
     end
 
+    def get_subscription
+      Installer::Subscription.new(self, (settings.has_key?('Subscription') ? settings['Subscription'] : {}))
+    end
+
     def set_deployment deployment
       settings['Deployment'] = deployment.to_hash
+    end
+
+    def set_subscription subscription
+      settings['Subscription'] = subscription.to_hash
     end
 
     def get_workflow_cfg id

@@ -111,12 +111,12 @@ module Installer
     # It notes if the remote system asks for a password.
     def check_remote_ssh
       failed_hosts = []
-      by_target_host.each_pair do |host,instance_list|
+      by_ssh_host.each_pair do |ssh_host,instance_list|
         user = instance_list[0].user
-        puts "\nChecking connection to #{host} with user #{user}...\n"
-        success = system("ssh -oPasswordAuthentication=no -t -l #{user} #{host} 'sudo -n hostname'")
+        puts "\nChecking connection to #{ssh_host} with user #{user}...\n"
+        success = system("ssh -oPasswordAuthentication=no -t -l #{user} #{ssh_host} 'sudo -n hostname'")
         if not success
-          failed_hosts << "#{host} (user: #{user})"
+          failed_hosts << "#{ssh_host} (user: #{user})"
         end
       end
       failed_hosts
@@ -162,18 +162,18 @@ module Installer
       true
     end
 
-    # Return the host instance elements keyed by target host
-    def by_target_host
-      by_target_host = {}
+    # Return the host instance elements keyed by SSH host
+    def by_ssh_host
+      by_ssh_host = {}
       self.class.list_map.each_pair do |role,list|
         self.send(list).each do |host_instance|
-          if not by_target_host.has_key?(host_instance.host)
-            by_target_host[host_instance.host] = []
+          if not by_ssh_host.has_key?(host_instance.ssh_host)
+            by_ssh_host[host_instance.ssh_host] = []
           end
-          by_target_host[host_instance.host] << host_instance
+          by_ssh_host[host_instance.ssh_host] << host_instance
         end
       end
-      by_target_host
+      by_ssh_host
     end
   end
 end

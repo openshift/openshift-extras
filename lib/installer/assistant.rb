@@ -8,11 +8,12 @@ module Installer
   class Assistant
     include Installer::Helpers
 
-    attr_accessor :config, :deployment, :workflow, :workflow_cfg, :unattended
+    attr_accessor :config, :deployment, :subscription, :workflow, :workflow_cfg, :unattended
 
     def initialize config
       @config = config
       @deployment = config.get_deployment
+      @subscription = config.get_subscription
       @unattended = config.workflow_id.nil? ? false : true
     end
 
@@ -118,6 +119,20 @@ module Installer
         while agree("\nDo you want to make any changes to your deployment?(Y/N) ", true)
           ui_edit_deployment
           ui_show_deployment
+        end
+      end
+
+      # Subscription check
+      if workflow.check_subscription?
+        if not subscription.is_complete?
+          say translate :info_force_run_subscription_setup
+          ui_edit_subscription
+        else
+          ui_show_subscription
+        end
+        while agree("\nDo you want to make any changes to your subscription info?(Y/N) ", true)
+          ui_edit_subscription
+          ui_show_subscription
         end
       end
 
@@ -230,7 +245,7 @@ module Installer
 
     def ui_modify_dns
       new_dns = {}
-      new_dns['app_domain'] = ask('What domain will be used for hosted applications?') { |q|
+      new_dns['app_domain'] = ask("\nWhat domain will be used for hosted applications? ") { |q|
         if deployment.dns.has_key?('app_domain')
           q.default = deployment.dns['app_domain']
         end
@@ -280,9 +295,18 @@ module Installer
     def edit_host_instance host_instance
       host_instance_is_valid = false
       while not host_instance_is_valid
-        host_instance.host = ask("Host name: ") { |q|
+        host_instance.ssh_host = ask("Host name (for remote access): ") { |q|
+          if not host_instance.ssh_host.nil?
+            q.default = host_instance.ssh_host
+          end
+          q.validate = lambda { |p| is_valid_hostname_or_ip_addr?(p) }
+          q.responses[:not_valid] = "Enter a valid hostname or IP address"
+        }
+        host_instance.host = ask("Host name (for other components in the subnet): ") { |q|
           if not host_instance.host.nil?
             q.default = host_instance.host
+          elsif not host_instance.ssh_host.nil?
+            q.default = host_instance.ssh_host
           end
           q.validate = lambda { |p| is_valid_hostname_or_ip_addr?(p) }
           q.responses[:not_valid] = "Enter a valid hostname or IP address"
@@ -294,7 +318,7 @@ module Installer
             q.responses[:not_valid] = translate :invalid_port_number_response
           }
         end
-        host_instance.user = ask("OpenShift username on #{host_instance.host}: ") { |q|
+        host_instance.user = ask("OpenShift username on #{host_instance.ssh_host}: ") { |q|
           if not host_instance.user.nil?
             q.default = host_instance.user
           end

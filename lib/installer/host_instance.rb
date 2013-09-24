@@ -3,10 +3,10 @@ module Installer
     include Installer::Helpers
 
     attr_reader :role
-    attr_accessor :host, :port, :ssh_port, :user, :messaging_port, :db_user, :db_port
+    attr_accessor :host, :port, :ssh_host, :ssh_port, :user, :messaging_port, :db_user, :db_port
 
     def self.attrs
-      %w{host port ssh_port user messaging_port db_user db_port}.map{ |a| a.to_sym }
+      %w{host port ssh_host ssh_port user messaging_port db_user db_port}.map{ |a| a.to_sym }
     end
 
     def initialize role, item={}
@@ -31,6 +31,10 @@ module Installer
 
     def is_valid?(check=:basic)
       if not is_valid_hostname_or_ip_addr?(host)
+        return false if check == :basic
+        raise Installer::HostInstanceHostNameException.new("Host instance host name / IP address '#{host}' in the #{role.to_s} list is invalid.")
+      end
+      if not is_valid_hostname_or_ip_addr?(ssh_host)
         return false if check == :basic
         raise Installer::HostInstanceHostNameException.new("Host instance host name / IP address '#{host}' in the #{role.to_s} list is invalid.")
       end

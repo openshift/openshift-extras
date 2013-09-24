@@ -63,6 +63,7 @@ module Installer
       @description = config['Description']
       @remote_execute = (config.has_key?('RemoteDeployment') and config['RemoteDeployment'].downcase == 'y') ? true : false
       @check_deployment = (config.has_key?('SkipDeploymentCheck') and config['SkipDeploymentCheck'].downcase == 'y') ? false : true
+      @check_subscription = (config.has_key?('SubscriptionCheck') and config['SubscriptionCheck'].downcase == 'y') ? true : false
       if config.has_key?('NonDeployment') and config['NonDeployment'].downcase == 'y'
         @non_deployment = true
         @remote_execute = false
@@ -77,6 +78,10 @@ module Installer
 
     def check_deployment?
       @check_deployment
+    end
+
+    def check_subscription?
+      @check_subscription
     end
 
     def remote_execute?
