@@ -84,9 +84,12 @@ module Installer
       @dns = dns
     end
 
-    def find_host_instance_for_workflow host_instance_key=nil
+    def find_host_instance_for_workflow host_instance_key=nil, specific_role=nil
       all_host_instances = []
       self.class.list_map.each_pair do |role,lsym|
+        if not specific_role.nil? and role.to_s != specific_role
+          next
+        end
         list = self.send(lsym)
         group = self.class.role_map[role].chop
         for i in 0..(list.length - 1)
@@ -103,8 +106,8 @@ module Installer
       all_host_instances
     end
 
-    def list_host_instances_for_workflow
-      find_host_instance_for_workflow
+    def list_host_instances_for_workflow(role=nil)
+      find_host_instance_for_workflow(nil, role)
     end
 
     # Expectations: this method will attempt to connect to the remote hosts via SSH

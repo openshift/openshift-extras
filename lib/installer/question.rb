@@ -11,7 +11,7 @@ module Installer
       @type = question_config['AnswerType'] || 'text'
     end
 
-    def ask workflow_cfg
+    def ask deployment, workflow_cfg
       if type == 'text'
         workflow_cfg[id] = HighLine.ask(text) { |q|
           if workflow_cfg.has_key?(id)
@@ -35,11 +35,11 @@ module Installer
           q.validate = lambda { |p| is_valid_role_list?(p) }
           q.responses[:not_valid] = "Provide a value or list of values from: #{legal_values}."
         }
-      elsif type == 'rolehost'
-        deployment = workflow.config.get_deployment
+      elsif type.start_with?('rolehost')
+        role = type.split(':')[1]
         choose do |menu|
           menu.header = text
-          deployment.list_host_instances_for_workflow.each do |item|
+          deployment.list_host_instances_for_workflow(role).each do |item|
             menu.choice(item[:text]) { workflow_cfg[id] = item[:value] }
           end
         end
@@ -75,7 +75,7 @@ module Installer
         return is_valid_mongodbhost?(value)
       elsif type == 'role'
         return false if not Installer::Deployment.role_map.keys.map{ |role| role.to_s }.include?(value)
-      elsif type == 'rolehost'
+      elsif type.start_with?('rolehost')
         return false if deployment.find_host_instance_for_workflow(value).nil?
       end
       true
