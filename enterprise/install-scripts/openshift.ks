@@ -20,15 +20,15 @@
 #
 # If you supply no parameters, all components are installed on one host
 # with default configuration, which should give you a running demo,
-# gven you have provided an install source and method.
+# given you have provided an install source and method.
 #
 # For a kickstart, you can supply further kernel parameters (in addition
 # to the ks=location itself).
 # e.g. virt-install ... -x "ks=http://.../openshift.ks domain=example.com"
 #
 # As a bash script, just add the parameters as bash variables at the top
-# of the script (or environment variables). Kickstart parameters are
-# mapped to uppercase bash variables prepended with CONF_ so for
+# of the script (or export environment variables). Kickstart parameters
+# are mapped to uppercase bash variables prepended with CONF_ so for
 # example, "domain=example.com" as a kickstart parameter would be
 # "CONF_DOMAIN=example.com" for the script.
 #
@@ -36,20 +36,25 @@
 
 # IMPORTANT NOTES - DEPENDENCIES
 #
-# Configuring sources for yum to install packages is often the hardest part
-# of an installation. This script enables several methods described below.
+# Configuring sources for yum to install packages can be the hardest part
+# of an installation. This script enables several methods to automatically
+# configure the necessary repositories, which are described in parameters
+# below. If you already configured repositories prior to running this
+# script, you may leave the default method (which is to do nothing);
+# otherwise you will need to modify the script or provide parameters to
+# configure install sources.
 #
-# In order for the %post section to succeed, it must have a way of
-# installing from RHEL 6. The post section cannot access the method that
-# was used in the base install. So, you must modify this script or provide
-# parameters, either to subscribe to RHEL during the base install, or to
-# ensure that the configure_rhel_repo function below subscribes to RHEL
-# or configures RHEL yum repos.
+# In order for the %post section to succeed, yum must have access to the
+# latest RHEL 6 packages. The %post section does not share the method
+# used in the base install (network, DVD, etc.). Either by modifying
+# the base install, the %post script, or the script parameters, you must
+# ensure that subscriptions or plain yum repos are available for RHEL.
 #
-# The JBoss cartridges similarly require packages from the JBoss
-# entitlements, so you must subscribe to the corresponding channels
-# during the base install or modify the configure_jbossews_repo
-# or configure_jbosseap_repo functions to do so.
+# Similarly, the main OpenShift dependencies require OpenShift repos, and
+# JBoss cartridges require packages from JBoss repos, so you must ensure
+# these are configured for the %post script to run. Due to the complexity
+# involved in this configuration, we recommend specifying parameters to
+# use one of the script's install methods.
 #
 # DO NOT install with third-party (non-RHEL) repos enabled (e.g. EPEL).
 # You may install different package versions than OpenShift expects and
@@ -58,10 +63,10 @@
 
 # OTHER IMPORTANT NOTES
 #
-# You will almost certainly want to change the root password or
-# authorized keys (or both) that are specified in the kickstart, and/or
-# set up another user/group with sudo access so that you can access the
-# system after installation.
+# If used as a kickstart, you will almost certainly want to change the
+# root password or authorized keys (or both) specified in the kickstart,
+# and/or set up another user/group with sudo access so that you can
+# access the system after installation.
 #
 # If you install a broker, the rhc client is installed as well, for
 # convenient local testing. Also, a test OpenShift user "demo" with
@@ -459,7 +464,7 @@ configure_repos()
   # Install yum-plugin-priorities
   yum clean all
   echo "Installing yum-plugin-priorities; if something goes wrong here, check your install source."
-  yum install -y yum-plugin-priorities || abort_install
+  yum_install_or_exit -y yum-plugin-priorities
   echo "OpenShift: Completed configuring repos."
 }
 
@@ -1107,11 +1112,9 @@ configure_sshd_on_node()
 
 install_datastore_pkgs()
 {
-  # Install MongoDB.
   yum_install_or_exit -y mongodb-server
 }
 
-# Configure MongoDB datastore.
 configure_datastore()
 {
   # Require authentication.
@@ -1309,10 +1312,8 @@ EOF
 }
 
 
-# Configure ActiveMQ.
 install_activemq_pkgs()
 {
-  # Install the service.
   yum_install_or_exit -y activemq
 }
 
@@ -1519,7 +1520,6 @@ install_named_pkgs()
   yum_install_or_exit -y bind bind-utils
 }
 
-# Configure BIND.
 configure_named()
 {
 

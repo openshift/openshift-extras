@@ -86,7 +86,7 @@ configure_repos()
   # Install yum-plugin-priorities
   yum clean all
   echo "Installing yum-plugin-priorities; if something goes wrong here, check your install source."
-  yum install -y yum-plugin-priorities || abort_install
+  yum_install_or_exit -y yum-plugin-priorities
   echo "OpenShift: Completed configuring repos."
 }
 
@@ -742,11 +742,9 @@ configure_sshd_on_node()
 
 install_datastore_pkgs()
 {
-  # Install MongoDB.
   yum_install_or_exit -y mongodb-server
 }
 
-# Configure MongoDB datastore.
 configure_datastore()
 {
   # Require authentication.
@@ -944,10 +942,8 @@ EOF
 }
 
 
-# Configure ActiveMQ.
 install_activemq_pkgs()
 {
-  # Install the service.
   yum_install_or_exit -y activemq
 }
 
@@ -1154,7 +1150,6 @@ install_named_pkgs()
   yum_install_or_exit -y bind bind-utils
 }
 
-# Configure BIND.
 configure_named()
 {
 
