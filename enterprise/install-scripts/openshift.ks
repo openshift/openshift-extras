@@ -1,29 +1,129 @@
-# This script configures a host system with OpenShift components. It may
-# be used either as a RHEL6 kickstart script, or the %post section may 
+# This script configures a single host with OpenShift components. It may
+# be used either as a RHEL6 kickstart script, or the %post section may
 # be extracted and run directly to install on top of an installed RHEL6
 # image. When running the %post outside kickstart, a reboot is required
 # afterward.
+#
+# If this script aborts due to an inability to install packages (the most
+# common failure), it should be safe to re-run once you've resolved the
+# problem (i.e. either manually fix configuration and run with
+# INSTALL_METHOD=none, or unregister / remove all repos and start over).
+# Once package installation completes and configuration begins, aborts
+# are unlikely; but in the event that one occurs, re-running could
+# introduce misconfigurations as configure steps do not all include
+# enough intelligence to be repeatable.
+#
+# While this script serves as a good example script for installing a
+# single host, it is not comprehensive nor robust enough to be considered
+# a proper enterprise installer on its own. Production installations will
+# typically require significant adaptations or an entirely different
+# method of installation. Please adapt it to your needs.
 
 # SPECIFYING PARAMETERS
 #
 # If you supply no parameters, all components are installed on one host
-# with default configuration, which should give you a running demo.
+# with default configuration, which should give you a running demo,
+# given a usable install method.
 #
 # For a kickstart, you can supply further kernel parameters (in addition
 # to the ks=location itself).
 # e.g. virt-install ... -x "ks=http://.../openshift.ks domain=example.com"
 #
 # As a bash script, just add the parameters as bash variables at the top
-# of the script (or environment variables). Kickstart parameters are
-# mapped to uppercase bash variables prepended with CONF_ so for 
+# of the script (or export environment variables). Kickstart parameters
+# are mapped to uppercase bash variables prepended with CONF_ so for
 # example, "domain=example.com" as a kickstart parameter would be
 # "CONF_DOMAIN=example.com" for the script.
+#
+# Available parameters are listed at length below the following notes.
+
+# IMPORTANT NOTES - DEPENDENCIES
+#
+# Configuring sources for yum to install packages can be the hardest part
+# of an installation. This script enables several methods to automatically
+# configure the necessary repositories, which are described in parameters
+# below. If you already configured repositories prior to running this
+# script, you may leave the default method (which is to do nothing);
+# otherwise you will need to modify the script or provide parameters to
+# configure install sources.
+#
+# In order for the %post section to succeed, yum must have access to the
+# latest RHEL 6 packages. The %post section does not share the method
+# used in the base install (network, DVD, etc.). Either by modifying
+# the base install, the %post script, or the script parameters, you must
+# ensure that subscriptions or plain yum repos are available for RHEL.
+#
+# Similarly, the main OpenShift dependencies require OpenShift repos, and
+# JBoss cartridges require packages from JBoss repos, so you must ensure
+# these are configured for the %post script to run. Due to the complexity
+# involved in this configuration, we recommend specifying parameters to
+# use one of the script's install methods.
+#
+# DO NOT install with third-party (non-RHEL) repos enabled (e.g. EPEL).
+# You may install different package versions than OpenShift expects and
+# be in for a long troubleshooting session. Also avoid pre-installing
+# third-party software like Puppet for the same reason.
+
+# OTHER IMPORTANT NOTES
+#
+# If used as a kickstart, you will almost certainly want to change the
+# root password or authorized keys (or both) specified in the kickstart,
+# and/or set up another user/group with sudo access so that you can
+# access the system after installation.
+#
+# If you install a broker, the rhc client is installed as well, for
+# convenient local testing. Also, a test OpenShift user "demo" with
+# password "changeme" is created for use by the default local file
+# authentication option.
+#
+# If you want to use the broker from a client outside the installation,
+# then of course that client must be using a DNS server that knows
+# about (or is) the DNS server for the installation. Otherwise you will
+# have DNS failures when creating the app and be unable to reach it in a
+# browser.
+#
+
+# MANUAL TASKS
+#
+# This script attempts to automate as many tasks as it reasonably can.
+# Unfortunately, it is constrained to setting up only a single host at a
+# time. In a multi-host setup, you will need to do the following after
+# the script has completed.
+#
+# 1. Set up DNS entries for hosts
+#    If you installed BIND with the script, then any other components
+#    the script installed on the same host received DNS entries.
+#    Other hosts must all be defined manually, including at least your
+#    node hosts. oo-register-dns may be useful for this.
+#
+# 2. Copy public rsync key to enable moving gears
+#    The broker rsync public key needs to go on nodes, but there is no
+#    good way to script that generically. Nodes should not have
+#    password-less access to brokers to copy the .pub key, so this must
+#    be performed manually on each node host:
+#       # scp root@broker:/etc/openshift/rsync_id_rsa.pub /root/.ssh/
+#    (above step will ask for the root password of the broker machine)
+#       # cat /root/.ssh/rsync_id_rsa.pub >> /root/.ssh/authorized_keys
+#       # rm /root/.ssh/rsync_id_rsa.pub
+#    If you skip this, each gear move will require typing root passwords
+#    for each of the node hosts involved.
+#
+# 3. Copy ssh host keys between the node hosts
+#    All node hosts should identify as the same host, so that when gears
+#    are moved between hosts, ssh and git don't give developers spurious
+#    warnings about the host keys changing. So, copy /etc/ssh/ssh_* from
+#    one node host to all the rest (or, if using the same image for all
+#    hosts, just keep the keys from the image).
+
 
 # PARAMETER DESCRIPTIONS
 
 # actions / CONF_ACTIONS
-#   Default: configure_all
-#   Comma-separated list of functions that will be run.  This
+#   Default: do_all_actions
+#     Helpful steps: init_message,validate_preflight,configure_repos,
+#                    install_rpms,configure_host,configure_openshift,
+#                    reboot_after
+#   Comma-separated list of bash functions to run.  This
 #   setting is intended to allow configuration steps defined within this
 #   file to be rerun selectively when the shell-script version of this
 #   file is used.  For a normal installation, this setting can be left
@@ -49,8 +149,8 @@
 
 # install_method / CONF_INSTALL_METHOD
 #   Choose from the following ways to provide packages:
-#     none - install sources are already set up when the script executes (default)
-#     yum - set up yum repos manually
+#     none - install sources are already set up when the script executes (DEFAULT)
+#     yum - set up yum repos based on config
 #       repos_base / CONF_REPOS_BASE -- see below
 #       rhel_repo / CONF_RHEL_REPO -- see below
 #       jboss_repo_base / CONF_JBOSS_REPO_BASE -- see below
@@ -58,11 +158,12 @@
 #     rhsm - use subscription-manager
 #       sm_reg_name / CONF_SM_REG_NAME
 #       sm_reg_pass / CONF_SM_REG_PASS
-#       sm_reg_pool / CONF_SM_REG_POOL - pool ID for OpenShift subscription
+#       sm_reg_pool / CONF_SM_REG_POOL - pool ID for OpenShift subscription (required)
+#       sm_reg_pool_rhel / CONF_SM_REG_POOL_RHEL - pool ID for RHEL subscription (optional)
 #     rhn - use rhn-register
 #       rhn_reg_name / CONF_RHN_REG_NAME
 #       rhn_reg_pass / CONF_RHN_REG_PASS
-#       rhn_reg_actkey / CONF_RHN_REG_ACTKEY
+#       rhn_reg_actkey / CONF_RHN_REG_ACTKEY - optional activation key
 #   Default: none
 #CONF_INSTALL_METHOD="yum"
 
@@ -72,7 +173,7 @@
 
 # repos_base / CONF_REPOS_BASE
 #   Default: https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<latest>
-#   The base URL for the OpenShift repositories used for the "yum" 
+#   The base URL for the OpenShift repositories used for the "yum"
 #   install method - the part before Infrastructure/Node/etc.
 #   Note that if this is the same as CONF_RHEL_REPO (without "/os"), then the
 #   CDN format will be used instead, e.g. x86_64/ose-node/1.2/os
@@ -88,7 +189,7 @@
 #   Should end in /6Server/x86_64/optional/os/
 
 # jboss_repo_base / CONF_JBOSS_REPO_BASE
-#   The base URL for the JBoss repositories used with the "yum" 
+#   The base URL for the JBoss repositories used with the "yum"
 #   install method - the part before jbeap/jbews - ends in /6/6Server/x86_64
 
 # optional_repo / CONF_OPTIONAL_REPO
@@ -107,13 +208,13 @@
 # activemq_hostname / CONF_ACTIVEMQ_HOSTNAME
 # datastore_hostname / CONF_DATASTORE_HOSTNAME
 #   Default: the root plus the domain, e.g. broker.example.com - except
-#   named=ns1.example.com 
+#   named=ns1.example.com
 #   These supply the FQDN of the hosts containing these components. Used
 #   for configuring the host's name at install, and also for configuring
 #   the broker application to reach the services needed.
 #
 #   IMPORTANT NOTE: if installing a nameserver, the script will create
-#   DNS entries for the hostnames of the other components being 
+#   DNS entries for the hostnames of the other components being
 #   installed on this host as well. If you are using a nameserver set
 #   up separately, you are responsible for all necessary DNS entries.
 #CONF_BROKER_HOSTNAME="broker.example.com"
@@ -236,7 +337,7 @@
 # conf_console_session_secret / CONF_CONSOLE_SESSION_SECRET
 #CONF_CONSOLE_SESSION_SECRET=""
 
-#conf_valid_gear_sizes / CONF_VALID_GEAR_SIZES
+#conf_valid_gear_sizes / CONF_VALID_GEAR_SIZES   (comma-separated list)
 #CONF_VALID_GEAR_SIZES="small"
 
 # The KrbServiceName value for mod_auth_kerb configuration
@@ -247,81 +348,6 @@
 
 # The Krb5KeyTab value of mod_auth_kerb is not configurable -- the keytab
 # is expected in /var/www/openshift/broker/httpd/conf.d/http.keytab
-
-# IMPORTANT NOTES - DEPENDENCIES
-#
-# In order for the %post section to succeed, it must have a way of
-# installing from RHEL 6. The post section cannot access the method that
-# was used in the base install. So, you must modify this script, either
-# to subscribe to RHEL during the base install, or to ensure that the
-# configure_rhel_repo function below subscribes to RHEL or configures
-# RHEL yum repos.
-#
-# The JBoss cartridges similarly require packages from the JBoss
-# entitlements, so you must subscribe to the corresponding channels
-# during the base install or modify the configure_jbossews_repo
-# or configure_jbosseap_repo functions to do so.
-#
-# The OpenShift repository steps below refer to public beta yum
-# repositories. For a supported production product, comment these out
-# and use your OpenShift Enterprise subscription instead.
-#
-# DO NOT install with third-party (non-RHEL) repos enabled (e.g. EPEL).
-# You may install different package versions than OpenShift expects and
-# be in for a long troubleshooting session. Also avoid pre-installing
-# third-party software like Puppet for the same reason.
-#
-# OTHER IMPORTANT NOTES
-#
-# You will almost certainly want to change the root password or
-# authorized keys (or both) that are specified in the script, and/or set
-# up another user/group with sudo access so that you can access the
-# system after installation.
-#
-# If you install a broker, the rhc client is installed as well, for
-# convenient local testing. Also, a test OpenShift user "demo" with
-# password "changeme" is created.
-#
-# If you want to use the broker from a client outside the installation,
-# then of course that client must be using a DNS server that knows
-# about (or is) the DNS server for the installation. Otherwise you will
-# have DNS failures when creating the app and be unable to reach it in a
-# browser.
-#
-
-# MANUAL TASKS
-#
-# This script attempts to automate as many tasks as it reasonably can.
-# Unfortunately, it is constrained to setting up only a single host at a
-# time. In an assumed multi-host setup, you will need to do the 
-# following after the script has completed.
-#
-# 1. Set up DNS entries for hosts
-#    If you installed BIND with the script, then any other components
-#    installed with the script on the same host received DNS entries.
-#    Other hosts must all be defined manually, including at least your
-#    node hosts. oo-register-dns may prove useful for this.
-#
-# 2. Copy public rsync key to enable moving gears
-#    The broker rsync public key needs to go on nodes, but there is no
-#    good way to script that generically. Nodes should not have
-#    password-less access to brokers to copy the .pub key, so this must
-#    be performed manually on each node host:
-#       # scp root@broker:/etc/openshift/rsync_id_rsa.pub /root/.ssh/
-#    (above step will ask for the root password of the broker machine)
-#       # cat /root/.ssh/rsync_id_rsa.pub >> /root/.ssh/authorized_keys
-#       # rm /root/.ssh/rsync_id_rsa.pub
-#    If you skip this, each gear move will require typing root passwords
-#    for each of the
-# node hosts involved.
-#
-# 3. Copy ssh host keys between the node hosts
-#    All node hosts should identify as the same host, so that when gears
-#    are moved between hosts, ssh and git don't give developers spurious
-#    warnings about the host keys changing. So, copy /etc/ssh/ssh_* from
-#    one node host to all the rest (or, if using the same image for all
-#    hosts, just keep the keys from the image).
-
 
 #Begin Kickstart Script
 install
@@ -380,9 +406,6 @@ set -x
 # hardware clock with that.
 synchronize_clock()
 {
-  # Install ntp and ntpdate because they may not be present in a RHEL
-  # minimal install.
-  yum install -y ntp ntpdate
 
   # Synchronize the system clock using NTP.
   ntpdate clock.redhat.com
@@ -394,6 +417,7 @@ synchronize_clock()
 
 configure_repos()
 {
+  echo "OpenShift: Begin configuring repos."
   # Determine which channels we need and define corresponding predicate
   # functions.
 
@@ -440,6 +464,12 @@ configure_repos()
       configure_rhsm_channels
       ;;
   esac
+
+  # Install yum-plugin-priorities
+  yum clean all
+  echo "Installing yum-plugin-priorities; if something goes wrong here, check your install source."
+  yum_install_or_exit -y yum-plugin-priorities
+  echo "OpenShift: Completed configuring repos."
 }
 
 configure_yum_repos()
@@ -629,8 +659,13 @@ YUM
 
 configure_rhn_channels()
 {
-  echo "Register with RHN using an activation key"
-  rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || exit 1
+  if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
+    echo "Register with RHN using an activation key"
+    rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || abort_install
+  else
+    echo "Register with RHN with username and password"
+    rhnreg_ks --profilename=${hostname} --username ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+  fi
 
   # RHN method for setting yum priorities and excludes:
   RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
@@ -638,25 +673,25 @@ configure_rhn_channels()
   # OSE packages are first priority
   if need_client_tools_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-rhc --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-rhc --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[rhel-x86_64-server-6-ose-1.2-rhc]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_infra_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-infrastructure --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-infrastructure --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[rhel-x86_64-server-6-ose-1.2-infrastructure]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_node_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-node --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-node --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[rhel-x86_64-server-6-ose-1.2-node]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_jbosseap_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[rhel-x86_64-server-6-ose-1.2-jbosseap]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
@@ -666,31 +701,42 @@ configure_rhn_channels()
   # JBoss packages are third priority -- and all else is lower
   if need_jbosseap_repo
   then
-    rhn-channel --add --channel jbappplatform-6-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel jbappplatform-6-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[jbappplatform-6-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
   fi
 
   if need_jbossews_repo
   then
-    rhn-channel --add --channel jb-ews-2-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel jb-ews-2-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[jb-ews-2-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
   fi
 
   if need_optional_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
   fi
 }
 
 configure_rhsm_channels()
 {
-   echo "Register with RHSM using a pool ID"
-   subscription-manager register --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || exit 1
+   echo "Register with RHSM"
+   subscription-manager register --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || abort_install
    # add the necessary subscriptions
-   subscription-manager attach --auto || exit 1
-   subscription-manager attach --pool $CONF_SM_REG_POOL || exit 1
+   if [ "x$CONF_SM_REG_POOL_RHEL" == x ]; then
+     echo "Registering RHEL with any available subscription"
+     subscription-manager attach --auto || abort_install
+   else
+     echo "Registering RHEL subscription from pool id $CONF_SM_REG_POOL_RHEL"
+     subscription-manager attach --pool $CONF_SM_REG_POOL_RHEL || abort_install
+   fi
+   echo "Registering OpenShift subscription from pool id $CONF_SM_REG_POOL_RHEL"
+   subscription-manager attach --pool $CONF_SM_REG_POOL || abort_install
+
    # have yum sync new list of repos from rhsm before changing settings
    yum repolist
+
+   # Note: yum-config-manager never indicates errors in return code, and the output is difficult to parse; so,
+   # it is tricky to determine when these fail due to subscription problems etc.
 
    # configure the RHEL subscription
    yum-config-manager --setopt=rhel-6-server-rpms.priority=2 rhel-6-server-rpms --save
@@ -741,20 +787,28 @@ configure_rhsm_channels()
    fi
 }
 
+abort_install()
+{
+  # don't change this; could be used as an automation cue.
+  echo "Aborting OpenShift Installation."
+  exit 1
+}
+
 yum_install_or_exit()
 {
   yum install $*
   if [ $? -ne 0 ]
   then
-    echo "yum install failed; aborting installation. Please ensure you have configured the relevant repos/subscriptions."
-    exit 1
+    echo "Command failed: yum install $*"
+    echo "Please ensure relevant repos/subscriptions are configured."
+    abort_install
   fi
 }
 
 # Install the client tools.
 install_rhc_pkg()
 {
-  yum install -y rhc
+  yum_install_or_exit -y rhc
   # set up the system express.conf so this broker will be used by default
   echo -e "\nlibra_server = '${broker_hostname}'" >> /etc/openshift/express.conf
 }
@@ -765,9 +819,11 @@ install_broker_pkgs()
   pkgs="openshift-origin-broker"
   pkgs="$pkgs openshift-origin-broker-util"
   pkgs="$pkgs rubygem-openshift-origin-msg-broker-mcollective"
+  pkgs="$pkgs mcollective-client"
   pkgs="$pkgs rubygem-openshift-origin-auth-remote-user"
   pkgs="$pkgs rubygem-openshift-origin-dns-nsupdate"
   pkgs="$pkgs openshift-origin-console"
+
 
   yum_install_or_exit -y $pkgs
 }
@@ -778,6 +834,8 @@ install_node_pkgs()
   pkgs="rubygem-openshift-origin-node ruby193-rubygem-passenger-native"
   pkgs="$pkgs openshift-origin-port-proxy"
   pkgs="$pkgs openshift-origin-node-util"
+  pkgs="$pkgs mcollective openshift-origin-msg-node-mcollective"
+
   # We use semanage in this script, so we need to install
   # policycoreutils-python.
   pkgs="$pkgs policycoreutils-python"
@@ -791,7 +849,7 @@ install_node_pkgs()
 remove_abrt_addon_python()
 {
   if grep 'Enterprise Linux Server release 6.4' /etc/redhat-release && rpm -q abrt-addon-python && rpm -q openshift-origin-cartridge-python; then
-    yum remove -y abrt-addon-python
+    yum remove -y abrt-addon-python || abort_install
   fi
 }
 
@@ -860,42 +918,42 @@ install_cartridges()
     # Note: Be sure to subscribe to the JBossEWS entitlements during the
     # base install or in configure_jbossews_repo.
     carts="$carts openshift-origin-cartridge-jbossews"
- 
+
     # JBossEAP support.
     # Note: Be sure to subscribe to the JBossEAP entitlements during the
     # base install or in configure_jbosseap_repo.
     carts="$carts openshift-origin-cartridge-jbosseap"
- 
+
     # Jenkins server for continuous integration.
     carts="$carts openshift-origin-cartridge-jenkins"
- 
+
     # Embedded jenkins client.
     carts="$carts openshift-origin-cartridge-jenkins-client"
- 
+
     # Embedded MySQL.
     carts="$carts openshift-origin-cartridge-mysql"
- 
+
     # mod_perl support.
     carts="$carts openshift-origin-cartridge-perl"
-  
+
     # PHP support.
     carts="$carts openshift-origin-cartridge-php"
-  
+
     # Embedded PostgreSQL.
     carts="$carts openshift-origin-cartridge-postgresql"
-  
+
     # Python support.
     carts="$carts openshift-origin-cartridge-python"
-  
+
     # Ruby Rack support running on Phusion Passenger
     carts="$carts openshift-origin-cartridge-ruby"
   fi
 
   # When dependencies are missing, e.g. JBoss subscriptions,
   # still install as much as possible.
-  carts="$carts --skip-broken"
+  #carts="$carts --skip-broken"
 
-  yum install -y $carts
+  yum_install_or_exit -y $carts
 }
 
 # Fix up SELinux policy on the broker.
@@ -1073,12 +1131,13 @@ configure_sshd_on_node()
   sed -i -e "s/^#MaxStartups .*$/MaxStartups 40/" /etc/ssh/sshd_config
 }
 
-# Configure MongoDB datastore.
+install_datastore_pkgs()
+{
+  yum_install_or_exit -y mongodb-server
+}
+
 configure_datastore()
 {
-  # Install MongoDB.
-  yum_install_or_exit -y mongodb-server
-
   # Require authentication.
   sed -i -e "s/^#auth = .*$/auth = true/" /etc/mongodb.conf
 
@@ -1209,73 +1268,9 @@ enable_services_on_broker()
   chown apache:root /var/log/mcollective-client.log
 }
 
-
-# Configure mcollective on the broker to use qpid.
-configure_mcollective_for_qpid_on_broker()
-{
-  yum_install_or_exit -y mcollective-client
-
-  cat <<EOF > /etc/mcollective/client.cfg
-topicprefix = /topic/
-main_collective = mcollective
-collectives = mcollective
-libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
-loglevel = debug
-logfile = /var/log/mcollective-client.log
-
-# Plugins
-securityprovider = psk
-plugin.psk = unset
-connector = qpid
-plugin.qpid.host = ${broker_hostname}
-plugin.qpid.secure = false
-plugin.qpid.timeout = 5
-
-# Facts
-factsource = yaml
-plugin.yaml = /etc/mcollective/facts.yaml
-EOF
-
-}
-
-
-# Configure mcollective on the broker to use qpid.
-configure_mcollective_for_qpid_on_node()
-{
-  yum_install_or_exit -y mcollective openshift-origin-msg-node-mcollective
-
-  cat <<EOF > /etc/mcollective/server.cfg
-topicprefix = /topic/
-main_collective = mcollective
-collectives = mcollective
-libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
-logfile = /var/log/mcollective.log
-loglevel = debug
-daemonize = 1
-direct_addressing = n
-
-# Plugins
-securityprovider = psk
-plugin.psk = unset
-connector = qpid
-plugin.qpid.host = ${broker_hostname}
-plugin.qpid.secure = false
-plugin.qpid.timeout = 5
-
-# Facts
-factsource = yaml
-plugin.yaml = /etc/mcollective/facts.yaml
-EOF
-
-  chkconfig mcollective on
-}
-
-
 # Configure mcollective on the broker to use ActiveMQ.
 configure_mcollective_for_activemq_on_broker()
 {
-  yum_install_or_exit -y mcollective-client
-
   cat <<EOF > /etc/mcollective/client.cfg
 topicprefix = /topic/
 main_collective = mcollective
@@ -1307,8 +1302,6 @@ EOF
 # Configure mcollective on the node to use ActiveMQ.
 configure_mcollective_for_activemq_on_node()
 {
-  yum_install_or_exit -y mcollective openshift-origin-msg-node-mcollective
-
   cat <<EOF > /etc/mcollective/server.cfg
 topicprefix = /topic/
 main_collective = mcollective
@@ -1340,12 +1333,13 @@ EOF
 }
 
 
-# Configure ActiveMQ.
+install_activemq_pkgs()
+{
+  yum_install_or_exit -y activemq
+}
+
 configure_activemq()
 {
-  # Install the service.
-  yum_install_or_exit -y activemq
-
   cat <<EOF > /etc/activemq/activemq.xml
 <!--
     Licensed to the Apache Software Foundation (ASF) under one or more
@@ -1542,29 +1536,13 @@ EOF
   chkconfig activemq on
 }
 
-
-# Configure qpid. Deprecated for ActiveMQ.
-configure_qpid()
-{
-  if [[ "x`fgrep auth= /etc/qpidd.conf`" == xauth* ]]
-  then
-    sed -i -e 's/auth=yes/auth=no/' /etc/qpidd.conf
-  else
-    echo "auth=no" >> /etc/qpidd.conf
-  fi
-
-  # Allow connections to qpidd.
-  lokkit --nostart --port=5672:tcp
-
-  # Configure qpidd to start on boot.
-  chkconfig qpidd on
-}
-
-
-# Configure BIND.
-configure_named()
+install_named_pkgs()
 {
   yum_install_or_exit -y bind bind-utils
+}
+
+configure_named()
+{
 
   # $keyfile will contain a new DNSSEC key for our domain.
   keyfile=/var/named/${domain}.key
@@ -1773,49 +1751,6 @@ configure_remote_user_auth_plugin()
   cp /etc/openshift/plugins.d/openshift-origin-auth-remote-user.conf{.example,}
 }
 
-# Configure the broker to use the MongoDB-based authentication plugin.
-#
-# NB: It is assumed that configure_datastore has previously been run on
-# this host to install and configure MongoDB.
-configure_mongo_auth_plugin()
-{
-  cp /etc/openshift/plugins.d/openshift-origin-auth-mongo.conf{.example,}
-
-  if ! datastore
-  then
-    # MongoDB is running on a remote host, so we must modify the
-    # plug-in configuration to point it to that host.
-    sed -i -e "s/^MONGO_HOST_PORT=.*$/MONGO_HOST_PORT=\"${datastore_hostname}:27017\"/" /etc/openshift/plugins.d/openshift-origin-auth-mongo.conf
-  fi
-
-  # We must specify the --host, --username, and --password options iff the
-  # datastore is being installed on the current host.
-  if datastore
-  then
-    mongo_opts=""
-  else
-    mongo_opts="--host ${datastore_hostname} --username openshift --password mooo"
-  fi
-
-  # The init script is broken as of version 2.0.2-1.el6_3: The start 
-  # and restart actions return before the daemon is ready to accept
-  # connections (it appears to take time to initialize the journal).
-  # Thus we need the following hack to wait until the daemon is ready.
-  echo "Waiting for MongoDB to start ($(date +%H:%M:%S))..."
-  while :
-  do
-    echo exit | mongo $mongo_opts && break
-    sleep 5
-  done
-  echo "MongoDB is ready! ($(date +%H:%M:%S))"
-
-  hashed_password="$(printf 'admin' | md5sum -b | cut -d' ' -f1)"
-  hashed_salted_password="$(printf '%s' "$hashed_password$broker_auth_salt" | md5sum | cut -d' ' -f1)"
-
-  # Add user "admin" with password "admin" for oo-register-user.
-  mongo $mongodb_name $mongo_opts --eval 'db.auth_user.update({"_id":"admin"}, {"_id":"admin","user":"admin","password":"'"$hashed_salted_password"'"}, true)'
-}
-
 configure_messaging_plugin()
 {
   cp /etc/openshift/plugins.d/openshift-origin-msg-broker-mcollective.conf{.example,}
@@ -1908,7 +1843,7 @@ EOF
 
 configure_access_keys_on_broker()
 {
-  # Generate a broker access key for remote apps (Jenkins) to access 
+  # Generate a broker access key for remote apps (Jenkins) to access
   # the broker.
   openssl genrsa -out /etc/openshift/server_priv.pem 2048
   openssl rsa -in /etc/openshift/server_priv.pem -pubout > /etc/openshift/server_pub.pem
@@ -1923,7 +1858,7 @@ configure_access_keys_on_broker()
   ssh-keygen -t rsa -b 2048 -P "" -f /root/.ssh/rsync_id_rsa
   cp /root/.ssh/rsync_id_rsa* /etc/openshift/
   # the .pub key needs to go on nodes, but there is no good way
-  # to script that generically. Nodes should not have password-less 
+  # to script that generically. Nodes should not have password-less
   # access to brokers to copy the .pub key, but this can be performed
   # manually:
   #   # scp root@broker:/etc/openshift/rsync_id_rsa.pub /root/.ssh/
@@ -2178,9 +2113,9 @@ is_false()
 #   CONF_REPOS_BASE
 set_defaults()
 {
-  # By default, we run configure_all, which performs all the steps of
+  # By default, we run do_all_actions, which performs all the steps of
   # a normal installation.
-  actions="${CONF_ACTIONS:-configure_all}"
+  actions="${CONF_ACTIONS:-do_all_actions}"
 
   # Following are the different components that can be installed:
   components='broker node named activemq datastore'
@@ -2345,68 +2280,87 @@ set_defaults()
 
 
 ########################################################################
+#
+# These top-level steps also emit cues for automation to track progress.
+# Please don't change output wording arbitrarily.
 
-configure_all()
+init_message()
 {
   echo_installation_intentions
   configure_console_msg
+}
 
+validate_preflight()
+{
+  echo "OpenShift: Begin preflight validation."
+  failure=
+  # Test that this isn't RHEL < 6 or Fedora
+  # Test that SELinux is at least present and not Disabled
+  # Test that rpm/yum exists and isn't totally broken
+  # Test that known problematic RPMs aren't present
+  # Test that DNS resolution is sane
+  # ... ?
+  [ "$failure" ] && abort_install
+  echo "OpenShift: Completed preflight validation."
+}
 
-  # enable subscriptions / repositories according to requested method
-  configure_repos
+install_rpms()
+{
+  echo "OpenShift: Begin installing RPMs."
+  # we often rely on latest selinux policy and other updates
+  yum update -y || abort_install
+  # Install ntp and ntpdate because they may not be present in a RHEL
+  # minimal install.
+  yum_install_or_exit -y ntp ntpdate
 
-  # Install yum-plugin-priorities
-  yum clean all
-  echo "Installing yum-plugin-priorities; if something goes wrong here, check your install source."
-  yum install -y yum-plugin-priorities || exit 1
-
-  yum update -y
-
-  is_false "$CONF_NO_NTP" && synchronize_clock
-
-  # Note: configure_named must run before configure_controller if we are
-  # installing both named and broker on the same host.
-  named && configure_named
-
-  update_resolv_conf
-
-  configure_network
-  configure_hostname
-
-  datastore && configure_datastore
-
-  #broker && configure_qpid
-  activemq && configure_activemq
-
-  #broker && configure_mcollective_for_qpid_on_broker
-  broker && configure_mcollective_for_activemq_on_broker
-
-  #node && configure_mcollective_for_qpid_on_node
-  node && configure_mcollective_for_activemq_on_node
-
+  # install what we need for various components
+  named && install_named_pkgs
+  datastore && install_datastore_pkgs
+  activemq && install_activemq_pkgs
   broker && install_broker_pkgs
   node && install_node_pkgs
   node && install_cartridges
   node && remove_abrt_addon_python
   broker && install_rhc_pkg
+  echo "OpenShift: Completed installing RPMs."
+}
 
+configure_host()
+{
+  echo "OpenShift: Begin configuring host."
+  is_false "$CONF_NO_NTP" && synchronize_clock
+  # Note: configure_named must run before configure_controller if we are
+  # installing both named and broker on the same host.
+  named && configure_named
+  update_resolv_conf
+  configure_network
+  configure_hostname
+  echo "OpenShift: Completed configuring host."
+}
+
+configure_openshift()
+{
+  echo "OpenShift: Begin configuring OpenShift."
+
+  # prepare services the broker and node depend on
+  datastore && configure_datastore
+  activemq && configure_activemq
+  broker && configure_mcollective_for_activemq_on_broker
+  node && configure_mcollective_for_activemq_on_node
+
+  # configure broker and/or node
   broker && enable_services_on_broker
   node && enable_services_on_node
-
   node && configure_pam_on_node
   node && configure_cgroups_on_node
   node && configure_quotas_on_node
-
   broker && configure_selinux_policy_on_broker
   node && configure_selinux_policy_on_node
-
   node && configure_sysctl_on_node
   node && configure_sshd_on_node
-
   broker && configure_controller
   broker && configure_remote_user_auth_plugin
   broker && configure_access_keys_on_broker
-  #broker && configure_mongo_auth_plugin
   broker && configure_messaging_plugin
   broker && configure_dns_plugin
   broker && configure_httpd_auth
@@ -2420,8 +2374,26 @@ configure_all()
 
   node && broker && fix_broker_routing
 
+  echo "OpenShift: Completed configuring OpenShift."
+}
+
+reboot_after()
+{
+  echo "OpenShift: Rebooting after install."
+  reboot
+}
+
+do_all_actions()
+{
+  init_message
+  validate_preflight
+  configure_repos
+  install_rpms
+  configure_host
+  configure_openshift
   echo "Installation and configuration is complete;"
   echo "please reboot to start all services properly."
+  echo "Then validate brokers/nodes with oo-diagnostics."
 }
 
 ########################################################################
@@ -2441,7 +2413,7 @@ do
   if ! [ "$(type -t "$action")" = function ]
   then
     echo "Invalid action: ${action}"
-    exit 1
+    abort_install
   fi
   "$action"
 done

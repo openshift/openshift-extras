@@ -24,9 +24,6 @@ set -x
 # hardware clock with that.
 synchronize_clock()
 {
-  # Install ntp and ntpdate because they may not be present in a RHEL
-  # minimal install.
-  yum install -y ntp ntpdate
 
   # Synchronize the system clock using NTP.
   ntpdate clock.redhat.com
@@ -38,6 +35,7 @@ synchronize_clock()
 
 configure_repos()
 {
+  echo "OpenShift: Begin configuring repos."
   # Determine which channels we need and define corresponding predicate
   # functions.
 
@@ -84,6 +82,12 @@ configure_repos()
       configure_rhsm_channels
       ;;
   esac
+
+  # Install yum-plugin-priorities
+  yum clean all
+  echo "Installing yum-plugin-priorities; if something goes wrong here, check your install source."
+  yum_install_or_exit -y yum-plugin-priorities
+  echo "OpenShift: Completed configuring repos."
 }
 
 configure_yum_repos()
@@ -281,8 +285,13 @@ YUM
 
 configure_rhn_channels()
 {
-  echo "Register with RHN using an activation key"
-  rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || exit 1
+  if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
+    echo "Register with RHN using an activation key"
+    rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || abort_install
+  else
+    echo "Register with RHN with username and password"
+    rhnreg_ks --profilename=${hostname} --username ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+  fi
 
   # RHN method for setting yum priorities and excludes:
   RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
@@ -290,25 +299,25 @@ configure_rhn_channels()
   # OSE packages are first priority
   if need_client_tools_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-rhc --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-rhc --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[rhel-x86_64-server-6-ose-1.2-rhc]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_infra_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-infrastructure --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-infrastructure --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[rhel-x86_64-server-6-ose-1.2-infrastructure]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_node_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-node --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-node --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[rhel-x86_64-server-6-ose-1.2-node]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_jbosseap_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[rhel-x86_64-server-6-ose-1.2-jbosseap]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
@@ -318,31 +327,42 @@ configure_rhn_channels()
   # JBoss packages are third priority -- and all else is lower
   if need_jbosseap_repo
   then
-    rhn-channel --add --channel jbappplatform-6-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel jbappplatform-6-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[jbappplatform-6-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
   fi
 
   if need_jbossews_repo
   then
-    rhn-channel --add --channel jb-ews-2-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel jb-ews-2-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[jb-ews-2-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
   fi
 
   if need_optional_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
   fi
 }
 
 configure_rhsm_channels()
 {
-   echo "Register with RHSM using a pool ID"
-   subscription-manager register --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || exit 1
+   echo "Register with RHSM"
+   subscription-manager register --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || abort_install
    # add the necessary subscriptions
-   subscription-manager attach --auto || exit 1
-   subscription-manager attach --pool $CONF_SM_REG_POOL || exit 1
+   if [ "x$CONF_SM_REG_POOL_RHEL" == x ]; then
+     echo "Registering RHEL with any available subscription"
+     subscription-manager attach --auto || abort_install
+   else
+     echo "Registering RHEL subscription from pool id $CONF_SM_REG_POOL_RHEL"
+     subscription-manager attach --pool $CONF_SM_REG_POOL_RHEL || abort_install
+   fi
+   echo "Registering OpenShift subscription from pool id $CONF_SM_REG_POOL_RHEL"
+   subscription-manager attach --pool $CONF_SM_REG_POOL || abort_install
+
    # have yum sync new list of repos from rhsm before changing settings
    yum repolist
+
+   # Note: yum-config-manager never indicates errors in return code, and the output is difficult to parse; so,
+   # it is tricky to determine when these fail due to subscription problems etc.
 
    # configure the RHEL subscription
    yum-config-manager --setopt=rhel-6-server-rpms.priority=2 rhel-6-server-rpms --save
@@ -393,20 +413,28 @@ configure_rhsm_channels()
    fi
 }
 
+abort_install()
+{
+  # don't change this; could be used as an automation cue.
+  echo "Aborting OpenShift Installation."
+  exit 1
+}
+
 yum_install_or_exit()
 {
   yum install $*
   if [ $? -ne 0 ]
   then
-    echo "yum install failed; aborting installation. Please ensure you have configured the relevant repos/subscriptions."
-    exit 1
+    echo "Command failed: yum install $*"
+    echo "Please ensure relevant repos/subscriptions are configured."
+    abort_install
   fi
 }
 
 # Install the client tools.
 install_rhc_pkg()
 {
-  yum install -y rhc
+  yum_install_or_exit -y rhc
   # set up the system express.conf so this broker will be used by default
   echo -e "\nlibra_server = '${broker_hostname}'" >> /etc/openshift/express.conf
 }
@@ -417,9 +445,11 @@ install_broker_pkgs()
   pkgs="openshift-origin-broker"
   pkgs="$pkgs openshift-origin-broker-util"
   pkgs="$pkgs rubygem-openshift-origin-msg-broker-mcollective"
+  pkgs="$pkgs mcollective-client"
   pkgs="$pkgs rubygem-openshift-origin-auth-remote-user"
   pkgs="$pkgs rubygem-openshift-origin-dns-nsupdate"
   pkgs="$pkgs openshift-origin-console"
+
 
   yum_install_or_exit -y $pkgs
 }
@@ -430,6 +460,8 @@ install_node_pkgs()
   pkgs="rubygem-openshift-origin-node ruby193-rubygem-passenger-native"
   pkgs="$pkgs openshift-origin-port-proxy"
   pkgs="$pkgs openshift-origin-node-util"
+  pkgs="$pkgs mcollective openshift-origin-msg-node-mcollective"
+
   # We use semanage in this script, so we need to install
   # policycoreutils-python.
   pkgs="$pkgs policycoreutils-python"
@@ -443,7 +475,7 @@ install_node_pkgs()
 remove_abrt_addon_python()
 {
   if grep 'Enterprise Linux Server release 6.4' /etc/redhat-release && rpm -q abrt-addon-python && rpm -q openshift-origin-cartridge-python; then
-    yum remove -y abrt-addon-python
+    yum remove -y abrt-addon-python || abort_install
   fi
 }
 
@@ -512,42 +544,42 @@ install_cartridges()
     # Note: Be sure to subscribe to the JBossEWS entitlements during the
     # base install or in configure_jbossews_repo.
     carts="$carts openshift-origin-cartridge-jbossews"
- 
+
     # JBossEAP support.
     # Note: Be sure to subscribe to the JBossEAP entitlements during the
     # base install or in configure_jbosseap_repo.
     carts="$carts openshift-origin-cartridge-jbosseap"
- 
+
     # Jenkins server for continuous integration.
     carts="$carts openshift-origin-cartridge-jenkins"
- 
+
     # Embedded jenkins client.
     carts="$carts openshift-origin-cartridge-jenkins-client"
- 
+
     # Embedded MySQL.
     carts="$carts openshift-origin-cartridge-mysql"
- 
+
     # mod_perl support.
     carts="$carts openshift-origin-cartridge-perl"
-  
+
     # PHP support.
     carts="$carts openshift-origin-cartridge-php"
-  
+
     # Embedded PostgreSQL.
     carts="$carts openshift-origin-cartridge-postgresql"
-  
+
     # Python support.
     carts="$carts openshift-origin-cartridge-python"
-  
+
     # Ruby Rack support running on Phusion Passenger
     carts="$carts openshift-origin-cartridge-ruby"
   fi
 
   # When dependencies are missing, e.g. JBoss subscriptions,
   # still install as much as possible.
-  carts="$carts --skip-broken"
+  #carts="$carts --skip-broken"
 
-  yum install -y $carts
+  yum_install_or_exit -y $carts
 }
 
 # Fix up SELinux policy on the broker.
@@ -725,12 +757,13 @@ configure_sshd_on_node()
   sed -i -e "s/^#MaxStartups .*$/MaxStartups 40/" /etc/ssh/sshd_config
 }
 
-# Configure MongoDB datastore.
+install_datastore_pkgs()
+{
+  yum_install_or_exit -y mongodb-server
+}
+
 configure_datastore()
 {
-  # Install MongoDB.
-  yum_install_or_exit -y mongodb-server
-
   # Require authentication.
   sed -i -e "s/^#auth = .*$/auth = true/" /etc/mongodb.conf
 
@@ -861,73 +894,9 @@ enable_services_on_broker()
   chown apache:root /var/log/mcollective-client.log
 }
 
-
-# Configure mcollective on the broker to use qpid.
-configure_mcollective_for_qpid_on_broker()
-{
-  yum_install_or_exit -y mcollective-client
-
-  cat <<EOF > /etc/mcollective/client.cfg
-topicprefix = /topic/
-main_collective = mcollective
-collectives = mcollective
-libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
-loglevel = debug
-logfile = /var/log/mcollective-client.log
-
-# Plugins
-securityprovider = psk
-plugin.psk = unset
-connector = qpid
-plugin.qpid.host = ${broker_hostname}
-plugin.qpid.secure = false
-plugin.qpid.timeout = 5
-
-# Facts
-factsource = yaml
-plugin.yaml = /etc/mcollective/facts.yaml
-EOF
-
-}
-
-
-# Configure mcollective on the broker to use qpid.
-configure_mcollective_for_qpid_on_node()
-{
-  yum_install_or_exit -y mcollective openshift-origin-msg-node-mcollective
-
-  cat <<EOF > /etc/mcollective/server.cfg
-topicprefix = /topic/
-main_collective = mcollective
-collectives = mcollective
-libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
-logfile = /var/log/mcollective.log
-loglevel = debug
-daemonize = 1
-direct_addressing = n
-
-# Plugins
-securityprovider = psk
-plugin.psk = unset
-connector = qpid
-plugin.qpid.host = ${broker_hostname}
-plugin.qpid.secure = false
-plugin.qpid.timeout = 5
-
-# Facts
-factsource = yaml
-plugin.yaml = /etc/mcollective/facts.yaml
-EOF
-
-  chkconfig mcollective on
-}
-
-
 # Configure mcollective on the broker to use ActiveMQ.
 configure_mcollective_for_activemq_on_broker()
 {
-  yum_install_or_exit -y mcollective-client
-
   cat <<EOF > /etc/mcollective/client.cfg
 topicprefix = /topic/
 main_collective = mcollective
@@ -959,8 +928,6 @@ EOF
 # Configure mcollective on the node to use ActiveMQ.
 configure_mcollective_for_activemq_on_node()
 {
-  yum_install_or_exit -y mcollective openshift-origin-msg-node-mcollective
-
   cat <<EOF > /etc/mcollective/server.cfg
 topicprefix = /topic/
 main_collective = mcollective
@@ -992,12 +959,13 @@ EOF
 }
 
 
-# Configure ActiveMQ.
+install_activemq_pkgs()
+{
+  yum_install_or_exit -y activemq
+}
+
 configure_activemq()
 {
-  # Install the service.
-  yum_install_or_exit -y activemq
-
   cat <<EOF > /etc/activemq/activemq.xml
 <!--
     Licensed to the Apache Software Foundation (ASF) under one or more
@@ -1194,29 +1162,13 @@ EOF
   chkconfig activemq on
 }
 
-
-# Configure qpid. Deprecated for ActiveMQ.
-configure_qpid()
-{
-  if [[ "x`fgrep auth= /etc/qpidd.conf`" == xauth* ]]
-  then
-    sed -i -e 's/auth=yes/auth=no/' /etc/qpidd.conf
-  else
-    echo "auth=no" >> /etc/qpidd.conf
-  fi
-
-  # Allow connections to qpidd.
-  lokkit --nostart --port=5672:tcp
-
-  # Configure qpidd to start on boot.
-  chkconfig qpidd on
-}
-
-
-# Configure BIND.
-configure_named()
+install_named_pkgs()
 {
   yum_install_or_exit -y bind bind-utils
+}
+
+configure_named()
+{
 
   # $keyfile will contain a new DNSSEC key for our domain.
   keyfile=/var/named/${domain}.key
@@ -1425,49 +1377,6 @@ configure_remote_user_auth_plugin()
   cp /etc/openshift/plugins.d/openshift-origin-auth-remote-user.conf{.example,}
 }
 
-# Configure the broker to use the MongoDB-based authentication plugin.
-#
-# NB: It is assumed that configure_datastore has previously been run on
-# this host to install and configure MongoDB.
-configure_mongo_auth_plugin()
-{
-  cp /etc/openshift/plugins.d/openshift-origin-auth-mongo.conf{.example,}
-
-  if ! datastore
-  then
-    # MongoDB is running on a remote host, so we must modify the
-    # plug-in configuration to point it to that host.
-    sed -i -e "s/^MONGO_HOST_PORT=.*$/MONGO_HOST_PORT=\"${datastore_hostname}:27017\"/" /etc/openshift/plugins.d/openshift-origin-auth-mongo.conf
-  fi
-
-  # We must specify the --host, --username, and --password options iff the
-  # datastore is being installed on the current host.
-  if datastore
-  then
-    mongo_opts=""
-  else
-    mongo_opts="--host ${datastore_hostname} --username openshift --password mooo"
-  fi
-
-  # The init script is broken as of version 2.0.2-1.el6_3: The start 
-  # and restart actions return before the daemon is ready to accept
-  # connections (it appears to take time to initialize the journal).
-  # Thus we need the following hack to wait until the daemon is ready.
-  echo "Waiting for MongoDB to start ($(date +%H:%M:%S))..."
-  while :
-  do
-    echo exit | mongo $mongo_opts && break
-    sleep 5
-  done
-  echo "MongoDB is ready! ($(date +%H:%M:%S))"
-
-  hashed_password="$(printf 'admin' | md5sum -b | cut -d' ' -f1)"
-  hashed_salted_password="$(printf '%s' "$hashed_password$broker_auth_salt" | md5sum | cut -d' ' -f1)"
-
-  # Add user "admin" with password "admin" for oo-register-user.
-  mongo $mongodb_name $mongo_opts --eval 'db.auth_user.update({"_id":"admin"}, {"_id":"admin","user":"admin","password":"'"$hashed_salted_password"'"}, true)'
-}
-
 configure_messaging_plugin()
 {
   cp /etc/openshift/plugins.d/openshift-origin-msg-broker-mcollective.conf{.example,}
@@ -1560,7 +1469,7 @@ EOF
 
 configure_access_keys_on_broker()
 {
-  # Generate a broker access key for remote apps (Jenkins) to access 
+  # Generate a broker access key for remote apps (Jenkins) to access
   # the broker.
   openssl genrsa -out /etc/openshift/server_priv.pem 2048
   openssl rsa -in /etc/openshift/server_priv.pem -pubout > /etc/openshift/server_pub.pem
@@ -1575,7 +1484,7 @@ configure_access_keys_on_broker()
   ssh-keygen -t rsa -b 2048 -P "" -f /root/.ssh/rsync_id_rsa
   cp /root/.ssh/rsync_id_rsa* /etc/openshift/
   # the .pub key needs to go on nodes, but there is no good way
-  # to script that generically. Nodes should not have password-less 
+  # to script that generically. Nodes should not have password-less
   # access to brokers to copy the .pub key, but this can be performed
   # manually:
   #   # scp root@broker:/etc/openshift/rsync_id_rsa.pub /root/.ssh/
@@ -1830,9 +1739,9 @@ is_false()
 #   CONF_REPOS_BASE
 set_defaults()
 {
-  # By default, we run configure_all, which performs all the steps of
+  # By default, we run do_all_actions, which performs all the steps of
   # a normal installation.
-  actions="${CONF_ACTIONS:-configure_all}"
+  actions="${CONF_ACTIONS:-do_all_actions}"
 
   # Following are the different components that can be installed:
   components='broker node named activemq datastore'
@@ -1997,68 +1906,87 @@ set_defaults()
 
 
 ########################################################################
+#
+# These top-level steps also emit cues for automation to track progress.
+# Please don't change output wording arbitrarily.
 
-configure_all()
+init_message()
 {
   echo_installation_intentions
 #  configure_console_msg
+}
 
+validate_preflight()
+{
+  echo "OpenShift: Begin preflight validation."
+  failure=
+  # Test that this isn't RHEL < 6 or Fedora
+  # Test that SELinux is at least present and not Disabled
+  # Test that rpm/yum exists and isn't totally broken
+  # Test that known problematic RPMs aren't present
+  # Test that DNS resolution is sane
+  # ... ?
+  [ "$failure" ] && abort_install
+  echo "OpenShift: Completed preflight validation."
+}
 
-  # enable subscriptions / repositories according to requested method
-  configure_repos
+install_rpms()
+{
+  echo "OpenShift: Begin installing RPMs."
+  # we often rely on latest selinux policy and other updates
+  yum update -y || abort_install
+  # Install ntp and ntpdate because they may not be present in a RHEL
+  # minimal install.
+  yum_install_or_exit -y ntp ntpdate
 
-  # Install yum-plugin-priorities
-  yum clean all
-  echo "Installing yum-plugin-priorities; if something goes wrong here, check your install source."
-  yum install -y yum-plugin-priorities || exit 1
-
-  yum update -y
-
-  is_false "$CONF_NO_NTP" && synchronize_clock
-
-  # Note: configure_named must run before configure_controller if we are
-  # installing both named and broker on the same host.
-  named && configure_named
-
-#  update_resolv_conf
-
-  configure_network
-#  configure_hostname
-
-  datastore && configure_datastore
-
-  #broker && configure_qpid
-  activemq && configure_activemq
-
-  #broker && configure_mcollective_for_qpid_on_broker
-  broker && configure_mcollective_for_activemq_on_broker
-
-  #node && configure_mcollective_for_qpid_on_node
-  node && configure_mcollective_for_activemq_on_node
-
+  # install what we need for various components
+  named && install_named_pkgs
+  datastore && install_datastore_pkgs
+  activemq && install_activemq_pkgs
   broker && install_broker_pkgs
   node && install_node_pkgs
   node && install_cartridges
   node && remove_abrt_addon_python
   broker && install_rhc_pkg
+  echo "OpenShift: Completed installing RPMs."
+}
 
+configure_host()
+{
+  echo "OpenShift: Begin configuring host."
+  is_false "$CONF_NO_NTP" && synchronize_clock
+  # Note: configure_named must run before configure_controller if we are
+  # installing both named and broker on the same host.
+  named && configure_named
+#  update_resolv_conf
+  configure_network
+#  configure_hostname
+  echo "OpenShift: Completed configuring host."
+}
+
+configure_openshift()
+{
+  echo "OpenShift: Begin configuring OpenShift."
+
+  # prepare services the broker and node depend on
+  datastore && configure_datastore
+  activemq && configure_activemq
+  broker && configure_mcollective_for_activemq_on_broker
+  node && configure_mcollective_for_activemq_on_node
+
+  # configure broker and/or node
   broker && enable_services_on_broker
   node && enable_services_on_node
-
   node && configure_pam_on_node
   node && configure_cgroups_on_node
   node && configure_quotas_on_node
-
   broker && configure_selinux_policy_on_broker
   node && configure_selinux_policy_on_node
-
   node && configure_sysctl_on_node
   node && configure_sshd_on_node
-
   broker && configure_controller
   broker && configure_remote_user_auth_plugin
   broker && configure_access_keys_on_broker
-  #broker && configure_mongo_auth_plugin
   broker && configure_messaging_plugin
   broker && configure_dns_plugin
   broker && configure_httpd_auth
@@ -2072,8 +2000,26 @@ configure_all()
 
   node && broker && fix_broker_routing
 
+  echo "OpenShift: Completed configuring OpenShift."
+}
+
+reboot_after()
+{
+  echo "OpenShift: Rebooting after install."
+  reboot
+}
+
+do_all_actions()
+{
+  init_message
+  validate_preflight
+  configure_repos
+  install_rpms
+  configure_host
+  configure_openshift
   echo "Installation and configuration is complete;"
   echo "please reboot to start all services properly."
+  echo "Then validate brokers/nodes with oo-diagnostics."
 }
 
 ########################################################################
@@ -2093,7 +2039,7 @@ do
   if ! [ "$(type -t "$action")" = function ]
   then
     echo "Invalid action: ${action}"
-    exit 1
+    abort_install
   fi
   "$action"
 done
