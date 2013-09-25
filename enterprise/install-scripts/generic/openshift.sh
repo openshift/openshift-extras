@@ -5,23 +5,26 @@
 # image. When running the %post outside kickstart, a reboot is required
 # afterward.
 #
-# If this script aborts due to an inability to install packages, it should
-# be safe to re-run. Once it has completed installation and begun
-# configuration, it is unlikely to abort, but in the event that it does,
-# re-running it could introduce misconfigurations as there is no mechanism
-# for skipping previously completed tasks.
+# If this script aborts due to an inability to install packages (the most
+# common failure), it should be safe to re-run once you've resolved the
+# problem (i.e. either manually fix configuration and run with
+# INSTALL_METHOD=none, or unregister / remove all repos and start over).
+# Once package installation completes and configuration begins, aborts
+# are unlikely; but in the event that one occurs, re-running could
+# introduce misconfigurations as configure steps do not all include
+# enough intelligence to be repeatable.
 #
 # While this script serves as a good example script for installing a
 # single host, it is not comprehensive nor robust enough to be considered
 # a proper enterprise installer on its own. Production installations will
 # typically require significant adaptations or an entirely different
-# method of installation.
+# method of installation. Please adapt it to your needs.
 
 # SPECIFYING PARAMETERS
 #
 # If you supply no parameters, all components are installed on one host
 # with default configuration, which should give you a running demo,
-# given you have provided an install source and method.
+# given a usable install method.
 #
 # For a kickstart, you can supply further kernel parameters (in addition
 # to the ks=location itself).
@@ -156,11 +159,12 @@
 #     rhsm - use subscription-manager
 #       sm_reg_name / CONF_SM_REG_NAME
 #       sm_reg_pass / CONF_SM_REG_PASS
-#       sm_reg_pool / CONF_SM_REG_POOL - pool ID for OpenShift subscription
+#       sm_reg_pool / CONF_SM_REG_POOL - pool ID for OpenShift subscription (required)
+#       sm_reg_pool_rhel / CONF_SM_REG_POOL_RHEL - pool ID for RHEL subscription (optional)
 #     rhn - use rhn-register
 #       rhn_reg_name / CONF_RHN_REG_NAME
 #       rhn_reg_pass / CONF_RHN_REG_PASS
-#       rhn_reg_actkey / CONF_RHN_REG_ACTKEY
+#       rhn_reg_actkey / CONF_RHN_REG_ACTKEY - optional activation key
 #   Default: none
 #CONF_INSTALL_METHOD="yum"
 
@@ -607,8 +611,13 @@ YUM
 
 configure_rhn_channels()
 {
-  echo "Register with RHN using an activation key"
-  rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || exit 1
+  if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
+    echo "Register with RHN using an activation key"
+    rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || abort_install
+  else
+    echo "Register with RHN with username and password"
+    rhnreg_ks --profilename=${hostname} --username ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+  fi
 
   # RHN method for setting yum priorities and excludes:
   RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
@@ -616,25 +625,25 @@ configure_rhn_channels()
   # OSE packages are first priority
   if need_client_tools_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-rhc --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-rhc --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[rhel-x86_64-server-6-ose-1.2-rhc]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_infra_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-infrastructure --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-infrastructure --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[rhel-x86_64-server-6-ose-1.2-infrastructure]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_node_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-node --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-node --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[rhel-x86_64-server-6-ose-1.2-node]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_jbosseap_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[rhel-x86_64-server-6-ose-1.2-jbosseap]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
@@ -644,31 +653,42 @@ configure_rhn_channels()
   # JBoss packages are third priority -- and all else is lower
   if need_jbosseap_repo
   then
-    rhn-channel --add --channel jbappplatform-6-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel jbappplatform-6-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[jbappplatform-6-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
   fi
 
   if need_jbossews_repo
   then
-    rhn-channel --add --channel jb-ews-2-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel jb-ews-2-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
     echo -e "[jb-ews-2-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
   fi
 
   if need_optional_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
+    rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
   fi
 }
 
 configure_rhsm_channels()
 {
-   echo "Register with RHSM using a pool ID"
-   subscription-manager register --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || exit 1
+   echo "Register with RHSM"
+   subscription-manager register --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || abort_install
    # add the necessary subscriptions
-   subscription-manager attach --auto || exit 1
-   subscription-manager attach --pool $CONF_SM_REG_POOL || exit 1
+   if [ "x$CONF_SM_REG_POOL_RHEL" == x ]; then
+     echo "Registering RHEL with any available subscription"
+     subscription-manager attach --auto || abort_install
+   else
+     echo "Registering RHEL subscription from pool id $CONF_SM_REG_POOL_RHEL"
+     subscription-manager attach --pool $CONF_SM_REG_POOL_RHEL || abort_install
+   fi
+   echo "Registering OpenShift subscription from pool id $CONF_SM_REG_POOL_RHEL"
+   subscription-manager attach --pool $CONF_SM_REG_POOL || abort_install
+
    # have yum sync new list of repos from rhsm before changing settings
    yum repolist
+
+   # Note: yum-config-manager never indicates errors in return code, and the output is difficult to parse; so,
+   # it is tricky to determine when these fail due to subscription problems etc.
 
    # configure the RHEL subscription
    yum-config-manager --setopt=rhel-6-server-rpms.priority=2 rhel-6-server-rpms --save
@@ -731,7 +751,8 @@ yum_install_or_exit()
   yum install $*
   if [ $? -ne 0 ]
   then
-    echo "yum install failed; aborting installation. Please ensure relevant repos/subscriptions are configured."
+    echo "Command failed: yum install $*"
+    echo "Please ensure relevant repos/subscriptions are configured."
     abort_install
   fi
 }
@@ -2344,7 +2365,7 @@ do
   if ! [ "$(type -t "$action")" = function ]
   then
     echo "Invalid action: ${action}"
-    exit 1
+    abort_install
   fi
   "$action"
 done
