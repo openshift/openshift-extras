@@ -72,7 +72,7 @@ module Installer
         say translate :info_unattended_workflow_start
 
         # Hand it off to the workflow executable
-        workflow.executable.run workflow_cfg
+        workflow.executable.run workflow_cfg, merged_subscription
       end
       0
     end
@@ -193,7 +193,7 @@ module Installer
       end
 
       # Hand it off to the workflow executable
-      workflow.executable.run workflow_cfg
+      workflow.executable.run workflow_cfg, merged_subscription
       return 0
     end
 
@@ -205,7 +205,7 @@ module Installer
       while workflow_cfg.empty? or agree("\nDo you want to make any changes to your answers?(Y/N) ", true)
         workflow.questions.each do |question|
           puts "\n"
-          question.ask(workflow_cfg)
+          question.ask(deployment, workflow_cfg)
         end
       end
       config.set_workflow_cfg workflow.id, workflow_cfg

@@ -71,7 +71,8 @@ module Installer
       else
         @non_deployment = false
       end
-      @path = gem_root_dir + "/workflows/" + id
+      workflow_dir = config.has_key?('WorkflowDir') ? config['WorkflowDir'] : id
+      @path = gem_root_dir + "/workflows/" + workflow_dir
       @questions = config.has_key?('Questions') ? config['Questions'].map{ |q| Installer::Question.new(self, q) } : []
       @executable = Installer::Executable.new(self, config['Executable'])
     end

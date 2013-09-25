@@ -22,13 +22,11 @@ module Installer
 
     def run workflow_cfg, subscription=nil
       expanded_command = expand_workflow_variables(workflow_cfg)
+      env_vars = {}
       if not subscription.nil?
         env_vars = expand_subscription_variables(subscription)
-        if not env_vars.empty?
-          expanded_command = "#{env_vars} #{expanded_command}"
-        end
       end
-      system expanded_command
+      system(env_vars, expanded_command)
       @status = $?.exitstatus
     end
 
@@ -61,14 +59,14 @@ module Installer
     end
 
     def expand_subscription_variables subscription
-      env_vars = []
+      env_vars = {}
       Installer::Subscription.object_attrs.each do |attr|
         value = subscription.send(attr)
         if not value.nil?
-          env_vars << "INSTALLER_#{attr.upcase}=#{value}"
+          env_vars["INSTALLER_#{attr.upcase}"] = value
         end
       end
-      env_vars.join(' ')
+      env_vars
     end
 
     # Original source for #which:
