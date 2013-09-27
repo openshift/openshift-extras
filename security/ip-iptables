@@ -144,8 +144,8 @@ function uid_to_ip {
 
 
 # INPUT rule to allow access to all proxy ports
-iptables -I INPUT 4 -p tcp \
-  -dport ${PORT_BEGIN}:${PORT_END} \
+iptables -I INPUT 4 -p tcp -m multiport \
+  --dport ${PORT_BEGIN}:${PORT_END} \
   -m state --state NEW \
   -j ACCEPT
 
