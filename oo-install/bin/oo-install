@@ -1,0 +1,57 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+require 'installer'
+require 'installer/assistant'
+require 'installer/config'
+require 'installer/helpers'
+require 'installer/subscription'
+require 'installer/workflow'
+
+include Installer::Helpers
+
+config = Installer::Config.new
+@cli_subscription = Installer::Subscription.new(config)
+@workflow_id = nil
+p = OptionParser.new do |opts|
+  opts.banner = "Usage: oo-install [args]"
+  opts.separator ''
+  opts.on('-c', '--config-file FILEPATH', 'The path to an alternate config file') do |filepath|
+    if file_check(filepath)
+      config.file_path = filepath
+    else
+      puts "Config file '#{filepath}' cannot be found or is not readable. Exiting."
+      exit 1
+    end
+  end
+  opts.on('-w', '--workflow WORKFLOW_ID', 'The installer workflow for automated deployment on this host.') do |workflow_id|
+    if Installer::Workflow.ids.include?(workflow_id)
+      # Automated deployment can only be done with a config file. Make sure the
+      # config file exists.
+      unless file_check(config.file_path)
+        puts "Automated deployment requires a configuration file.\nProvide a path to a configuration file or put one at the default location: '#{default_config}'.\nExiting."
+        exit 1
+      end
+      config.workflow_id = workflow_id
+    else
+      puts "Unknown workflow ID '#{workflow_id}'. Valid values are:\n\n#{Installer::Workflow.ids.map{ |i| "* #{i}" }.join("\n")}\n\nExiting."
+      exit 1
+    end
+  end
+  opts.on('-s', '--subscription-type [TYPE]', Installer::Subscription.subscription_types.keys, "The software source for missing installation packages (#{Installer::Subscription.subscription_types.keys.map{ |k| k.to_s }.join(', ')})") do |subscription_type|
+    @cli_subscription.subscription_type = subscription_type
+  end
+  opts.on('-p', '--password PASSWORD', 'Red Hat Login password') do |password|
+    @cli_subscription.rh_password
+  end
+  opts.on('-u', '--username USERNAME', 'Red Hat Login username') do |username|
+    @cli_subscription.rh_username
+  end
+end.parse!
+unless config.is_valid?
+  puts "Could not process config file at '#{config.file_path}'. Exiting."
+  exit 1
+end
+assistant = Installer::Assistant.new(config, @workflow_id, @cli_subscription)
+result = assistant.run
+exit result.nil? ? 0 : result
