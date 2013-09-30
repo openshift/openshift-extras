@@ -40,3 +40,25 @@ ID: login_info
 SkipDeploymentCheck: Y
 NonDeployment: Y
 Executable: <workflow_path>/login_info
+---
+Name: OE Deployment
+Type: ose
+Description: Install OpenShift Enterprise
+ID: enterprise_deploy
+Executable: <workflow_path>/launcher.rb
+RemoteDeployment: y
+SubscriptionCheck: y
+---
+Name: OE Node-Instance Deployment
+Type: ose
+Description: Add a Node instance to an OpenShift Enterprise deployment
+ID: enterprise_add_node
+WorkflowDir: enterprise_deploy
+Questions:
+  - Text: From your list of Nodes, which instance would you like to deploy?
+    Variable: rolehost
+    AnswerType: rolehost:node
+Executable: <workflow_path>/launcher.rb <q:rolehost>
+RemoteDeployment: y
+SubscriptionCheck: y
+

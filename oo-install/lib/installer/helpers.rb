@@ -24,15 +24,6 @@ module Installer
       @gem_root_dir ||= File.expand_path '../../../', __FILE__
     end
 
-    def workflow_cfg_file
-      ['workflows_ose.yml','workflows.yml'].each do |cfg_file|
-        if File.exists?("#{gem_root_dir}/conf/#{cfg_file}")
-          return cfg_file
-        end
-      end
-      raise Installer::WorkflowFileNotFoundException.new
-    end
-
     # SOURCE for #which:
     # http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
     def which(cmd)

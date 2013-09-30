@@ -13,6 +13,7 @@ include Installer::Helpers
 config = Installer::Config.new
 @cli_subscription = Installer::Subscription.new(config)
 @workflow_id = nil
+@assistant_context = :origin
 p = OptionParser.new do |opts|
   opts.banner = "Usage: oo-install [args]"
   opts.separator ''
@@ -38,20 +39,23 @@ p = OptionParser.new do |opts|
       exit 1
     end
   end
+  opts.on('-e', '--openshift-enterprise', 'Show OpenShift Enterprise options (ignored in unattended mode)') do |flag|
+    @assistant_context = :ose if flag == true
+  end
   opts.on('-s', '--subscription-type [TYPE]', Installer::Subscription.subscription_types.keys, "The software source for missing installation packages (#{Installer::Subscription.subscription_types.keys.map{ |k| k.to_s }.join(', ')})") do |subscription_type|
     @cli_subscription.subscription_type = subscription_type
   end
-  opts.on('-p', '--password PASSWORD', 'Red Hat Login password') do |password|
-    @cli_subscription.rh_password
-  end
   opts.on('-u', '--username USERNAME', 'Red Hat Login username') do |username|
     @cli_subscription.rh_username
+  end
+  opts.on('-p', '--password PASSWORD', 'Red Hat Login password') do |password|
+    @cli_subscription.rh_password
   end
 end.parse!
 unless config.is_valid?
   puts "Could not process config file at '#{config.file_path}'. Exiting."
   exit 1
 end
-assistant = Installer::Assistant.new(config, @workflow_id, @cli_subscription)
+assistant = Installer::Assistant.new(config, @workflow_id, @assistant_context, @cli_subscription)
 result = assistant.run
 exit result.nil? ? 0 : result

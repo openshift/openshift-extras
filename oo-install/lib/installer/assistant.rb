@@ -10,10 +10,12 @@ module Installer
   class Assistant
     include Installer::Helpers
 
+    attr_reader :context
     attr_accessor :config, :deployment, :cli_subscription, :cfg_subscription, :workflow, :workflow_cfg, :unattended
 
-    def initialize config, workflow_id=nil, cli_subscription=nil
+    def initialize config, workflow_id=nil, assistant_context=:origin, cli_subscription=nil
       @config = config
+      @context = assistant_context
       @deployment = config.get_deployment
       @cfg_subscription = config.get_subscription
       @cli_subscription = cli_subscription
@@ -113,7 +115,7 @@ module Installer
       puts "\n"
       choose do |menu|
         menu.header = translate :select_workflow
-        Installer::Workflow.list.each do |workflow|
+        Installer::Workflow.list(context).each do |workflow|
           menu.choice(workflow[:desc]) { ui_workflow(workflow[:id]) }
         end
         menu.choice(translate(:choice_exit_installer)) { return 0 }
