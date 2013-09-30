@@ -16,5 +16,3 @@ spec/reports
 test/tmp
 test/version_tmp
 tmp
-workflows/enterprise_*
-conf/workflows_ose.yml

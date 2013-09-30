@@ -12,8 +12,15 @@ module Installer
         @ids ||= file_cache.map{ |workflow| workflow['ID'] }
       end
 
-      def list
-        @list ||= file_cache.map{ |workflow| { :id => workflow['ID'], :desc => workflow['Description'] } }
+      def list(context)
+        show_list = []
+        file_cache.each do |workflow_hash|
+            if (not workflow_hash.has_key?('Type') and context == :origin) or
+               (workflow_hash.has_key?('Type') and workflow_hash['Type'].to_sym == context)
+              show_list << { :id => workflow_hash['ID'], :desc => workflow_hash['Description'] }
+            end
+        end
+        show_list
       end
 
       def find id
@@ -25,7 +32,7 @@ module Installer
 
       private
       def file_path
-        @file_path ||= gem_root_dir + '/conf/' + workflow_cfg_file
+        @file_path ||= gem_root_dir + '/conf/workflows.yml'
       end
 
       def file_cache
@@ -55,11 +62,12 @@ module Installer
       end
     end
 
-    attr_reader :name, :description, :id, :questions, :executable, :path
+    attr_reader :name, :type, :description, :id, :questions, :executable, :path
 
     def initialize config
       @id = config['ID']
       @name = config['Name']
+      @type = config.has_key?('Type') ? config['Type'].to_sym : :origin
       @description = config['Description']
       @remote_execute = (config.has_key?('RemoteDeployment') and config['RemoteDeployment'].downcase == 'y') ? true : false
       @check_deployment = (config.has_key?('SkipDeploymentCheck') and config['SkipDeploymentCheck'].downcase == 'y') ? false : true
