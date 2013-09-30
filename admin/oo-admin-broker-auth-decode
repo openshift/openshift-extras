@@ -1,0 +1,80 @@
+#!/usr/bin/env oo-ruby
+#--
+# Copyright 2012 Red Hat, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#++
+
+require 'rubygems'
+require 'getoptlong'
+
+def usage
+  puts <<USAGE
+== Synopsis
+
+oo-admin-broker-auth-decrypt: decrypt a given broker auth token.
+
+This script must be run on the broker.  You can get the encrypted token and iv
+from a gear's ~/.auth directory.
+
+== Usage
+
+oo-admin-broker-auth OPTIONS
+
+Options:
+--token-file [path]
+--iv-file [path]
+-h|--help
+    Show Usage info
+USAGE
+  exit 255
+end
+
+opts = GetoptLong.new(
+    ["--token-file",              "-t", GetoptLong::REQUIRED_ARGUMENT],
+    ["--iv-file",               "-i", GetoptLong::REQUIRED_ARGUMENT],
+    ["--help",             "-h", GetoptLong::NO_ARGUMENT]
+)
+
+args = {}
+begin
+  opts.each{ |k,v| args[k]=v }
+rescue GetoptLong::Error => e
+  usage
+end
+
+# Check this _before_ loading the rails env
+if args["--help"] || (STDIN.tty? && args.empty?)
+  usage
+end
+
+$:.unshift('/var/www/openshift/broker')
+require 'config/environment'
+
+require 'base64'
+require 'openssl'
+token = File.read(args["--token-file"])
+iv = File.read(args["--iv-file"])
+salt = Rails.configuration.auth[:salt]
+privkeyfile = Rails.configuration.auth[:privkeyfile]
+privkeypass = Rails.configuration.auth[:privkeypass]
+
+encrypted_token = Base64::decode64(token)
+cipher = OpenSSL::Cipher::Cipher.new("aes-256-cbc")
+cipher.decrypt
+cipher.key = OpenSSL::Digest::SHA512.new(salt).digest
+private_key = OpenSSL::PKey::RSA.new(File.read(privkeyfile), privkeypass)
+cipher.iv = private_key.private_decrypt(Base64::decode64(iv))
+json_token = cipher.update(encrypted_token)
+json_token << cipher.final
+puts JSON.parse(json_token)

@@ -1,0 +1,67 @@
+#!/bin/bash
+#
+# ec2-ssh-host-key-gen - Generate new ssh host keys on first boot
+# chkconfig: 234 98 02
+#
+# description:       On first boot of EC2 instance, regenerate new keys:
+#
+### BEGIN INIT INFO
+# Provides: ec2-ssh-host-key-gen
+### END INIT INFO
+#
+#
+# Re-generates the ssh host keys on every new instance (i.e., new AMI).
+# If you want to keep the same ssh host keys for rebundled AMIs,
+# then disable this before rebundling using a command like:
+#   cd /etc/init.d
+#   chkconfig --del ec2-ssh-host-key-gen
+#
+# History:
+#
+#   2011-07-16 Mike Savage <mike.savage 4t gmail.com>
+#   - Modify script for RHEL/CentOS
+#
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+# See how we were called.
+case "$1" in
+  start)
+echo -n "Running ec2-ssh-host-key-gen: "
+prog=$(basename $0)
+curl="curl --retry 3 --silent --show-error --fail"
+instance_data_url=http://169.254.169.254/latest
+
+# Exit if we have already run on this instance (e.g., previous boot).
+ami_id=$($curl $instance_data_url/meta-data/ami-id)
+been_run_file=/var/ec2/$prog.$ami_id
+mkdir -p $(dirname $been_run_file)
+if [ -f $been_run_file ]; then
+  logger -st $prog < $been_run_file
+  exit
+fi
+
+# Re-generate the ssh host keys
+rm -f /etc/ssh/ssh_host_*_key*
+ssh-keygen -f /etc/ssh/ssh_host_rsa_key -t rsa -C 'host' -N ''
+ssh-keygen -f /etc/ssh/ssh_host_dsa_key -t dsa -C 'host' -N ''
+
+# This allows user to get host keys securely through console log
+echo "-----BEGIN SSH HOST KEY FINGERPRINTS-----"  | logger -st "ec2"
+ssh-keygen -l -f /etc/ssh/ssh_host_key.pub        | logger -st "ec2"
+ssh-keygen -l -f /etc/ssh/ssh_host_rsa_key.pub    | logger -st "ec2"
+ssh-keygen -l -f /etc/ssh/ssh_host_dsa_key.pub    | logger -st "ec2"
+echo "-----END SSH HOST KEY FINGERPRINTS-----"    | logger -st "ec2"
+
+# Don't run again on this instance
+echo "$prog has already been run on this instance" > $been_run_file
+;;
+stop)
+        echo "Stop isn't really implemented for ec2-ssh-host-key-gen..."
+        ;;
+  *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+esac
+
+exit 0
