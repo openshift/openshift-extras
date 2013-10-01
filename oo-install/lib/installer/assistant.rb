@@ -408,13 +408,6 @@ module Installer
           q.validate = lambda { |p| is_valid_hostname_or_ip_addr?(p) }
           q.responses[:not_valid] = "Enter a valid hostname or IP address"
         }
-        if host_instance.role == :broker
-          host_instance.port = ask('REST API port: ', Integer) { |q|
-            q.default = host_instance.port.nil? ? 443 : host_instance.port
-            q.validate = lambda { |p| is_valid_port_number?(p) }
-            q.responses[:not_valid] = translate :invalid_port_number_response
-          }
-        end
         host_instance.user = ask("OpenShift username on #{host_instance.ssh_host}: ") { |q|
           if not host_instance.user.nil?
             q.default = host_instance.user
@@ -422,31 +415,7 @@ module Installer
           q.validate = lambda { |p| is_valid_username?(p) }
           q.responses[:not_valid] = "Enter a valid linux username"
         }
-        if host_instance.role == :dbserver
-          host_instance.db_port = ask("Database access port: ", Integer) { |q|
-            q.default = host_instance.db_port.nil? ? 27017 : host_instance.db_port
-            q.validate = lambda { |p| is_valid_port_number?(p) }
-            q.responses[:not_valid] = translate :invalid_port_number_reponse
-          }
-          host_instance.db_user = ask("Database username: ") { |q|
-            if not host_instance.db_user.nil?
-              q.default = host_instance.db_user
-            end
-            q.validate = lambda { |p| is_valid_username?(p) }
-            q.responses[:not_valid] = "Enter a valid database username"
-          }
-        else
-          host_instance.messaging_port = ask("MCollective client port: ", Integer) { |q|
-            q.default = host_instance.messaging_port.nil? ? 61616 : host_instance.messaging_port
-            q.validate = lambda { |p| is_valid_port_number?(p) }
-            q.responses[:not_valid] = translate :invalid_port_number_response
-          }
-        end
-        if (host_instance.role == :broker and host_instance.port == host_instance.messaging_port)
-          say "The REST API and the messaging client cannot listen on the same port (#{host_instance.port}). Reconfigure this host instance."
-        else
-          host_instance_is_valid = true
-        end
+        host_instance_is_valid = true
       end
     end
 
