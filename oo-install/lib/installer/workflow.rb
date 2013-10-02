@@ -47,7 +47,14 @@ module Installer
         unless File.exists?(file_path)
           raise Installer::WorkflowFileNotFoundException.new
         end
-        YAML.load_stream(open(file_path))
+        yaml = YAML.load_stream(open(file_path))
+        if yaml.is_a?(Array)
+          # Ruby 1.9.3+
+          return yaml
+        else
+          # Ruby 1.8.7
+          return yaml.documents
+        end
       end
 
       def validate_and_return_config

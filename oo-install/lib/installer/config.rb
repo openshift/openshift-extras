@@ -1,5 +1,4 @@
 require 'installer/helpers'
-require 'versionomy'
 require 'yaml'
 
 module Installer
@@ -32,7 +31,7 @@ module Installer
         puts "Could not parse settings from #{self.file_path}."
         return false
       end
-      unless Versionomy.parse(settings['Version']) <= Versionomy.parse(Installer::VERSION)
+      unless installer_version_gte?(settings['Version'])
         puts "Config file is for a newer version of oo-installer."
         return false
       end
