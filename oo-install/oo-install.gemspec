@@ -22,8 +22,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "i18n"
   spec.add_dependency "net-ssh"
   spec.add_dependency "terminal-table"
-
-  spec.add_development_dependency "bundler"
-  spec.add_development_dependency "rake"
-  spec.add_development_dependency "rspec"
+  spec.add_dependency "bundler"
+  spec.add_dependency "rake"
+  spec.add_dependency "rspec"
 end

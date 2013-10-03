@@ -73,10 +73,10 @@ module Installer
 
     private
     def install_default
-      unless Dir.exists?(default_dir)
+      unless Dir.entries(ENV['HOME']).include?('.openshift')
         Dir.mkdir(default_dir)
       end
-      FileUtils.cp(file_template, self.file_path)
+      system 'cp', file_template, self.file_path
     end
   end
 end
