@@ -1,1 +1,32 @@
-require "bundler/gem_tasks"
+require 'bundler/gem_tasks'
+require 'installer/helpers'
+
+include Installer::Helpers
+
+task :package do
+  @tmpdir = ENV['TMPDIR'] || '/tmp/'
+  @package_dir = "#{gem_root_dir}/package"
+
+  # Clear out the old package dir before making the new package
+  if Dir.entries(gem_root_dir).include?('package')
+    system 'rm', '-rf', @package_dir
+  end
+
+  # Copy the installer source to $TMPDIR
+  system "cp -r #{gem_root_dir} #{@tmpdir}"
+
+  # Replace the openshift.sh symlink with the actual file
+  system 'rm', "#{@tmpdir}/oo-install/workflows/enterprise_deploy/openshift.sh"
+  system 'cp', "#{gem_root_dir}/../enterprise/install-scripts/generic/openshift.sh", "#{@tmpdir}/oo-install/workflows/enterprise_deploy/"
+
+  # Recreate the package dir
+  Dir.mkdir(@package_dir)
+
+  # Zip up the source and copy it to the package dir
+  system "cd #{@tmpdir}; zip -qq oo-install.zip oo-install"
+  system 'mv', "#{@tmpdir}oo-install.zip", @package_dir
+  system 'rm', '-rf', "#{@tmpdir}/oo-install*"
+
+  # Copy the bootstrap file to the package dir
+  system 'cp', 'oo-install-bootstrap.sh', "#{@package_dir}/index.html"
+end
