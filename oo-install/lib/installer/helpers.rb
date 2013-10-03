@@ -10,7 +10,7 @@ module Installer
     VALID_HOSTNAME_RE = Regexp.new('^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$')
     VALID_USERNAME_RE = Regexp.new('^[a-z][-a-z0-9]*$')
     VALID_DOMAIN_RE = Regexp.new('^[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,6}$')
-    VALID_URL_RE = Regexp.new('((([A-Za-z]{3,9}:(?:\/\/)?)(?:[-;:&=\+\$,\w]+@)?[A-Za-z0-9.-]+|(?:www.|[-;:&=\+\$,\w]+@)[A-Za-z0-9.-]+)((?:\/[\+~%\/.\w-_]*)?\??(?:[-\+=&;%@.\w_]*)#?(?:[.\!\/\\w]*))?)')
+    VALID_URL_RE = Regexp.new('^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$')
     VALID_EMAIL_RE = Regexp.new('@')
     BLANK_STRING_RE = Regexp.new('^\s*$')
 
@@ -116,6 +116,22 @@ module Installer
         end
       end
       true
+    end
+
+    def installer_version_gte?(config_version)
+      inst_version = Installer::VERSION.split('.')
+      cfg_version = config_version.split('.')
+      for i in 0..9
+        inst_num = inst_version[i]
+        cfg_num = cfg_version[i]
+        if cfg_num.nil?
+          # Comparison over; installer is more recent
+          return true
+        elsif inst_num.nil? or (cfg_num.to_i > inst_num.to_i)
+          # Comparison over; config file is more recent
+          return false
+        end
+      end
     end
   end
 end
