@@ -25,7 +25,7 @@ task :package do
   # Zip up the source and copy it to the package dir
   system "cd #{@tmpdir}; zip -qq oo-install.zip oo-install"
   system 'mv', "#{@tmpdir}oo-install.zip", @package_dir
-  system 'rm', '-rf', "#{@tmpdir}/oo-install*"
+  system 'rm', '-rf', "#{@tmpdir}oo-install*"
 
   # Copy the bootstrap file to the package dir
   system 'cp', 'oo-install-bootstrap.sh', "#{@package_dir}/index.html"
