@@ -23,7 +23,7 @@ task :package do
   Dir.mkdir(@package_dir)
 
   # Zip up the source and copy it to the package dir
-  system "cd #{@tmpdir}; zip -qq oo-install.zip oo-install"
+  system "cd #{@tmpdir}; zip -qq -r oo-install.zip oo-install"
   system 'mv', "#{@tmpdir}oo-install.zip", @package_dir
   system 'rm', '-rf', "#{@tmpdir}oo-install*"
 
