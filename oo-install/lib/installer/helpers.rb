@@ -1,6 +1,7 @@
 require 'i18n'
 require 'pathname'
 require 'yaml'
+require 'installer/version'
 
 module Installer
   module Helpers
