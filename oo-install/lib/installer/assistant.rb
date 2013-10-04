@@ -365,7 +365,7 @@ module Installer
         end
         q.validate = lambda { |p| is_valid_domain?(p) }
         q.responses[:not_valid] = "Enter a valid domain"
-      }
+      }.to_s
       deployment.set_dns new_dns
       deployment.save_to_disk!
     end
@@ -415,7 +415,7 @@ module Installer
           end
           q.validate = lambda { |p| is_valid_hostname_or_ip_addr?(p) }
           q.responses[:not_valid] = "Enter a valid hostname or IP address"
-        }
+        }.to_s
         host_instance.user = ask("Username for installation on #{host_instance.ssh_host}: ") { |q|
           if not host_instance.user.nil?
             q.default = host_instance.user
@@ -424,7 +424,7 @@ module Installer
           end
           q.validate = lambda { |p| is_valid_username?(p) }
           q.responses[:not_valid] = "Enter a valid linux username"
-        }
+        }.to_s
         host_instance.host = ask("Host name (for other components in the subnet): ") { |q|
           if not host_instance.host.nil?
             q.default = host_instance.host
@@ -433,7 +433,7 @@ module Installer
           end
           q.validate = lambda { |p| is_valid_hostname_or_ip_addr?(p) }
           q.responses[:not_valid] = "Enter a valid hostname or IP address"
-        }
+        }.to_s
         host_instance_is_valid = true
       end
     end
