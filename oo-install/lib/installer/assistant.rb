@@ -280,31 +280,32 @@ module Installer
         end
         q.validate = lambda { |p| Installer::Subscription.subscription_types.has_key?(p.to_sym) }
         q.responses[:not_valid] = "Valid subscription types are #{valid_types}"
-      }
-      Installer::Subscription.subscription_types[tgt_subscription.subscription_type.to_sym][:attrs].each_pair do |attr,desc|
-        question = (attr == :rh_password and not save_subscription?) ? '<%= @key %>' : "#{desc}? "
+      }.to_s
+      Installer::Subscription.subscription_types[tgt_subscription.subscription_type.to_sym][:attr_order].each do |attr|
+        desc = Installer::Subscription.subscription_types[tgt_subscription.subscription_type.to_sym][:attrs][attr]
+        question = attr == :rh_password ? '<%= @key %>' : "#{desc}? "
         if save_subscription? or not [:rh_username, :rh_password].include?(attr)
           question << "(Use '-' to leave unset) "
         end
         tgt_subscription.send "#{attr.to_s}=".to_sym, ask(question) { |q|
-          if not merged_subscription.send(attr).nil?
-            q.default = merged_subscription.send(attr)
-          elsif save_subscription? or not [:rh_username, :rh_password].include?(attr)
-            q.default = '-'
+          if not attr == :rh_password
+            if not merged_subscription.send(attr).nil?
+              q.default = merged_subscription.send(attr)
+            elsif save_subscription? or not [:rh_username, :rh_password].include?(attr)
+              q.default = '-'
+            end
           end
           if attr == :rh_password
             q.echo = '*'
-            if not save_subscription?
-              q.verify_match = true
-              q.gather = {
-                "Red Hat Account password? " => '',
-                "Type password again to verify: " => '',
-              }
-            end
+            q.verify_match = true
+            q.gather = {
+              "Red Hat Account password? " => '',
+              "Type password again to verify: " => '',
+            }
           end
           q.validate = lambda { |p| p == '-' or Installer::Subscription.valid_attr?(attr, p) }
           q.responses[:not_valid] = "This response is not valid for the '#{attr.to_s}' setting."
-        }
+        }.to_s
         # Set cleared responses to nil
         if tgt_subscription.send(attr) == '-'
           tgt_subscription.send("#{attr.to_s}=".to_sym, nil)

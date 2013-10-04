@@ -23,6 +23,7 @@ module Installer
               :jboss_repo_base => 'The base URL for the JBoss repositories',
               :rhel_optional_repo => 'The URL for a RHEL 6 Optional repository',
             },
+            :attr_order => [:repos_base,:rhel_repo,:jboss_repo_base,:rhel_optional_repo],
           },
           :rhsm => {
             :desc => 'Use Red Hat Subscription Manager',
@@ -31,6 +32,7 @@ module Installer
               :rh_password => 'Red Hat Login password',
               :sm_reg_pool => 'Pool ID for OpenShift subscription',
             },
+            :attr_order => [:rh_username,:rh_password,:sm_reg_pool],
           },
           :rhn => {
             :desc => 'Use Red Hat Network',
@@ -39,6 +41,7 @@ module Installer
               :rh_password => 'Red Hat Login password',
               :rhn_reg_actkey => 'RHN account activation key',
             },
+            :attr_order => [:rh_username,:rh_password,:rhn_reg_actkey],
           },
         }
       end
