@@ -12,7 +12,7 @@ en:
   select_subscription: "Choose from the following options to complete your subscription setup.\nYou can also type '?' for Help or 'q' to return to the main menu."
   deployment_summary: "Here are the details of your current deployment."
   workflow_summary: "Here are your previous answers to the questions for this workflow."
-  subscription_summary: "Here is the current subscription configuration.\nNOTE: Values from the command line supersede configuration values."
+  subscription_summary: "Here is subscription configuration that the installer will use for this deployment."
   invalid_port_number_response: "Enter a valid port number in the range 1 to 65535"
   info_config_is_valid: "The deployment looks good. Checking workflow responses."
   error_unattended_workflow_cfg: "The workflow configuration is not complete."

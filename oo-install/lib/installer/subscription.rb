@@ -71,9 +71,9 @@ module Installer
     def initialize config, subscription={}
       @config = config
       self.class.object_attrs.each do |attr|
-        attr_str = attr.to_s
+        attr_str = attr == :subscription_type ? 'type' : attr.to_s
         if subscription.has_key?(attr_str)
-          self.send("#{attr_str}=".to_sym, subscription[attr_str])
+          self.send("#{attr.to_s}=".to_sym, subscription[attr_str])
         end
       end
     end
@@ -103,7 +103,8 @@ module Installer
       self.class.object_attrs.each do |attr|
         value = self.send(attr)
         if not value.nil?
-          export_hash[attr.to_s] = value
+          key = attr == :subscription_type ? 'type' : attr.to_s
+          export_hash[key] = value
         end
       end
       export_hash

@@ -330,17 +330,21 @@ module Installer
     end
 
     def ui_show_subscription
+      values = merged_subscription.to_hash
+      settings = Installer::Subscription.subscription_types[values['type'].to_sym]
       table = Terminal::Table.new do |t|
         t.add_row ['Setting','Value']
         t.add_separator
-        Installer::Subscription.object_attrs.each do |attr|
-          value = merged_subscription.send(attr)
+        t.add_row ['type', values['type']]
+        settings[:attr_order].each do |attr|
+          key = attr.to_s
+          value = values[key]
           if value.nil?
             value = '-'
           elsif attr == :rh_password
             value = '******'
           end
-          t << [attr.to_s, value]
+          t << [key, value]
         end
       end
       ui_newpage
