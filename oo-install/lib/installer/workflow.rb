@@ -9,25 +9,18 @@ module Installer
 
     class << self
       def ids
-        @ids ||= file_cache.map{ |workflow| workflow['ID'] }
+        @ids ||= workflows_cache.map{ |workflow| workflow.id }
       end
 
       def list(context)
-        show_list = []
-        file_cache.each do |workflow_hash|
-            if (not workflow_hash.has_key?('Type') and context == :origin) or
-               (workflow_hash.has_key?('Type') and workflow_hash['Type'].to_sym == context)
-              show_list << { :id => workflow_hash['ID'], :desc => workflow_hash['Description'] }
-            end
-        end
-        show_list
+        workflows_cache.select{ |workflow| workflow.type[context] }
       end
 
       def find id
         unless ids.include?(id)
           raise Installer::WorkflowNotFoundException.new "Could not find a workflow with id #{id}."
         end
-        new(file_cache.find{ |workflow| workflow['ID'] == id })
+        workflows_cache.select{ |workflow| workflow.id == id }[0]
       end
 
       private
@@ -35,12 +28,12 @@ module Installer
         @file_path ||= gem_root_dir + '/conf/workflows.yml'
       end
 
-      def file_cache
-        @file_cache ||= validate_and_return_config
+      def workflows_cache
+        @workflows_cache ||= validate_and_return_config
       end
 
       def required_fields
-        %w{ID Name Description Executable}
+        %w{ID Name Summary Executable}
       end
 
       def parse_config_file
@@ -65,16 +58,28 @@ module Installer
             end
           end
         end
-        parse_config_file
+        parse_config_file.map{ |record| new(record) }
       end
     end
 
-    attr_reader :name, :type, :description, :id, :questions, :executable, :path
+    attr_reader :name, :type, :summary, :description, :id, :questions, :executable, :path
 
     def initialize config
       @id = config['ID']
       @name = config['Name']
-      @type = config.has_key?('Type') ? config['Type'].to_sym : :origin
+      if config.has_key?('Type')
+        if config['Type'].kind_of?(String)
+          @type = { config['Type'].to_sym => true }
+        else
+          @type = {}
+          config['Type'].each do |type|
+            @type[type.to_sym] = true
+          end
+        end
+      else
+        @type = { :origin => true }
+      end
+      @summary = config['Summary']
       @description = config['Description']
       @remote_execute = (config.has_key?('RemoteDeployment') and config['RemoteDeployment'].downcase == 'y') ? true : false
       @check_deployment = (config.has_key?('SkipDeploymentCheck') and config['SkipDeploymentCheck'].downcase == 'y') ? false : true

@@ -21,6 +21,9 @@ module Installer
       @cli_subscription = cli_subscription
       @unattended = workflow_id.nil? ? false : true
       @save_subscription = true
+      # This is a bit hinky; highline/import shoves a HighLine object into the $terminal global
+      # so we need to set this on the global object
+      $terminal.wrap_at = 70
     end
 
     def run
@@ -101,7 +104,7 @@ module Installer
     def ui_title
       ui_newpage
       say translate(:title)
-      puts "----------------------------------------------------------------------\n\n"
+      say "#{horizontal_rule}\n\n"
     end
 
     def ui_newpage
@@ -113,12 +116,18 @@ module Installer
       say translate :welcome
       say translate :intro
       puts "\n"
-      choose do |menu|
-        menu.header = translate :select_workflow
-        Installer::Workflow.list(context).each do |workflow|
-          menu.choice(workflow[:desc]) { ui_workflow(workflow[:id]) }
+      while true
+        choose do |menu|
+          menu.header = translate :select_workflow
+          descriptions = ["\nInstallation Options:\n#{horizontal_rule}"]
+          Installer::Workflow.list(context).each do |workflow|
+            menu.choice(workflow.summary) { ui_workflow(workflow.id) }
+            descriptions << "#{workflow.summary}:\n#{workflow.description}"
+          end
+          descriptions << horizontal_rule
+          menu.choice("Help with these options") { say descriptions.join("\n\n") + "\n\n" }
+          menu.choice(translate(:choice_exit_installer)) { return 0 }
         end
-        menu.choice(translate(:choice_exit_installer)) { return 0 }
       end
     end
 
@@ -239,6 +248,8 @@ module Installer
       unless deployment.dns.keys.length > 0
         say "\nYou must set some DNS-specific values."
         ui_modify_dns
+      else
+        list_dns
       end
       while agree("\nDo you want to change the DNS settings?(Y/N) ", true)
         ui_modify_dns
