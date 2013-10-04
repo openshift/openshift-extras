@@ -23,6 +23,10 @@ module Installer
       }
     end
 
+    def self.display_order
+      [:broker,:mqserver,:dbserver,:node]
+    end
+
     def self.roles
       @roles ||= self.role_map.keys.map{ |role| role.to_s }
     end

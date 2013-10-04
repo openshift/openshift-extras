@@ -2,7 +2,7 @@ en:
   title: "OpenShift Installer"
   welcome: "Welcome to OpenShift."
   intro: "This installer will guide you through a basic system deployment, based on one of the scenarios below."
-  select_workflow: "Select from the following installation scenarios"
+  select_workflow: "Select from the following installation scenarios.\nYou can also type '?' for Help or 'q' to Quit."
   choice_exit_installer: "Exit this installer"
   info_wait_config_validation: "Please wait while your deployment configuration is validated."
   exit_incomplete_deployment: "Cannot perform unattended install; your deployment configuration is incomplete.\nRerun the workflow manually and try again."

@@ -57,10 +57,18 @@ unless config.is_valid?
   puts "Could not process config file at '#{config.file_path}'. Exiting."
   exit 1
 end
-begin
-  assistant = Installer::Assistant.new(config, @workflow_id, @assistant_context, @cli_subscription)
-  @result = assistant.run
-rescue Interrupt => e
-  puts "\nExiting oo-install at user request."
+assistant = Installer::Assistant.new(config, @workflow_id, @assistant_context, @cli_subscription)
+loop do
+  begin
+    @result = assistant.run
+  rescue Interrupt => e
+    puts "\nExiting oo-install at user request."
+    break
+  rescue Installer::AssistantRestartException => e
+    # Nothing to do; this will just ship us back to the main menu
+  end
+  if not @result.nil?
+    break
+  end
 end
 exit @result.nil? ? 0 : @result

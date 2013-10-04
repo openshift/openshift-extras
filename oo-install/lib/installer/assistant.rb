@@ -22,7 +22,7 @@ module Installer
       @unattended = workflow_id.nil? ? false : true
       @save_subscription = true
       # This is a bit hinky; highline/import shoves a HighLine object into the $terminal global
-      # so we need to set this on the global object
+      # so we need to set these on the global object
       $terminal.wrap_at = 70
     end
 
@@ -119,14 +119,16 @@ module Installer
       while true
         choose do |menu|
           menu.header = translate :select_workflow
+          menu.prompt = "Choice? "
           descriptions = ["\nInstallation Options:\n#{horizontal_rule}"]
           Installer::Workflow.list(context).each do |workflow|
             menu.choice(workflow.summary) { ui_workflow(workflow.id) }
-            descriptions << "#{workflow.summary}:\n#{workflow.description}"
+            descriptions << "## #{workflow.summary}\n#{workflow.description}"
           end
           descriptions << horizontal_rule
-          menu.choice("Help with these options") { say descriptions.join("\n\n") + "\n\n" }
           menu.choice(translate(:choice_exit_installer)) { return 0 }
+          menu.hidden("?") { say descriptions.join("\n\n") + "\n\n" }
+          menu.hidden("q") { return 0 }
         end
       end
     end
@@ -145,7 +147,7 @@ module Installer
         else
           ui_show_deployment
         end
-        while agree("\nDo you want to make any changes to your deployment?(Y/N) ", true)
+        while concur("\nDo you want to make any changes to your deployment?(Y/N/Q) ")
           ui_edit_deployment
           ui_show_deployment
         end
@@ -165,12 +167,12 @@ module Installer
           ui_edit_subscription
         end
         ui_show_subscription
-        while agree("\nDo you want to make any changes to the subscription info in the configuration file?(Y/N) ", true)
+        while concur("\nDo you want to make any changes to the subscription info in the configuration file?(Y/N/Q) ")
           @save_subscription = true
           ui_edit_subscription
           ui_show_subscription
         end
-        while agree("\nDo you want to set any temporary subscription settings for this installation only?(Y/N) ", true)
+        while concur("\nDo you want to set any temporary subscription settings for this installation only?(Y/N/Q) ")
           @save_subscription = false
           ui_edit_subscription
           ui_show_subscription
@@ -192,7 +194,7 @@ module Installer
             puts "  * #{host_info}"
           end
           say "\n" + translate(:unattended_not_possible)
-          if not agree("Do you want to proceed anyway?(Y/N) ", true)
+          if not concur("Do you want to proceed anyway?(Y/N/Q) ")
             say "\nExiting."
             exit
           end
@@ -213,7 +215,7 @@ module Installer
         say "\nThese are your current settings for this workflow:"
         ui_show_workflow
       end
-      while workflow_cfg.empty? or agree("\nDo you want to make any changes to your answers?(Y/N) ", true)
+      while workflow_cfg.empty? or concur("\nDo you want to make any changes to your answers?(Y/N/Q) ")
         workflow.questions.each do |question|
           puts "\n"
           question.ask(deployment, workflow_cfg)
@@ -235,13 +237,16 @@ module Installer
     end
 
     def ui_edit_deployment
-      Installer::Deployment.role_map.each_pair do |role,hkey|
+      Installer::Deployment.display_order.each do |role|
+        hkey = Installer::Deployment.role_map[role]
         list_count = list_role role
+        role_singular = hkey.chop
+        role_list = role == :node ? "#{hkey} list" : role_singular
         if list_count == 0
-          say "\nYou must add a host instance to the #{hkey} list."
+          say "\nYou must add a #{role_singular}."
           ui_modify_role_list role
         end
-        while agree("\nDo you want to modify the #{hkey} list?(Y/N) ", true)
+        while concur("\nDo you want to modify the #{role_list}?(Y/N/Q) ")
           ui_modify_role_list role
         end
       end
@@ -251,7 +256,7 @@ module Installer
       else
         list_dns
       end
-      while agree("\nDo you want to change the DNS settings?(Y/N) ", true)
+      while concur("\nDo you want to change the DNS settings?(Y/N/Q) ")
         ui_modify_dns
       end
     end
@@ -259,7 +264,7 @@ module Installer
     def ui_show_deployment
       ui_newpage
       say translate :deployment_summary
-      Installer::Deployment.role_map.each_pair do |role,hkey|
+      Installer::Deployment.display_order.each do |role|
         list_role role
       end
       list_dns
@@ -410,6 +415,15 @@ module Installer
           q.validate = lambda { |p| is_valid_hostname_or_ip_addr?(p) }
           q.responses[:not_valid] = "Enter a valid hostname or IP address"
         }
+        host_instance.user = ask("Username for installation on #{host_instance.ssh_host}: ") { |q|
+          if not host_instance.user.nil?
+            q.default = host_instance.user
+          else context == :ose
+            q.default = 'root'
+          end
+          q.validate = lambda { |p| is_valid_username?(p) }
+          q.responses[:not_valid] = "Enter a valid linux username"
+        }
         host_instance.host = ask("Host name (for other components in the subnet): ") { |q|
           if not host_instance.host.nil?
             q.default = host_instance.host
@@ -418,13 +432,6 @@ module Installer
           end
           q.validate = lambda { |p| is_valid_hostname_or_ip_addr?(p) }
           q.responses[:not_valid] = "Enter a valid hostname or IP address"
-        }
-        host_instance.user = ask("OpenShift username on #{host_instance.ssh_host}: ") { |q|
-          if not host_instance.user.nil?
-            q.default = host_instance.user
-          end
-          q.validate = lambda { |p| is_valid_username?(p) }
-          q.responses[:not_valid] = "Enter a valid linux username"
         }
         host_instance_is_valid = true
       end
@@ -440,8 +447,9 @@ module Installer
     end
 
     def list_role role
-      puts "\n" + Installer::Deployment.role_map[role] + "\n"
       list = deployment.get_role_list(role)
+      header = role == :node && list.length > 1 ? Installer::Deployment.role_map[role] : Installer::Deployment.role_map[role].chop
+      puts "\n#{header}\n"
       if list.length
         list.each do |host_instance|
           list_host_instance host_instance
@@ -476,6 +484,24 @@ module Installer
         end
       end
       @merged_subscription
+    end
+
+    def concur(yes_or_no_question)
+      response = ask(yes_or_no_question) { |q|
+        q.validate                 = lambda { |p| [?y,?n,?q].include?(p.downcase[0]) }
+        q.responses[:not_valid]    = 'Please "yes" or "no", or "quit" to return to the main menu.'
+        q.responses[:ask_on_error] = :question
+        q.character                = true
+      }
+      case response
+      when 'y'
+        return true
+      when 'n'
+        return false
+      else
+        say "\nReturning to main menu."
+        raise Installer::AssistantRestartException.new
+      end
     end
   end
 end

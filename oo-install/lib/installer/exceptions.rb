@@ -7,6 +7,12 @@ module Installer
     end
   end
 
+  class AssistantRestartException < Exception
+    def initialize(message="The user has requested to quit out to the main menu.", code=1)
+      super(message, code)
+    end
+  end
+
   class WorkflowFileNotFoundException < Exception
     def initialize(message="The workflow configuration file could not be found at <gem_root>/conf/workflow.cfg", code=1)
       super(message, code)
