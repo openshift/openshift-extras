@@ -134,6 +134,10 @@ module Installer
         end
       end
     end
+
+    def horizontal_rule
+      "----------------------------------------------------------------------"
+    end
   end
 end
 

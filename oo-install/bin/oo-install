@@ -1,5 +1,4 @@
 #!/usr/bin/env ruby
-require 'rubygems'
 require 'bundler/setup'
 
 require 'optparse'
@@ -15,7 +14,7 @@ include Installer::Helpers
 config = Installer::Config.new
 @cli_subscription = Installer::Subscription.new(config)
 @workflow_id = nil
-@assistant_context = :origin
+@assistant_context = ENV.has_key?('OO_INSTALL_CONTEXT') ? ENV['OO_INSTALL_CONTEXT'].to_sym : :origin
 p = OptionParser.new do |opts|
   opts.banner = "Usage: oo-install [args]"
   opts.separator ''
@@ -41,8 +40,8 @@ p = OptionParser.new do |opts|
       exit 1
     end
   end
-  opts.on('-e', '--openshift-enterprise', 'Show OpenShift Enterprise options (ignored in unattended mode)') do |flag|
-    @assistant_context = :ose if flag == true
+  opts.on('-E', '--enterprise-mode', 'Show OpenShift Enterprise options (ignored in unattended mode)') do |flag|
+    @assistant_context = :ose if flag
   end
   opts.on('-s', '--subscription-type [TYPE]', Installer::Subscription.subscription_types.keys, "The software source for missing installation packages (#{Installer::Subscription.subscription_types.keys.map{ |k| k.to_s }.join(', ')})") do |subscription_type|
     @cli_subscription.subscription_type = subscription_type
@@ -59,5 +58,17 @@ unless config.is_valid?
   exit 1
 end
 assistant = Installer::Assistant.new(config, @workflow_id, @assistant_context, @cli_subscription)
-result = assistant.run
-exit result.nil? ? 0 : result
+loop do
+  begin
+    @result = assistant.run
+  rescue Interrupt => e
+    puts "\nExiting oo-install at user request."
+    break
+  rescue Installer::AssistantRestartException => e
+    # Nothing to do; this will just ship us back to the main menu
+  end
+  if not @result.nil?
+    break
+  end
+end
+exit @result.nil? ? 0 : @result

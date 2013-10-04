@@ -7,19 +7,19 @@ Deployment:
   Brokers:
     - host: localhost
       ssh_host: localhost
-      user: admin
+      user: root
   MQServers:
     - host: localhost
       ssh_host: localhost
-      user: admin
+      user: root
   DBServers:
     - host: localhost
       ssh_host: localhost
-      user: admin
+      user: root
   Nodes:
     - host: localhost
       ssh_host: localhost
-      user: admin
+      user: root
   DNS:
     app_domain: example.com
 Subscription:
