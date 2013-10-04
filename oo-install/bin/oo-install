@@ -8,56 +8,92 @@ require 'installer/config'
 require 'installer/helpers'
 require 'installer/subscription'
 require 'installer/workflow'
+require 'pathname'
 
 include Installer::Helpers
 
-config = Installer::Config.new
-@cli_subscription = Installer::Subscription.new(config)
-@workflow_id = nil
-@assistant_context = ENV.has_key?('OO_INSTALL_CONTEXT') ? ENV['OO_INSTALL_CONTEXT'].to_sym : :origin
+options = {
+  :workflow_id => nil,
+  :config_file => nil,
+  :create_config => false,
+  :subscription_type => nil,
+  :rh_username => nil,
+  :rh_password => nil,
+  :assistant_context => (ENV.has_key?('OO_INSTALL_CONTEXT') ? ENV['OO_INSTALL_CONTEXT'].to_sym : :origin),
+}
+
+# Parse the command line options
 p = OptionParser.new do |opts|
   opts.banner = "Usage: oo-install [args]"
   opts.separator ''
   opts.on('-c', '--config-file FILEPATH', 'The path to an alternate config file') do |filepath|
-    if file_check(filepath)
-      config.file_path = filepath
-    else
-      puts "Config file '#{filepath}' cannot be found or is not readable. Exiting."
-      exit 1
-    end
+    options[:config_file] = File.expand_path(filepath)
   end
-  opts.on('-w', '--workflow WORKFLOW_ID', 'The installer workflow for automated deployment on this host.') do |workflow_id|
-    if Installer::Workflow.ids.include?(workflow_id)
-      # Automated deployment can only be done with a config file. Make sure the
-      # config file exists.
-      unless file_check(config.file_path)
-        puts "Automated deployment requires a configuration file.\nProvide a path to a configuration file or put one at the default location: '#{default_config}'.\nExiting."
-        exit 1
-      end
-      config.workflow_id = workflow_id
-    else
+  opts.on('--create-config', 'Use with "-c" to create and use a new alternate config file') do |create_config|
+    options[:create_config] = create_config
+  end
+  opts.on('-w', '--workflow WORKFLOW_ID', 'The installer workflow for unattended deployment.') do |workflow_id|
+    if not Installer::Workflow.ids.include?(workflow_id)
       puts "Unknown workflow ID '#{workflow_id}'. Valid values are:\n\n#{Installer::Workflow.ids.map{ |i| "* #{i}" }.join("\n")}\n\nExiting."
       exit 1
     end
+    options[:workflow_id] = workflow_id
   end
   opts.on('-E', '--enterprise-mode', 'Show OpenShift Enterprise options (ignored in unattended mode)') do |flag|
-    @assistant_context = :ose if flag
+    options[:assistant_context] = :ose
   end
-  opts.on('-s', '--subscription-type [TYPE]', Installer::Subscription.subscription_types.keys, "The software source for missing installation packages (#{Installer::Subscription.subscription_types.keys.map{ |k| k.to_s }.join(', ')})") do |subscription_type|
-    @cli_subscription.subscription_type = subscription_type
+  opts.on('-s', '--subscription-type TYPE', Installer::Subscription.subscription_types.keys, "The software source for missing installation packages (#{Installer::Subscription.subscription_types.keys.map{ |k| k.to_s }.join(', ')})") do |subscription_type|
+    options[:subscription_type] = subscription_type
   end
   opts.on('-u', '--username USERNAME', 'Red Hat Login username') do |username|
-    @cli_subscription.rh_username
+    options[:rh_username] = username
   end
   opts.on('-p', '--password PASSWORD', 'Red Hat Login password') do |password|
-    @cli_subscription.rh_password
+    options[:rh_password] = password
   end
 end.parse!
+
+# If the config file argument was passed, make sure it is usable.
+if not options[:config_file].nil?
+  pn = Pathname.new(options[:config_file])
+  if pn.exist?()
+    if not pn.readable?()
+      puts "Config file '#{options[:config_file]}' is not readable. Exiting."
+      exit 1
+    end
+  else
+    if not options[:create_config]
+      puts "Config file '#{options[:config_file]}' does not exist.\nRerun oo-install with the --create-config flag to create a config file at that location."
+      exit 1
+    end
+    puts "Attempting to create and use new config file at '#{options[:config_file]}'."
+  end
+end
+
+# Try to instantiate the config object
+begin
+  config = Installer::Config.new(options[:config_file])
+rescue Errno::ENOENT => e
+  if not options[:config_file].nil?
+    puts "ERROR: The configuration file could not be created at '#{options[:config_file]}'.\nEnsure that the path exists and is writeable."
+  else
+    puts "ERROR: The default configuration file could not be created at '~/.openshift/oo-install-cfg.yml'.\nEnsure that the home directory is writeable or provide an alternate location."
+  end
+  exit 1
+end
 unless config.is_valid?
   puts "Could not process config file at '#{config.file_path}'. Exiting."
   exit 1
 end
-assistant = Installer::Assistant.new(config, @workflow_id, @assistant_context, @cli_subscription)
+
+# Instantiate the cli-provided subscription info in a subscription object
+cli_subscription = Installer::Subscription.new(config)
+cli_subscription.subscription_type = options[:subscription_type]
+cli_subscription.rh_username = options[:username]
+cli_subscription.rh_password = options[:password]
+
+# Set up the assistant and get going
+assistant = Installer::Assistant.new(config, options[:workflow_id], options[:assistant_context], cli_subscription)
 loop do
   begin
     @result = assistant.run
@@ -65,10 +101,11 @@ loop do
     puts "\nExiting oo-install at user request."
     break
   rescue Installer::AssistantRestartException => e
-    # Nothing to do; this will just ship us back to the main menu
+    # Nothing to do; this will just carry us around to the main menu.
   end
   if not @result.nil?
     break
   end
 end
+
 exit @result.nil? ? 0 : @result

@@ -44,7 +44,7 @@ end
 { 'named' => { 'deploy_list' => 'Brokers', 'role' => 'broker', 'env_var' => 'CONF_NAMED_HOSTNAME' },
   'broker' => { 'deploy_list' => 'Brokers', 'role' => 'broker', 'env_var' => 'CONF_BROKER_HOSTNAME' },
   'node' => { 'deploy_list' => 'Nodes', 'role' => 'node', 'env_var' => 'CONF_NODE_HOSTNAME' },
-  'activemq' => { 'deploy_list' => 'MQServers', 'role' => 'mqserver', 'env_var' => 'CONF_ACTIVEMQ_HOSTNAME' },
+  'activemq' => { 'deploy_list' => 'MsqServers', 'role' => 'mqserver', 'env_var' => 'CONF_ACTIVEMQ_HOSTNAME' },
   'datastore' => { 'deploy_list' => 'DBServers', 'role' => 'dbserver', 'env_var' => 'CONF_DATASTORE_HOSTNAME' },
 }
 

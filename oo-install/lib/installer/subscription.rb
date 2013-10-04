@@ -14,6 +14,7 @@ module Installer
         { :none => {
             :desc => 'No subscription necessary',
             :attrs => {},
+            :attr_order => [],
           },
           :yum => {
             :desc => 'Get packages from yum and do not use a subscription',
