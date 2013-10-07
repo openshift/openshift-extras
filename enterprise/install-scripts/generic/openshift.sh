@@ -259,8 +259,9 @@
 #   one on its NIC.
 #CONF_NODE_IP_ADDR=10.10.10.10
 
-# A given node can only accept either V1 or V2 cartridges.
-#CONF_NODE_V1_ENABLE=false
+# Valid options are vhost and mod_rewrite.  vhost is less performant but more
+# extensible.
+#CONF_NODE_APACHE_FRONTEND=mod_rewrite
 
 # no_ntp / CONF_NO_NTP
 #   Default: false
@@ -868,6 +869,22 @@ install_node_pkgs()
   # policycoreutils-python.
   pkgs="$pkgs policycoreutils-python"
 
+  pkgs="$pkgs rubygem-openshift-origin-container-selinux"
+  pkgs="$pkgs rubygem-openshift-origin-frontend-nodejs-websocket"
+
+  case "$node_apache_frontend" in
+    mod_rewrite)
+      pkgs="$pkgs rubygem-openshift-origin-frontend-apache-mod-rewrite"
+      ;;
+    vhost)
+      pkgs="$pkgs rubygem-openshift-origin-frontend-apache-vhost"
+      ;;
+    *)
+      echo "Invalid value: CONF_NODE_APACHE_FRONTEND=${node_apache_frontend}"
+      abort_install
+      ;;
+  esac
+
   yum_install_or_exit -y $pkgs
 }
 
@@ -884,98 +901,51 @@ remove_abrt_addon_python()
 # Install any cartridges developers may want.
 install_cartridges()
 {
-  # Following are cartridge rpms that one may want to install here:
-  if is_true "$node_v1_enable"
-  then
-    # Embedded cron support. This is required on node hosts.
-    carts="openshift-origin-cartridge-cron-1.4"
+  # Embedded cron support.
+  carts="openshift-origin-cartridge-cron"
 
-    # diy app.
-    carts="$carts openshift-origin-cartridge-diy-0.1"
+  # diy app.
+  carts="$carts openshift-origin-cartridge-diy"
 
-    # haproxy-1.4 support.
-    carts="$carts openshift-origin-cartridge-haproxy-1.4"
+  # haproxy support.
+  carts="$carts openshift-origin-cartridge-haproxy"
 
-    # JBossEWS1.0 support.
-    # Note: Be sure to subscribe to the JBossEWS entitlements during the
-    # base install or in configure_jbossews_repo.
-    carts="$carts openshift-origin-cartridge-jbossews-1.0"
+  # JBossEWS support.
+  # Note: Be sure to subscribe to the JBossEWS entitlements during the
+  # base install or in configure_jbossews_repo.
+  carts="$carts openshift-origin-cartridge-jbossews"
 
-    # JBossEAP6.0 support.
-    # Note: Be sure to subscribe to the JBossEAP entitlements during the
-    # base install or in configure_jbosseap_repo.
-    carts="$carts openshift-origin-cartridge-jbosseap-6.0"
+  # JBossEAP support.
+  # Note: Be sure to subscribe to the JBossEAP entitlements during the
+  # base install or in configure_jbosseap_repo.
+  carts="$carts openshift-origin-cartridge-jbosseap"
 
-    # Jenkins server for continuous integration.
-    carts="$carts openshift-origin-cartridge-jenkins-1.4"
+  # Jenkins server for continuous integration.
+  carts="$carts openshift-origin-cartridge-jenkins"
 
-    # Embedded jenkins client.
-    carts="$carts openshift-origin-cartridge-jenkins-client-1.4"
+  # Embedded jenkins client.
+  carts="$carts openshift-origin-cartridge-jenkins-client"
 
-    # Embedded MySQL.
-    carts="$carts openshift-origin-cartridge-mysql-5.1"
+  # Embedded MySQL.
+  carts="$carts openshift-origin-cartridge-mysql"
 
-    # mod_perl support.
-    carts="$carts openshift-origin-cartridge-perl-5.10"
+  # Nodejs support
+  carts="$carts openshift-origin-cartridge-nodejs"
 
-    # PHP 5.3 support.
-    carts="$carts openshift-origin-cartridge-php-5.3"
+  # mod_perl support.
+  carts="$carts openshift-origin-cartridge-perl"
 
-    # Embedded PostgreSQL.
-    carts="$carts openshift-origin-cartridge-postgresql-8.4"
+  # PHP support.
+  carts="$carts openshift-origin-cartridge-php"
 
-    # Python 2.6 support.
-    carts="$carts openshift-origin-cartridge-python-2.6"
+  # Embedded PostgreSQL.
+  carts="$carts openshift-origin-cartridge-postgresql"
 
-    # Ruby Rack support running on Phusion Passenger (Ruby 1.8).
-    carts="$carts openshift-origin-cartridge-ruby-1.8"
+  # Python support.
+  carts="$carts openshift-origin-cartridge-python"
 
-    # Ruby Rack support running on Phusion Passenger (Ruby 1.9).
-    carts="$carts openshift-origin-cartridge-ruby-1.9-scl"
-  else
-    # Embedded cron support. This is required on node hosts.
-    carts="openshift-origin-cartridge-cron"
-
-    # diy app.
-    carts="$carts openshift-origin-cartridge-diy"
-
-    # haproxy support.
-    carts="$carts openshift-origin-cartridge-haproxy"
-
-    # JBossEWS support.
-    # Note: Be sure to subscribe to the JBossEWS entitlements during the
-    # base install or in configure_jbossews_repo.
-    carts="$carts openshift-origin-cartridge-jbossews"
-
-    # JBossEAP support.
-    # Note: Be sure to subscribe to the JBossEAP entitlements during the
-    # base install or in configure_jbosseap_repo.
-    carts="$carts openshift-origin-cartridge-jbosseap"
-
-    # Jenkins server for continuous integration.
-    carts="$carts openshift-origin-cartridge-jenkins"
-
-    # Embedded jenkins client.
-    carts="$carts openshift-origin-cartridge-jenkins-client"
-
-    # Embedded MySQL.
-    carts="$carts openshift-origin-cartridge-mysql"
-
-    # mod_perl support.
-    carts="$carts openshift-origin-cartridge-perl"
-
-    # PHP support.
-    carts="$carts openshift-origin-cartridge-php"
-
-    # Embedded PostgreSQL.
-    carts="$carts openshift-origin-cartridge-postgresql"
-
-    # Python support.
-    carts="$carts openshift-origin-cartridge-python"
-
-    # Ruby Rack support running on Phusion Passenger
-    carts="$carts openshift-origin-cartridge-ruby"
-  fi
+  # Ruby Rack support running on Phusion Passenger
+  carts="$carts openshift-origin-cartridge-ruby"
 
   # When dependencies are missing, e.g. JBoss subscriptions,
   # still install as much as possible.
@@ -2100,6 +2070,15 @@ configure_node()
              s/^BROKER_HOST=.*$/BROKER_HOST=${broker_hostname}/" \
       /etc/openshift/node.conf
 
+  case "$node_apache_frontend" in
+    mod_rewrite)
+      # No-op.  node.conf uses mod_rewrite by default
+      ;;
+    vhost)
+      sed -i -e "s/mod-rewrite/vhost/" /etc/openshift/node.conf
+      ;;
+  esac
+
   echo $broker_hostname > /etc/openshift/env/OPENSHIFT_BROKER_HOST
   echo $domain > /etc/openshift/env/OPENSHIFT_CLOUD_DOMAIN
 
@@ -2278,7 +2257,7 @@ is_false()
 #   CONF_NAMED_IP_ADDR
 #   CONF_NODE_HOSTNAME
 #   CONF_NODE_IP_ADDR
-#   CONF_NODE_V1_ENABLE
+#   CONF_NODE_APACHE_FRONTEND
 #   CONF_REPOS_BASE
 set_defaults()
 {
@@ -2369,7 +2348,7 @@ set_defaults()
   # host.
   node_ip_addr="${CONF_NODE_IP_ADDR:-$cur_ip_addr}"
 
-  node_v1_enable="${CONF_NODE_V1_ENABLE:-false}"
+  node_apache_frontend="${CONF_NODE_APACHE_FRONTEND:-mod_rewrite}"
 
   # Unless otherwise specified, the named service, data store, and
   # ActiveMQ service are assumed to be the current host if we are
