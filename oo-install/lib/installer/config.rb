@@ -1,3 +1,4 @@
+require 'fileutils'
 require 'installer/helpers'
 require 'yaml'
 
@@ -8,17 +9,18 @@ module Installer
     attr_reader :default_dir, :default_file, :file_template
     attr_accessor :file_path
 
-    def initialize file_path=nil
+    def initialize config_file_path=nil
       @default_dir = ENV['HOME'] + '/.openshift'
       @default_file = '/oo-install-cfg.yml'
       @file_template = gem_root_dir + '/conf/oo-install-cfg.yml.example'
-      if file_path.nil?
-        self.file_path = default_dir + default_file
-        unless file_check(self.file_path)
-          install_default
-        end
+      if config_file_path.nil?
+        @file_path = default_dir + default_file
       else
-        self.file_path = init_file_path
+        @file_path = config_file_path
+      end
+      if not file_check(@file_path)
+        install_default(config_file_path)
+        @new_config = true
       end
     end
 
@@ -36,6 +38,10 @@ module Installer
         return false
       end
       true
+    end
+
+    def new_config?
+      @new_config ||= false
     end
 
     def save_to_disk!
@@ -72,11 +78,11 @@ module Installer
     end
 
     private
-    def install_default
-      unless Dir.entries(ENV['HOME']).include?('.openshift')
+    def install_default(provided_path)
+      if provided_path.nil? and not Dir.entries(ENV['HOME']).include?('.openshift')
         Dir.mkdir(default_dir)
       end
-      system 'cp', file_template, self.file_path
+      FileUtils.cp file_template, file_path
     end
   end
 end

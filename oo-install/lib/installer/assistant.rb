@@ -116,10 +116,10 @@ module Installer
       say translate :welcome
       say translate :intro
       puts "\n"
-      while true
+      loop do
         choose do |menu|
           menu.header = translate :select_workflow
-          menu.prompt = "Choice? "
+          menu.prompt = "#{translate(:menu_prompt)} "
           descriptions = ["\nInstallation Options:\n#{horizontal_rule}"]
           Installer::Workflow.list(context).each do |workflow|
             menu.choice(workflow.summary) { ui_workflow(workflow.id) }
@@ -147,7 +147,7 @@ module Installer
         else
           ui_show_deployment
         end
-        while concur("\nDo you want to make any changes to your deployment?(Y/N/Q) ")
+        while concur("\nDo you want to change the basic deployment info?", translate(:help_basic_deployment))
           ui_edit_deployment
           ui_show_deployment
         end
@@ -159,20 +159,31 @@ module Installer
         if not merged_subscription.is_complete?
           say translate :info_force_run_subscription_setup
           puts "\n"
-          choose do |menu|
-            menu.header = translate :select_subscription
-            menu.choice('Add subscription settings to the installer configuration file') { say "\nEditing installer subscription settings" }
-            menu.choice('Enter subscription settings now without saving them to disk') { @save_subscription = false; say "\nGetting subscription settings for this installation" }
+          @show_menu = true
+          while @show_menu
+            choose do |menu|
+              menu.header = translate :select_subscription
+              menu.prompt = "#{translate(:menu_prompt)} "
+              menu.choice('Add subscription settings to the installer configuration file') { say "\nEditing installer subscription settings"; @show_menu = false }
+              menu.choice('Enter subscription settings now without saving them to disk') { @save_subscription = false; say "\nGetting subscription settings for this installation"; @show_menu = false }
+              menu.hidden("?") {
+                say "\nSubscription Settings:"
+                say "#{horizontal_rule}\n\n"
+                say translate :explain_subscriptions
+                say "\n#{horizontal_rule}\n\n"
+              }
+              menu.hidden("q") { return_to_main_menu }
+            end
           end
           ui_edit_subscription
         end
         ui_show_subscription
-        while concur("\nDo you want to make any changes to the subscription info in the configuration file?(Y/N/Q) ")
+        while concur("\nDo you want to make any changes to the subscription info in the configuration file?", translate(:help_subscription_cfg))
           @save_subscription = true
           ui_edit_subscription
           ui_show_subscription
         end
-        while concur("\nDo you want to set any temporary subscription settings for this installation only?(Y/N/Q) ")
+        while concur("\nDo you want to set any temporary subscription settings for this installation only?", translate(:help_subscription_tmp))
           @save_subscription = false
           ui_edit_subscription
           ui_show_subscription
@@ -194,7 +205,7 @@ module Installer
             puts "  * #{host_info}"
           end
           say "\n" + translate(:unattended_not_possible)
-          if not concur("Do you want to proceed anyway?(Y/N/Q) ")
+          if not concur("Do you want to proceed anyway?", translate(:help_proceed_attended))
             say "\nExiting."
             exit
           end
@@ -215,7 +226,7 @@ module Installer
         say "\nThese are your current settings for this workflow:"
         ui_show_workflow
       end
-      while workflow_cfg.empty? or concur("\nDo you want to make any changes to your answers?(Y/N/Q) ")
+      while workflow_cfg.empty? or concur("\nDo you want to make any changes to your answers?", translate(:help_workflow_questions))
         workflow.questions.each do |question|
           puts "\n"
           question.ask(deployment, workflow_cfg)
@@ -246,17 +257,17 @@ module Installer
           say "\nYou must add a #{role_singular}."
           ui_modify_role_list role
         end
-        while concur("\nDo you want to modify the #{role_list}?(Y/N/Q) ")
+        while concur("\nDo you want to modify the #{role_list}?", translate(:help_roles_edits))
           ui_modify_role_list role
         end
       end
       unless deployment.dns.keys.length > 0
-        say "\nYou must set some DNS-specific values."
+        say "\n#{translate(:info_force_run_dns_setup)}"
         ui_modify_dns
       else
         list_dns
       end
-      while concur("\nDo you want to change the DNS settings?(Y/N/Q) ")
+      while concur("\nDo you want to change the DNS settings?", translate(:help_dns_settings))
         ui_modify_dns
       end
     end
@@ -281,8 +292,9 @@ module Installer
         q.validate = lambda { |p| Installer::Subscription.subscription_types.has_key?(p.to_sym) }
         q.responses[:not_valid] = "Valid subscription types are #{valid_types}"
       }.to_s
-      Installer::Subscription.subscription_types[tgt_subscription.subscription_type.to_sym][:attr_order].each do |attr|
-        desc = Installer::Subscription.subscription_types[tgt_subscription.subscription_type.to_sym][:attrs][attr]
+      type_settings = Installer::Subscription.subscription_types[tgt_subscription.subscription_type.to_sym]
+      type_settings[:attr_order].each do |attr|
+        desc = type_settings[:attrs][attr]
         question = attr == :rh_password ? '<%= @key %>' : "#{desc}? "
         if save_subscription? or not [:rh_username, :rh_password].include?(attr)
           question << "(Use '-' to leave unset) "
@@ -318,17 +330,21 @@ module Installer
     end
 
     def ui_show_subscription
+      values = merged_subscription.to_hash
+      settings = Installer::Subscription.subscription_types[values['type'].to_sym]
       table = Terminal::Table.new do |t|
         t.add_row ['Setting','Value']
         t.add_separator
-        Installer::Subscription.object_attrs.each do |attr|
-          value = merged_subscription.send(attr)
+        t.add_row ['type', values['type']]
+        settings[:attr_order].each do |attr|
+          key = attr.to_s
+          value = values[key]
           if value.nil?
             value = '-'
           elsif attr == :rh_password
             value = '******'
           end
-          t << [attr.to_s, value]
+          t << [key, value]
         end
       end
       ui_newpage
@@ -343,6 +359,7 @@ module Installer
           say "\nModifying the " + Installer::Deployment.role_map[role] + " list.\n\n"
           choose do |menu|
             menu.header = "Select the number of the #{role.to_s} host instance that you wish to modify"
+            menu.prompt = "#{translate(:menu_prompt)} "
             for i in 0..(list.length - 1)
               menu.choice(list[i].summarize) { ui_edit_host_instance list[i], list.length, i }
             end
@@ -384,6 +401,7 @@ module Installer
       if host_instance.role == :node and role_count > 1
         choose do |menu|
           menu.header = "Do you want to delete this #{rolename} or update it?"
+          menu.prompt = "#{translate(:menu_prompt)} "
           menu.choice("Update it") {
             edit_host_instance host_instance
             deployment.update_host_instance! host_instance, index
@@ -409,14 +427,14 @@ module Installer
     def edit_host_instance host_instance
       host_instance_is_valid = false
       while not host_instance_is_valid
-        host_instance.ssh_host = ask("Host name (for remote access): ") { |q|
+        host_instance.ssh_host = ask("Hostname / IP address for SSH access: ") { |q|
           if not host_instance.ssh_host.nil?
             q.default = host_instance.ssh_host
           end
           q.validate = lambda { |p| is_valid_hostname_or_ip_addr?(p) }
           q.responses[:not_valid] = "Enter a valid hostname or IP address"
         }.to_s
-        host_instance.user = ask("Username for installation on #{host_instance.ssh_host}: ") { |q|
+        host_instance.user = ask("Username for SSH access and installation: ") { |q|
           if not host_instance.user.nil?
             q.default = host_instance.user
           else context == :ose
@@ -425,7 +443,7 @@ module Installer
           q.validate = lambda { |p| is_valid_username?(p) }
           q.responses[:not_valid] = "Enter a valid linux username"
         }.to_s
-        host_instance.host = ask("Host name (for other components in the subnet): ") { |q|
+        host_instance.host = ask("Hostname (for other OpenShift components in the subnet): ") { |q|
           if not host_instance.host.nil?
             q.default = host_instance.host
           elsif not host_instance.ssh_host.nil?
@@ -487,12 +505,15 @@ module Installer
       @merged_subscription
     end
 
-    def concur(yes_or_no_question)
-      response = ask(yes_or_no_question) { |q|
-        q.validate                 = lambda { |p| [?y,?n,?q].include?(p.downcase[0]) }
-        q.responses[:not_valid]    = 'Please "yes" or "no", or "quit" to return to the main menu.'
+    def concur(yes_or_no_question, help_text=nil)
+      question_suffix = help_text.nil? ? ' (y/n/q) ' : ' (y/n/q/?) '
+      full_help = help_text.nil? ? '' : "\n#{help_text}\n"
+      full_help << "\nPlease press \"y\" or \"n\" to continue, or \"q\" to return to the main menu."
+      response = ask("#{yes_or_no_question}#{question_suffix}") { |q|
+        q.validate = lambda { |p| [?y,?n,?q].include?(p.downcase[0]) }
+        q.responses[:not_valid] = full_help
         q.responses[:ask_on_error] = :question
-        q.character                = true
+        q.character = true
       }
       case response
       when 'y'
@@ -500,9 +521,13 @@ module Installer
       when 'n'
         return false
       else
-        say "\nReturning to main menu."
-        raise Installer::AssistantRestartException.new
+        return_to_main_menu
       end
+    end
+
+    def return_to_main_menu
+      say "\nReturning to main menu."
+      raise Installer::AssistantRestartException.new
     end
   end
 end

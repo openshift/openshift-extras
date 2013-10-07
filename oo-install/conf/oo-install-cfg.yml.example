@@ -8,7 +8,7 @@ Deployment:
     - host: localhost
       ssh_host: localhost
       user: root
-  MQServers:
+  MsgServers:
     - host: localhost
       ssh_host: localhost
       user: root

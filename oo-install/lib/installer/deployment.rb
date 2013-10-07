@@ -10,7 +10,7 @@ module Installer
     def self.role_map
       { :broker => 'Brokers',
         :node => 'Nodes',
-        :mqserver => 'MQServers',
+        :mqserver => 'MsgServers',
         :dbserver => 'DBServers',
       }
     end
@@ -63,7 +63,7 @@ module Installer
     def to_hash
       { 'Brokers' => brokers.map{ |b| b.to_hash },
         'Nodes' => nodes.map{ |n| n.to_hash },
-        'MQServers' => mqservers.map{ |m| m.to_hash },
+        'MsgServers' => mqservers.map{ |m| m.to_hash },
         'DBServers' => dbservers.map{ |d| d.to_hash },
         'DNS' => dns,
       }
