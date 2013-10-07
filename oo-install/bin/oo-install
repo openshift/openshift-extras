@@ -102,8 +102,8 @@ loop do
     break
   rescue Installer::AssistantRestartException => e
     # Nothing to do; this will just carry us around to the main menu.
-  end
-  if not @result.nil?
+  rescue Installer::AssistantWorkflowCompletedException => e
+    puts "\nInstallation completed."
     break
   end
 end

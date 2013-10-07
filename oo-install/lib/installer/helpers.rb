@@ -54,8 +54,16 @@ module Installer
       value.to_s.gsub('_','-')
     end
 
+    def is_valid_ip_addr? text
+      text.match VALID_IP_ADDR_RE
+    end
+
+    def is_valid_hostname? text
+      text.match VALID_HOSTNAME_RE
+    end
+
     def is_valid_hostname_or_ip_addr? text
-      text.match VALID_IP_ADDR_RE or text.match VALID_HOSTNAME_RE
+      is_valid_ip_addr?(text) or is_valid_hostname?(text)
     end
 
     def is_valid_domain? text

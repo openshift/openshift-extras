@@ -26,7 +26,15 @@ module Installer
       if not subscription.nil?
         env_vars = expand_subscription_variables(subscription)
       end
-      system(env_vars, expanded_command)
+      env_vars.merge!(set_ruby_variables)
+
+      # Set up a pile of env variables
+      env_vars.each do |env,val|
+        ENV[env] = val
+      end
+
+      # Hit it
+      system expanded_command
       @status = $?.exitstatus
     end
 
@@ -63,10 +71,21 @@ module Installer
       Installer::Subscription.object_attrs.each do |attr|
         value = subscription.send(attr)
         if not value.nil?
-          env_vars["OO_INSTALL_#{attr.upcase}"] = value
+          env_vars["OO_INSTALL_#{attr.to_s.upcase}"] = value
         end
       end
       env_vars
+    end
+
+    def set_ruby_variables
+      rubydir = RUBY_VERSION == '1.8.7' ? '1.8' : '1.9.1'
+      gempath = "#{gem_root_dir}/vendor/bundle/ruby/#{rubydir}/gems/"
+      rubylib = "#{gem_root_dir}/lib:#{gem_root_dir}/vendor/bundle"
+      Dir.entries(gempath).each do |gem|
+        next if ['.','..'].include?(gem)
+        rubylib << ":#{gempath}#{gem}/lib/"
+      end
+      { 'GEM_PATH' => gempath, 'RUBYLIB' => rubylib }
     end
 
     # Original source for #which:

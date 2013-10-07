@@ -13,6 +13,12 @@ module Installer
     end
   end
 
+  class AssistantWorkflowCompletedException < Exception
+    def initialize(message="The selected installation workflow has completed.", code=1)
+      super(message, code)
+    end
+  end
+
   class WorkflowFileNotFoundException < Exception
     def initialize(message="The workflow configuration file could not be found at <gem_root>/conf/workflow.cfg", code=1)
       super(message, code)
@@ -33,6 +39,24 @@ module Installer
 
   class WorkflowExecutableException < Exception
     def initialize(message="A workflow executable could not be found or is not system-executable.", code=1)
+      super(message, code)
+    end
+  end
+
+  class SSHNotAvailableException < Exception
+    def initialize(message="An ssh client could not be found. Please check the $PATH environment variable.", code=1)
+      super(message, code)
+    end
+  end
+
+  class HostInstanceYumNotAvailableException < Exception
+    def initialize(message="The 'yum' utility could not be found on the target system.", code=1)
+      super(message, code)
+    end
+  end
+
+  class HostInstanceNotReachableException < Exception
+    def initialize(message="A target host in the deployment could not be reached.", code=1)
       super(message, code)
     end
   end

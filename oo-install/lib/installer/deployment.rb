@@ -1,4 +1,5 @@
 require 'installer/helpers'
+require 'net/ssh'
 
 module Installer
   class Deployment
@@ -116,17 +117,73 @@ module Installer
 
     # Expectations: this method will attempt to connect to the remote hosts via SSH
     # It notes if the remote system asks for a password.
-    def check_remote_ssh
-      failed_hosts = []
+    def check_target_hosts
       by_ssh_host.each_pair do |ssh_host,instance_list|
         user = instance_list[0].user
-        puts "\nChecking connection to #{ssh_host} with user #{user}...\n"
-        success = system("ssh -oPasswordAuthentication=no -t -l #{user} #{ssh_host} 'sudo -n hostname'")
-        if not success
-          failed_hosts << "#{ssh_host} (user: #{user})"
+
+        # Set up the framing of the commands
+        is_local = ssh_host == 'localhost'
+        is_root = user == 'root'
+        command_prefix = ''
+        command_suffix = ''
+        if not is_local
+          # While we're here; update the command prefix & suffix we'll use later.
+          command_prefix = "ssh -oPasswordAuthentication=no -t -l #{user} #{ssh_host} '"
+          command_suffix = "'"
+        end
+        if not is_root
+          command_prefix << 'sudo '
+        end
+
+        # Run the gauntlet. Step one; see if the host is reachable.
+        if not is_local
+          puts "Checking to see if host '#{ssh_host}' is reachable..."
+          ssh_target = ssh_host
+          if not is_valid_ip_addr?(ssh_target)
+            # This may be an SSH alias; try looking it up.
+            ssh_config = Net::SSH::Config.for(ssh_host)
+            if ssh_config.has_key?(:host_name)
+              ssh_target = ssh_config[:host_name]
+            end
+          end
+          traceroute = which('traceroute')
+          if not traceroute.nil?
+            if not system("#{traceroute} -m 20 #{ssh_target}")
+              raise Installer::HostInstanceNotReachableException.new("Host '#{ssh_host}' could not be reached. Please investigate and correct this, then rerun the installer.")
+            else
+              puts "...confirmed with traceroute."
+            end
+          else
+            ping = which('ping')
+            if ping.nil?
+              puts "WARNING: Neither traceroute nor ping are available to test the availability of host '#{ssh_host}'. Attempting to proceed without this check."
+            elsif not system("#{ping} #{ssh_target}")
+              puts "WARNING: Host '#{ssh_host}' is not reachable by ping. Attempting to proceed anyway."
+            else
+              puts "...confirmed with ping."
+            end
+          end
+          if which('ssh').nil?
+            raise Installer::SSHNotAvailableException.new
+          end
+        end
+
+        # Step two; try to run yum to ensure that the executable is available and the user has permission to run it.
+        puts "Checking to see if 'yum' is available on host '#{ssh_host}'..."
+        if not system("#{command_prefix}yum -q version#{command_suffix}")
+          error_message = "The 'yum -q version' command could not be run on host '#{ssh_host}'. Possible reasons include:\n"
+          if not is_local
+            error_message << "* SSH may have failed; try to connect using 'ssh -l #{user} #{ssh_host}'.\n"
+          end
+          if not is_root
+            error_message << "* Passwordless sudo may have failed; try running 'sudo yum -q version' on the target host.\n"
+          end
+          error_message << "* The 'yum' command may not be in the $PATH on the target host; try running 'which yum' on the target host."
+          raise Installer::HostInstanceYumNotAvailableException.new(error_message)
+        else
+          puts "...confirmed 'yum' is available."
         end
       end
-      failed_hosts
     end
 
     def is_complete?
