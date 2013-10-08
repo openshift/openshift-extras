@@ -28,3 +28,4 @@ en:
   help_workflow_questions: "These values will be used for the specific installation method that you have selected."
   help_roles_edits: "These settings cover the basic info for the host instance(s) in this OpenShift role."
   menu_prompt: "Type a selection and press <return>:"
+  basic_mode_explanation: "Note: ActiveMQ, MongoDB and named will all be installed on the Broker. For more flexibility, rerun the installer in advanced mode (-a)."
