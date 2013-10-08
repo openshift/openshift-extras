@@ -396,6 +396,12 @@
 # The Krb5KeyTab value of mod_auth_kerb is not configurable -- the keytab
 # is expected in /var/www/openshift/broker/httpd/conf.d/http.keytab
 
+# named_entries / CONF_NAMED_ENTRIES
+#Any additional named entries for the named database.
+#Comma separated, colon delimited hostname:ipaddress pairs
+#CONF_NAMED_ENTRIES
+########################################################################
+
 
 
 ########################################################################
@@ -1731,12 +1737,23 @@ ${domain}		IN SOA	${named_hostname}. hostmaster.${domain}. (
 \$ORIGIN ${domain}.
 ${named_hostname%.${domain}}			A	${named_ip_addr}
 EOF
-
-  # Add A records any other components that are being installed locally.
-  broker && echo "${broker_hostname%.${domain}}			A	${broker_ip_addr}" >> $nsdb
-  node && echo "${node_hostname%.${domain}}			A	${node_ip_addr}${nl}" >> $nsdb
-  activemq && echo "${activemq_hostname%.${domain}}			A	${cur_ip_addr}${nl}" >> $nsdb
-  datastore && echo "${datastore_hostname%.${domain}}			A	${cur_ip_addr}${nl}" >> $nsdb
+  NAMED_ENTRIES=${CONF_NAMED_ENTRIES}
+  if [ -z $CONF_NAMED_ENTRIES ]; then
+    # Add A records any other components that are being installed locally.
+    broker && echo "${broker_hostname%.${domain}}			A	${broker_ip_addr}" >> $nsdb
+    node && echo "${node_hostname%.${domain}}			A	${node_ip_addr}${nl}" >> $nsdb
+    activemq && echo "${activemq_hostname%.${domain}}			A	${cur_ip_addr}${nl}" >> $nsdb
+    datastore && echo "${datastore_hostname%.${domain}}			A	${cur_ip_addr}${nl}" >> $nsdb
+  else
+    # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
+    pairs=(${NAMED_ENTRIES//,/ })
+    for i in "${!pairs[@]}"
+    do
+      host_ip=${pairs[i]}
+      host_ip=(${host_ip//:/ })
+      echo "${host_ip[0]%.${domain}}			A	${host_ip[1]}" >> $nsdb
+    done
+  fi
   echo >> $nsdb
 
   # Install the key for the OpenShift Enterprise domain.
