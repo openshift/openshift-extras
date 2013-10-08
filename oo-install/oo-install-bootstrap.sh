@@ -6,6 +6,13 @@ args=("$@")
 : ${TMPDIR:=/tmp}
 [[ $TMPDIR != */ ]] && TMPDIR="${TMPDIR}/"
 
+echo "Checking for necessary tools..."
+for i in ruby unzip ssh
+do
+  command -v $i >/dev/null 2>&1 || { echo >&2 "OpenShift installation requires $i but it does not appear to be available. Correct this and rerun the installer."; exit 1; }
+done
+echo "...looks good."
+
 echo "Downloading oo-install package..."
 curl -o ${TMPDIR}oo-install.zip http://oo-install.rhcloud.com/oo-install.zip
 

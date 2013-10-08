@@ -153,10 +153,20 @@ host_order.each do |ssh_host|
     @env_map.delete(@role_map['node']['env_var'])
   end
 
-  puts "Copying deployment script to target #{ssh_host}.\n"
-  system "scp #{File.dirname(__FILE__)}/openshift.sh #{user}@#{ssh_host}:~/"
+  if not ssh_host == 'localhost'
+    puts "Copying deployment script to target #{ssh_host}.\n"
+    system "scp #{File.dirname(__FILE__)}/openshift.sh #{user}@#{ssh_host}:~/"
+  end
   puts "Running deployment\n"
-  system "ssh #{user}@#{ssh_host} 'chmod u+x ~/openshift.sh \&\& #{env_setup} ~/openshift.sh \&\& reboot'"
+  if not ssh_host == 'localhost'
+    system "ssh #{user}@#{ssh_host} 'chmod u+x ~/openshift.sh \&\& #{env_setup} ~/openshift.sh \&\& reboot'"
+  else
+    # Ruby 1.8-ism; we have to jam the env settings into our own ENV
+    @env_map.each_pair do |env,val|
+      ENV[env] = val
+    end
+    system "#{File.dirname(__FILE__)}/openshift.sh \&\& reboot"
+  end
 
   puts "Installation on target #{ssh_host} completed.\n"
 end

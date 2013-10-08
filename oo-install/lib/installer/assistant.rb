@@ -191,7 +191,7 @@ module Installer
 
       # Workflow remote systems preflight
       if workflow.remote_execute?
-        say "\nPreflight check: verifying remote system availability."
+        say "\nPreflight check: verifying system and resource availability."
         check_deployment
       end
 

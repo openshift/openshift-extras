@@ -97,6 +97,9 @@ assistant = Installer::Assistant.new(config, options[:workflow_id], options[:ass
 loop do
   begin
     @result = assistant.run
+    if not @result.nil?
+      break
+    end
   rescue Interrupt => e
     puts "\nExiting oo-install at user request."
     break
