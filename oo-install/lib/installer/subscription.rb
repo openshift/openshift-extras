@@ -98,6 +98,10 @@ module Installer
       end
     end
 
+    def test_commands
+      return self.class.subscription_types[subscription_type][:test_commands]
+    end
+
     def to_hash
       export_hash = {}
       self.class.object_attrs.each do |attr|

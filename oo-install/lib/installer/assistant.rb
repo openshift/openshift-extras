@@ -65,13 +65,7 @@ module Installer
 
         # Reach out to the remote hosts
         if workflow.remote_execute?
-          failed_hosts = deployment.check_remote_ssh
-          if not failed_hosts.empty?
-            say translate :error_unattended_workflow_remote
-            puts "  * " + failed_hosts.join("\n  * ") + "\n"
-            say translate :unattended_not_possible
-            return 1
-          end
+          check_deployment
         end
 
         say translate :info_unattended_workflow_start
@@ -198,18 +192,7 @@ module Installer
       # Workflow remote systems preflight
       if workflow.remote_execute?
         say "\nPreflight check: verifying remote system availability."
-        failed_hosts = deployment.check_remote_ssh
-        if not failed_hosts.empty?
-          say "\n" + translate(:warning_ssh_issues)
-          failed_hosts.each do |host_info|
-            puts "  * #{host_info}"
-          end
-          say "\n" + translate(:unattended_not_possible)
-          if not concur("Do you want to proceed anyway?", translate(:help_proceed_attended))
-            say "\nExiting."
-            exit
-          end
-        end
+        check_deployment
       end
 
       unless workflow.non_deployment?
@@ -218,7 +201,7 @@ module Installer
 
       # Hand it off to the workflow executable
       workflow.executable.run workflow_cfg, merged_subscription
-      return 0
+      raise Installer::AssistantWorkflowCompletedException.new
     end
 
     def ui_edit_workflow
@@ -528,6 +511,24 @@ module Installer
     def return_to_main_menu
       say "\nReturning to main menu."
       raise Installer::AssistantRestartException.new
+    end
+
+    def check_deployment
+      begin
+        deployment.check_target_hosts
+      rescue Installer::HostInstanceNotReachableException => e
+        say e.message
+        if concur("Do you want to proceed anyway?", translate(:help_proceed_attended))
+          return
+        else
+          say "\nExiting."
+          exit
+        end
+      rescue Installer::SSHNotAvailableException, Installer::HostInstanceYumNotAvailableException => e
+        say e.message
+        say "\nExiting."
+        exit
+      end
     end
   end
 end
