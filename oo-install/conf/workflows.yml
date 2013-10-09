@@ -17,7 +17,7 @@ Type:
 Summary: Install OpenShift Origin
 Description: To install a new OpenShift Origin deployment on one or more target systems, select this option
 ID: origin_deploy
-Executable: <workflow_path>/originator
+Executable: <workflow_path>/originator.rb
 RemoteDeployment: Y
 ---
 Name: OO Node Instance Deployment
@@ -32,7 +32,7 @@ Questions:
   - Text: From your list of Nodes, which instance would you like to deploy?
     Variable: rolehost
     AnswerType: rolehost:node
-Executable: <workflow_path>/originator <q:rolehost>
+Executable: <workflow_path>/originator.rb <q:rolehost>
 RemoteDeployment: Y
 ---
 Name: Puppet templates

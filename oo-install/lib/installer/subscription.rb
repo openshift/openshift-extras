@@ -4,7 +4,7 @@ module Installer
   class Subscription
     include Installer::Helpers
 
-    @object_attrs = [:subscription_type, :rh_username, :rh_password, :repos_base, :rhel_repo, :jboss_repo_base, :rhel_optional_repo, :sm_reg_pool, :sm_reg_pool_rhel, :rhn_reg_actkey]
+    @object_attrs = [:subscription_type, :rh_username, :rh_password, :repos_base, :os_repo, :jboss_repo_base, :os_optional_repo, :sm_reg_pool, :sm_reg_pool_rhel, :rhn_reg_actkey]
 
     attr_reader :config, :type
     attr_accessor *@object_attrs
@@ -20,11 +20,11 @@ module Installer
             :desc => 'Get packages from yum and do not use a subscription',
             :attrs => {
               :repos_base => 'The base URL for the OpenShift repositories',
-              :rhel_repo => 'The URL for a RHEL 6 yum repository',
+              :os_repo => 'The URL of a yum repository for the operating system',
               :jboss_repo_base => 'The base URL for the JBoss repositories',
-              :rhel_optional_repo => 'The URL for a RHEL 6 Optional repository',
+              :os_optional_repo => 'The URL for an "Optional" repository for the operating system',
             },
-            :attr_order => [:repos_base,:rhel_repo,:jboss_repo_base,:rhel_optional_repo],
+            :attr_order => [:repos_base,:os_repo,:jboss_repo_base,:os_optional_repo],
           },
           :rhsm => {
             :desc => 'Use Red Hat Subscription Manager',
@@ -32,6 +32,7 @@ module Installer
               :rh_username => 'Red Hat Login username',
               :rh_password => 'Red Hat Login password',
               :sm_reg_pool => 'Pool ID for OpenShift subscription',
+              :sm_reg_pool_rhel => 'Pool ID for RHEL subscription',
             },
             :attr_order => [:rh_username,:rh_password,:sm_reg_pool],
           },
@@ -57,7 +58,7 @@ module Installer
           raise Installer::SubscriptionTypeNotRecognizedException.new("Subscription type '#{value}' is not recognized.")
         elsif not attr == :subscription_type and not value.nil?
           # We have to be pretty flexible here, so we basically just format-check the non-nil values.
-          if ([:repos_base, :rhel_repo, :jboss_repo_base, :rhel_optional_repo].include?(attr) and not is_valid_url?(value)) or
+          if ([:repos_base, :os_repo, :jboss_repo_base, :os_optional_repo].include?(attr) and not is_valid_url?(value)) or
              (attr == :rh_username and not is_valid_email_addr?(value)) or
              ([:rh_password, :sm_reg_pool, :sm_reg_pool_rhel, :rhn_reg_actkey].include?(attr) and not is_valid_string?(value))
             return false if check == :basic
