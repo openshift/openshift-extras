@@ -61,6 +61,16 @@ module Installer
       save_to_disk!
     end
 
+    # For basic mode, the mqserver and dbserver settings always
+    # match the broker settings.
+    def clone_broker_instances!
+      broker_list = get_role_list :broker
+      [:mqserver, :dbserver].each do |clone_role|
+        set_role_list clone_role, broker_list.map{ |i| Installer::HostInstance.new(clone_role, { 'host' => i.host, 'ssh_host' => i.ssh_host, 'user' => i.user })}
+      end
+      save_to_disk!
+    end
+
     def to_hash
       { 'Brokers' => brokers.map{ |b| b.to_hash },
         'Nodes' => nodes.map{ |n| n.to_hash },

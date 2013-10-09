@@ -13,9 +13,10 @@ module Installer
     attr_reader :context
     attr_accessor :config, :deployment, :cli_subscription, :cfg_subscription, :workflow, :workflow_cfg, :unattended
 
-    def initialize config, workflow_id=nil, assistant_context=:origin, cli_subscription=nil
+    def initialize config, workflow_id=nil, assistant_context=:origin, advanced_mode=false, cli_subscription=nil
       @config = config
       @context = assistant_context
+      @advanced_mode = advanced_mode
       @deployment = config.get_deployment
       @cfg_subscription = config.get_subscription
       @cli_subscription = cli_subscription
@@ -95,6 +96,11 @@ module Installer
       @save_subscription
     end
 
+    def advanced_mode?
+      @advanced_mode
+    end
+
+    private
     def ui_title
       ui_newpage
       say translate(:title)
@@ -191,7 +197,7 @@ module Installer
 
       # Workflow remote systems preflight
       if workflow.remote_execute?
-        say "\nPreflight check: verifying remote system availability."
+        say "\nPreflight check: verifying system and resource availability."
         check_deployment
       end
 
@@ -232,6 +238,9 @@ module Installer
 
     def ui_edit_deployment
       Installer::Deployment.display_order.each do |role|
+        if not advanced_mode? and [:mqserver, :dbserver].include?(role)
+          next
+        end
         hkey = Installer::Deployment.role_map[role]
         list_count = list_role role
         role_singular = hkey.chop
@@ -258,7 +267,13 @@ module Installer
     def ui_show_deployment
       ui_newpage
       say translate :deployment_summary
+      if not advanced_mode?
+        say translate :basic_mode_explanation
+      end
       Installer::Deployment.display_order.each do |role|
+        if not advanced_mode? and [:mqserver, :dbserver].include?(role)
+          next
+        end
         list_role role
       end
       list_dns
@@ -399,8 +414,14 @@ module Installer
         edit_host_instance host_instance
         if index.nil?
           deployment.add_host_instance! host_instance
+          index = 0
         else
           deployment.update_host_instance! host_instance, index
+        end
+        # In basic mode, just clone the broker instance(s) for the
+        # messaging server and mongodb server
+        if not advanced_mode? and host_instance.role == :broker
+          deployment.clone_broker_instances!
         end
       end
       puts "\n"

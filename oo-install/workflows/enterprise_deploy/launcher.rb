@@ -4,6 +4,8 @@ require 'yaml'
 require 'net/ssh'
 
 CONFIG_FILE = ENV['HOME'] + '/.openshift/oo-install-cfg.yml'
+SOCKET_IP_ADDR = 3
+VALID_IP_ADDR_RE = Regexp.new('^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
 
 # If this is the add-a-node scenario, the node to be installed will
 # be passed via the command line
@@ -51,8 +53,22 @@ end
 # Will map hosts to roles
 @hosts = {}
 
+# This converts an ENV hash into a string of ENV settings
 def env_setup
   @env_map.each_pair.map{ |k,v| "#{k}=#{v}" }.join(' ')
+end
+
+# This is a -very- simple way of making sure we don't inadvertently
+# use a multicast IP addr or subnet mask. There's room for
+# improvement here.
+def find_good_ip_addr list
+  list.each do |addr|
+    triplets = addr.split('.')
+    if not triplets[0].to_i == 255 and not triplets[2].to_i == 255
+      return addr
+    end
+  end
+  nil
 end
 
 config = YAML.load_file(CONFIG_FILE)
@@ -83,6 +99,31 @@ if config.has_key?('Deployment')
       # The env map is passed to each job, but nodes are handled individually
       if not role == 'node'
         @env_map[@role_map[role]['env_var']] = host_instance['host']
+        if role == 'named' and @env_map['CONF_NAMED_IP_ADDR'].nil?
+          # Try to look up the IP address of the Broker host to set the named IP address
+          ip_lookup_command = 'ifconfig eth0 | grep \'inet \''
+          if not host_instance['ssh_host'] == 'localhost'
+            ip_lookup_command = "ssh #{host_instance['user']}@#{host_instance['ssh_host']} \"#{ip_lookup_command}\""
+          end
+          ip_text = %x[ #{ip_lookup_command} ].chomp
+          ip_addrs = ip_text.split(/[\s\:]/).select{ |v| v.match(VALID_IP_ADDR_RE) }
+          good_addr = find_good_ip_addr ip_addrs
+          if good_addr.nil?
+            puts "Could not determine a broker IP address for named. Trying socket lookup from this machine."
+            socket_info = nil
+            begin
+              socket_info = Socket.getaddrinfo(host_instance['host'], 'ssh')
+            rescue SocketError => e
+              puts "Socket lookup of broker IP address failed. The installation cannot continue."
+              exit
+            end
+            @env_map['CONF_NAMED_IP_ADDR'] = socket_info[0][SOCKET_IP_ADDR]
+          else
+            @env_map['CONF_NAMED_IP_ADDR'] = good_addr
+          end
+          puts "ENV: #{@env_map.inspect}"
+          exit
+        end
       end
     end
   end
@@ -153,10 +194,20 @@ host_order.each do |ssh_host|
     @env_map.delete(@role_map['node']['env_var'])
   end
 
-  puts "Copying deployment script to target #{ssh_host}.\n"
-  system "scp #{File.dirname(__FILE__)}/openshift.sh #{user}@#{ssh_host}:~/"
+  if not ssh_host == 'localhost'
+    puts "Copying deployment script to target #{ssh_host}.\n"
+    system "scp #{File.dirname(__FILE__)}/openshift.sh #{user}@#{ssh_host}:~/"
+  end
   puts "Running deployment\n"
-  system "ssh #{user}@#{ssh_host} 'chmod u+x ~/openshift.sh \&\& #{env_setup} ~/openshift.sh \&\& reboot'"
+  if not ssh_host == 'localhost'
+    system "ssh #{user}@#{ssh_host} 'chmod u+x ~/openshift.sh \&\& #{env_setup} ~/openshift.sh \&\& reboot'"
+  else
+    # Ruby 1.8-ism; we have to jam the env settings into our own ENV
+    @env_map.each_pair do |env,val|
+      ENV[env] = val
+    end
+    system "#{File.dirname(__FILE__)}/openshift.sh \&\& reboot"
+  end
 
   puts "Installation on target #{ssh_host} completed.\n"
 end
