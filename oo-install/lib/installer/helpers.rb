@@ -25,6 +25,10 @@ module Installer
       @gem_root_dir ||= File.expand_path '../../../', __FILE__
     end
 
+    def supported_contexts
+      [:origin, :origin_vm, :ose]
+    end
+
     # SOURCE for #which:
     # http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
     def which(cmd)

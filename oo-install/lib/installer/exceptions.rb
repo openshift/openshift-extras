@@ -43,13 +43,19 @@ module Installer
     end
   end
 
-  class SSHNotAvailableException < Exception
-    def initialize(message="An ssh client could not be found. Please check the $PATH environment variable.", code=1)
+  class DeploymentCheckFailedException < Exception
+    def initialize(message="The deployment check was not successful.\nReview the installer output and make any necessary adjustments.", code=1)
       super(message, code)
     end
   end
 
-  class HostInstanceYumNotAvailableException < Exception
+  class SSHNotAvailableException < Exception
+    def initialize(message="An ssh client could not be found on this system. Correct this and rerun the installer.", code=1)
+      super(message, code)
+    end
+  end
+
+  class HostInstanceUtilityNotAvailableException < Exception
     def initialize(message="The 'yum' utility could not be found on the target system.", code=1)
       super(message, code)
     end
@@ -117,6 +123,12 @@ module Installer
 
   class SubscriptionSettingMissingException < Exception
     def initialize(message="The subscription config is missing a required setting for the specified config type.", code=1)
+      super(message, code)
+    end
+  end
+
+  class UnrecognizedContextException < Exception
+    def initialize(message="The provided installer context is not supported.", code=1)
       super(message, code)
     end
   end

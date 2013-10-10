@@ -62,7 +62,7 @@ module Installer
       end
     end
 
-    attr_reader :name, :type, :summary, :description, :id, :questions, :executable, :path
+    attr_reader :name, :type, :summary, :description, :id, :questions, :executable, :path, :utilities
 
     def initialize config
       @id = config['ID']
@@ -95,6 +95,10 @@ module Installer
       @path = gem_root_dir + "/workflows/" + workflow_dir
       @questions = config.has_key?('Questions') ? config['Questions'].map{ |q| Installer::Question.new(self, q) } : []
       @executable = Installer::Executable.new(self, config['Executable'])
+      @utilities = ['yum']
+      if config.has_key?('RequiredUtilities')
+        @utilities.concat(config['RequiredUtilities'])
+      end
     end
 
     def check_deployment?
