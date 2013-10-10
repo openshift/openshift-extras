@@ -1470,7 +1470,7 @@ configure_controller()
   sed -i -e "s/^DOMAIN_SUFFIX=.*$/DOMAIN_SUFFIX=${domain}/" \
       /etc/openshift/console.conf
 
-  # Configure the broker with the correct hostname, and use random salt
+  # Configure the broker with the correct domain name, and use random salt
   # to the data store (the host running MongoDB).
   sed -i -e "s/^CLOUD_DOMAIN=.*$/CLOUD_DOMAIN=${domain}/" \
       /etc/openshift/broker.conf
@@ -1675,8 +1675,6 @@ configure_network()
   cat <<EOF >> /etc/dhcp/dhclient-eth0.conf
 
 prepend domain-name-servers ${named_ip_addr};
-supersede host-name "${hostname%.${domain}}";
-supersede domain-name "${domain}";
 prepend domain-search "${domain}";
 EOF
 }
@@ -1684,8 +1682,11 @@ EOF
 # Set the hostname
 configure_hostname()
 {
-  sed -i -e "s/HOSTNAME=.*/HOSTNAME=${hostname}/" /etc/sysconfig/network
-  hostname "${hostname}"
+  if [[ ! "$hostname" =~ ^[0-9.]*$ ]]  # hostname is not just an IP
+  then
+    sed -i -e "s/HOSTNAME=.*/HOSTNAME=${hostname}/" /etc/sysconfig/network
+    hostname "${hostname}"
+  fi
 }
 
 # Set some parameters in the OpenShift node configuration file.
@@ -2125,7 +2126,7 @@ configure_host()
   named && configure_named
 #  update_resolv_conf
   configure_network
-#  configure_hostname
+  is_false "$CONF_KEEP_HOSTNAME" && configure_hostname
   echo "OpenShift: Completed configuring host."
 }
 
