@@ -164,24 +164,6 @@ host_order = []
   end
 end
 
-# Sanity check time. Does each host have puppet installed?
-puts "Checking for Puppet on target systems..."
-host_order.each do |ssh_host|
-  user = @hosts[ssh_host]['username']
-  host = @hosts[ssh_host]['host']
-  check_command = 'command -v puppet >/dev/null 2>&1'
-  if not ssh_host == 'localhost'
-    check_command = "ssh #{user}@#{ssh_host} '#{check_command}'"
-  end
-  if not system(check_command)
-    puts "The 'puppet' command is not available on host '#{host}'. Correct this and rerun the installer."
-    exit 1
-  else
-    puts " + #{host}"
-  end
-end
-puts "...check completed."
-
 # Summarize the plan
 if @target_node_host.nil?
   puts "Preparing to install OpenShift Origin on the following hosts:\n"
@@ -196,7 +178,7 @@ end
 host_order.each do |ssh_host|
   user = @hosts[ssh_host]['username']
   host = @hosts[ssh_host]['host']
-  @puppet_map['roles'] = @hosts[ssh_host]['roles']
+  @puppet_map['roles'] = "[" + @hosts[ssh_host]['roles'].map{ |r| "'#{r}'" }.join(',') + "]"
 
   # Only include the node config setting for hosts that will have a node installation
   if @hosts[ssh_host]['roles'].include?('node')
@@ -208,7 +190,8 @@ host_order.each do |ssh_host|
   # Make a puppet config file for this host.
   filetext = "class { 'openshift_origin' :\n"
   @puppet_map.each_pair do |key,val|
-    filetext << "  #{key} => '#{val}',\n"
+    valtxt = key == 'roles' ? val : "'#{val}'"
+    filetext << "  #{key} => #{valtxt},\n"
   end
   filetext << "}\n"
 
@@ -218,9 +201,10 @@ host_order.each do |ssh_host|
   if File.exists?(hostfilepath)
     File.unlink(hostfilepath)
   end
-  fh = File.new(hostfilepath, 'rw')
+  fh = File.new(hostfilepath, 'w')
   fh.write(filetext)
   fh.close
+  exit # TEST
 
   if not ssh_host == 'localhost'
     puts "Copying Puppet configuration script to target #{ssh_host}.\n"

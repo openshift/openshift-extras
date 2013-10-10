@@ -19,6 +19,9 @@ Description: To install a new OpenShift Origin deployment on one or more target 
 ID: origin_deploy
 Executable: <workflow_path>/originator.rb
 RemoteDeployment: Y
+SubscriptionCheck: Y
+RequiredUtilities:
+  - puppet
 ---
 Name: OO Node Instance Deployment
 Type:
@@ -34,6 +37,9 @@ Questions:
     AnswerType: rolehost:node
 Executable: <workflow_path>/originator.rb <q:rolehost>
 RemoteDeployment: Y
+SubscriptionCheck: Y
+RequiredUtilities:
+  - puppet
 ---
 Name: Puppet templates
 Type: origin_vm

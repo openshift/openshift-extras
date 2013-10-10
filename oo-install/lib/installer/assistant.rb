@@ -15,6 +15,9 @@ module Installer
 
     def initialize config, workflow_id=nil, assistant_context=:origin, advanced_mode=false, cli_subscription=nil
       @config = config
+      if not self.class.supported_contexts.include?(assistant_context)
+        raise UnrecognizedContextException.new("Installer context #{assistant_context} not recognized.\nLegal values are #{self.class.supported_contexts.join(', ')}.")
+      end
       @context = assistant_context
       @advanced_mode = advanced_mode
       @deployment = config.get_deployment
@@ -282,15 +285,16 @@ module Installer
     def ui_edit_subscription
       ui_newpage
       tgt_subscription = save_subscription? ? cfg_subscription : cli_subscription
-      valid_types = Installer::Subscription.subscription_types.keys.map{ |t| t.to_s }.join(', ')
-      tgt_subscription.subscription_type = ask("What type of subscription should be used? (#{valid_types}) ") { |q|
-        if not merged_subscription.subscription_type.nil?
+      valid_types = Installer::Subscription.subscription_types(@context)
+      valid_types_list = valid_types.keys.map{ |t| t.to_s }.join(', ')
+      tgt_subscription.subscription_type = ask("What type of subscription should be used? (#{valid_types_list}) ") { |q|
+        if not merged_subscription.subscription_type.nil? and valid_types.keys.include?(merged_subscription.subscription_type)
           q.default = merged_subscription.subscription_type
         end
-        q.validate = lambda { |p| Installer::Subscription.subscription_types.has_key?(p.to_sym) }
-        q.responses[:not_valid] = "Valid subscription types are #{valid_types}"
+        q.validate = lambda { |p| valid_types.keys.include?(p.to_sym) }
+        q.responses[:not_valid] = "Valid subscription types are #{valid_types_list}"
       }.to_s
-      type_settings = Installer::Subscription.subscription_types[tgt_subscription.subscription_type.to_sym]
+      type_settings = valid_types[tgt_subscription.subscription_type.to_sym]
       type_settings[:attr_order].each do |attr|
         desc = type_settings[:attrs][attr]
         question = attr == :rh_password ? '<%= @key %>' : "#{desc}? "
@@ -329,7 +333,7 @@ module Installer
 
     def ui_show_subscription
       values = merged_subscription.to_hash
-      settings = Installer::Subscription.subscription_types[values['type'].to_sym]
+      settings = Installer::Subscription.subscription_types(@context)[values['type'].to_sym]
       table = Terminal::Table.new do |t|
         t.add_row ['Setting','Value']
         t.add_separator
@@ -535,20 +539,75 @@ module Installer
     end
 
     def check_deployment
-      begin
-        deployment.check_target_hosts
-      rescue Installer::HostInstanceNotReachableException => e
-        say e.message
-        if concur("Do you want to proceed anyway?", translate(:help_proceed_attended))
-          return
+      deployment_good = true
+      deployment.by_ssh_host.each_pair do |ssh_host,instance_list|
+        test_host = instance_list[0]
+        say "\nChecking #{test_host.host}:"
+        # Attempt SSH connection for remote hosts
+        if not test_host.host == 'localhost' and not test_host.ssh_target == 'localhost'
+          begin
+            test_host.get_ssh_session
+            say "* SSH connection succeeded"
+
+            # Check for all required utilities
+            workflow.utilities.each do |util|
+              cmd_result = test_host.ssh_exec!("command -v #{util}")
+              if not cmd_result[:exit_code] == 0
+                say "* Could not locate #{util}"
+                deployment_good = false
+              else
+                if not test_host.root_user?
+                  say "* Located #{util}... "
+                  sudo_result = test_host.ssh_exec!("command -v sudo")
+                  if not sudo_result[:exit_code] == 0
+                    say "could not locate sudo"
+                    deployment_good = false
+                  else
+                    sudo_cmd_result = test_host.ssh_exec!("#{sudo_result[:stdout]} #{util} --version")
+                    if not sudo_cmd_result[:exit_code] == 0
+                      say "could not invoke '#{util} --version' with sudo"
+                      deployment_good = false
+                    else
+                      say "invoked '#{util} --version' with sudo"
+                    end
+                  end
+                else
+                  say "* Located #{util}"
+                end
+              end
+            end
+
+            # Close the ssh session
+            test_host.close_ssh_session
+          rescue Errno::ENETUNREACH
+            say "* Could not reach host"
+            deployment_good = false
+          rescue Net::SSH::Exception => e
+            say "* #{e.message}"
+            deployment_good = false
+          end
         else
-          say "\nExiting."
-          exit
+          # Check for all required utilities
+          workflow.utilities.each do |util|
+            if not system("command -v #{util}")
+              say "* Could not locate #{util}"
+              deployment_good = false
+            else
+              say "* Located #{util}"
+              if not test_host.root_user?
+                if not system("sudo #{util} --version")
+                  say "* Could not invoke '#{util} --version' with sudo"
+                  deployment_good = false
+                else
+                  say "* Invoked '#{util} --version' with sudo"
+                end
+              end
+            end
+          end
         end
-      rescue Installer::SSHNotAvailableException, Installer::HostInstanceYumNotAvailableException => e
-        say e.message
-        say "\nExiting."
-        exit
+        if not deployment_good
+          raise Installer::DeploymentCheckFailedException.new
+        end
       end
     end
   end

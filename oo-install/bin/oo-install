@@ -23,6 +23,12 @@ options = {
   :advanced_mode => false,
 }
 
+# Catch a bogus ENV-supplied installer context straight away
+if not supported_contexts.include?(options[:assistant_context])
+  puts "Installer context '#{options[:assistant_context]}' is not supported. Legal values are: #{supported_contexts.join(', ')}."
+  exit 1
+end
+
 # Parse the command line options
 p = OptionParser.new do |opts|
   opts.banner = "Usage: oo-install [args]"
@@ -46,7 +52,8 @@ p = OptionParser.new do |opts|
   opts.on('-e', '--enterprise-mode', 'Show OpenShift Enterprise options (ignored in unattended mode)') do |flag|
     options[:assistant_context] = :ose
   end
-  opts.on('-s', '--subscription-type TYPE', Installer::Subscription.subscription_types.keys, "The software source for missing installation packages (#{Installer::Subscription.subscription_types.keys.map{ |k| k.to_s }.join(', ')})") do |subscription_type|
+  subscription_types = Installer::Subscription.subscription_types(options[:assistant_context])
+  opts.on('-s', '--subscription-type TYPE', subscription_types.keys, "The software source for missing installation packages (#{subscription_types.keys.map{ |k| k.to_s }.join(', ')})") do |subscription_type|
     options[:subscription_type] = subscription_type
   end
   opts.on('-u', '--username USERNAME', 'Red Hat Login username') do |username|
@@ -97,10 +104,15 @@ cli_subscription.rh_username = options[:username]
 cli_subscription.rh_password = options[:password]
 
 # Set up the assistant and get going
-assistant = Installer::Assistant.new(config, options[:workflow_id], options[:assistant_context], options[:advanced_mode], cli_subscription)
+begin
+  @assistant = Installer::Assistant.new(config, options[:workflow_id], options[:assistant_context], options[:advanced_mode], cli_subscription)
+rescue Installer::UnrecognizedContextException => e
+  puts "\n#{e.message}"
+  exit
+end
 loop do
   begin
-    @result = assistant.run
+    @result = @assistant.run
     if not @result.nil?
       break
     end
@@ -109,6 +121,9 @@ loop do
     break
   rescue Installer::AssistantRestartException => e
     # Nothing to do; this will just carry us around to the main menu.
+  rescue Installer::DeploymentCheckFailedException => e
+    puts "\n#{e.message}"
+    break
   rescue Installer::AssistantWorkflowCompletedException => e
     puts "\nInstallation completed."
     break
