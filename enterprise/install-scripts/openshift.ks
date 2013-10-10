@@ -222,7 +222,7 @@
 #CONF_NODE_HOSTNAME="node.example.com"
 #CONF_NAMED_HOSTNAME="ns1.example.com"
 #CONF_ACTIVEMQ_HOSTNAME="activemq.example.com"
-#CONF_DATASTORE_HOSTNAME="mongodb.example.com"
+#CONF_DATASTORE_HOSTNAME="datastore.example.com"
 
 
 # named_ip_addr / CONF_NAMED_IP_ADDR
@@ -271,6 +271,15 @@
 #   NTP is not necessary if the clock will be kept in synch by some
 #   other means.
 #CONF_NO_NTP=true
+
+# keep_hostname / CONF_KEEP_HOSTNAME
+#   Default: false (not set)
+#   Enabling this option prevents the installation script from setting
+#   the hostname on the host, leaving it as found.  Use this option if
+#   the hostname is already set as you like. The default behavior is
+#   to set the hostname, which makes it a little easier to recognize
+#   which host you are looking at when logging in as an administrator.
+#CONF_KEEP_HOSTNAME=true
 
 # activemq_replicants / CONF_ACTIVEMQ_REPLICANTS
 #   Default: the value of activemq_hostname
@@ -1950,7 +1959,7 @@ configure_controller()
   sed -i -e "s/^DOMAIN_SUFFIX=.*$/DOMAIN_SUFFIX=${domain}/" \
       /etc/openshift/console.conf
 
-  # Configure the broker with the correct hostname, and use random salt
+  # Configure the broker with the correct domain name, and use random salt
   # to the data store (the host running MongoDB).
   sed -i -e "s/^CLOUD_DOMAIN=.*$/CLOUD_DOMAIN=${domain}/" \
       /etc/openshift/broker.conf
@@ -2157,8 +2166,6 @@ configure_network()
   cat <<EOF >> /etc/dhcp/dhclient-eth0.conf
 
 prepend domain-name-servers ${named_ip_addr};
-supersede host-name "${hostname%.${domain}}";
-supersede domain-name "${domain}";
 prepend domain-search "${domain}";
 EOF
 }
@@ -2166,8 +2173,11 @@ EOF
 # Set the hostname
 configure_hostname()
 {
-  sed -i -e "s/HOSTNAME=.*/HOSTNAME=${hostname}/" /etc/sysconfig/network
-  hostname "${hostname}"
+  if [[ ! "$hostname" =~ ^[0-9.]*$ ]]  # hostname is not just an IP
+  then
+    sed -i -e "s/HOSTNAME=.*/HOSTNAME=${hostname}/" /etc/sysconfig/network
+    hostname "${hostname}"
+  fi
 }
 
 # Set some parameters in the OpenShift node configuration file.
@@ -2617,7 +2627,7 @@ configure_host()
   named && configure_named
   update_resolv_conf
   configure_network
-  configure_hostname
+  is_false "$CONF_KEEP_HOSTNAME" && configure_hostname
   echo "OpenShift: Completed configuring host."
 }
 
