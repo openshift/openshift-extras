@@ -497,7 +497,6 @@ install_broker_pkgs()
 install_node_pkgs()
 {
   pkgs="rubygem-openshift-origin-node ruby193-rubygem-passenger-native"
-  pkgs="$pkgs openshift-origin-port-proxy"
   pkgs="$pkgs openshift-origin-node-util"
   pkgs="$pkgs mcollective openshift-origin-msg-node-mcollective"
 
@@ -746,6 +745,10 @@ configure_sysctl_on_node()
   # Increase the connection tracking table size.
   echo "net.netfilter.nf_conntrack_max = 1048576" >> /etc/sysctl.conf
 
+  # iptables port proxy changes
+  echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
+  echo "net.ipv4.conf.all.route_localnet = 1 " >> /etc/sysctl.conf
+
   # Reload sysctl.conf to get the new settings.
   #
   # Note: We could add -e here to ignore errors that are caused by
@@ -928,9 +931,11 @@ configure_datastore()
 # Open up services required on the node for apps and developers.
 configure_port_proxy()
 {
-  lokkit --nostart --port=35531-65535:tcp
-
-  chkconfig openshift-port-proxy on
+  chkconfig openshift-iptables-port-proxy on
+  sed -i '/:OUTPUT ACCEPT \[.*\`]/a \
+:rhc-app-comm - [0:0]' /etc/sysconfig/iptables
+  sed -i '/-A INPUT -i lo -j ACCEPT/a \
+-A INPUT -j rhc-app-comm' /etc/sysconfig/iptables
 }
 
 configure_gears()
