@@ -617,7 +617,7 @@ configure_client_tools_repo()
   cat > /etc/yum.repos.d/openshift-client.repo <<YUM
 [openshift_client]
 name=OpenShift Client
-baseurl=$(ose_yum_repo_url Client)
+baseurl=$(ose_yum_repo_url RHOSE-CLIENT-2.0)
 enabled=1
 gpgcheck=0
 priority=1
@@ -632,7 +632,7 @@ configure_broker_repo()
   cat > /etc/yum.repos.d/openshift-infrastructure.repo <<YUM
 [openshift_infrastructure]
 name=OpenShift Infrastructure
-baseurl=$(ose_yum_repo_url Infrastructure)
+baseurl=$(ose_yum_repo_url RHOSE-INFRA-2.0)
 enabled=1
 gpgcheck=0
 priority=1
@@ -647,7 +647,7 @@ configure_node_repo()
   cat > /etc/yum.repos.d/openshift-node.repo <<YUM
 [openshift_node]
 name=OpenShift Node
-baseurl=$(ose_yum_repo_url Node)
+baseurl=$(ose_yum_repo_url RHOSE-NODE-2.0)
 enabled=1
 gpgcheck=0
 priority=1
@@ -662,7 +662,7 @@ configure_jbosseap_cartridge_repo()
   cat > /etc/yum.repos.d/openshift-jboss.repo <<YUM
 [openshift_jbosseap]
 name=OpenShift JBossEAP
-baseurl=$(ose_yum_repo_url JBoss_EAP6_Cartridge)
+baseurl=$(ose_yum_repo_url RHOSE-JBOSSEAP-2.0)
 enabled=1
 gpgcheck=0
 priority=1
