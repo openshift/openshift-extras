@@ -10,8 +10,8 @@ module Installer
   class Assistant
     include Installer::Helpers
 
-    attr_reader :context
-    attr_accessor :config, :deployment, :cli_subscription, :cfg_subscription, :workflow, :workflow_cfg, :unattended
+    attr_reader :context, :workflow_id
+    attr_accessor :config, :deployment, :cli_subscription, :cfg_subscription, :workflow, :workflow_cfg
 
     def initialize config, workflow_id=nil, assistant_context=:origin, advanced_mode=false, cli_subscription=nil
       @config = config
@@ -23,7 +23,7 @@ module Installer
       @deployment = config.get_deployment
       @cfg_subscription = config.get_subscription
       @cli_subscription = cli_subscription
-      @unattended = workflow_id.nil? ? false : true
+      @workflow_id = workflow_id
       @save_subscription = true
       # This is a bit hinky; highline/import shoves a HighLine object into the $terminal global
       # so we need to set these on the global object
@@ -31,7 +31,7 @@ module Installer
     end
 
     def run
-      if not unattended
+      if workflow_id.nil?
         ui_welcome_screen
       else
         # Check the Deployment
@@ -49,8 +49,8 @@ module Installer
 
         # Check the Workflow settings
         puts translate(:info_config_is_valid)
-        @workflow = Installer::Workflow.find(config.workflow_id)
-        @workflow_cfg = config.get_workflow_cfg(config.workflow_id)
+        @workflow = Installer::Workflow.find(workflow_id)
+        @workflow_cfg = config.get_workflow_cfg(workflow_id)
         if not workflow_cfg_complete?
           say translate :error_unattended_workflow_cfg
           say translate :unattended_not_possible
@@ -160,7 +160,7 @@ module Installer
       ui_newpage
       if workflow.check_subscription?
         if not merged_subscription.is_complete?
-          say translate :info_force_run_subscription_setup
+          ui_show_subscription(translate(:info_force_run_subscription_setup))
           puts "\n"
           @show_menu = true
           while @show_menu
@@ -331,7 +331,7 @@ module Installer
       end
     end
 
-    def ui_show_subscription
+    def ui_show_subscription(message=translate(:subscription_summary))
       values = merged_subscription.to_hash
       settings = Installer::Subscription.subscription_types(@context)[values['type'].to_sym]
       table = Terminal::Table.new do |t|
@@ -350,7 +350,7 @@ module Installer
         end
       end
       ui_newpage
-      say translate :subscription_summary
+      say message
       puts table
     end
 

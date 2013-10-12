@@ -23,9 +23,16 @@ module Installer
       end
 
       def valid_attr? attr, value, check=:basic
-        if attr == :subscription_type and not self.class.subscription_types.has_key?(value.to_sym)
-          return false if check == :basic
-          raise Installer::SubscriptionTypeNotRecognizedException.new("Subscription type '#{value}' is not recognized.")
+        if attr == :subscription_type
+          begin
+            subscription_info_for_type(value.to_sym)
+          rescue Installer::SubscriptionTypeNotRecognizedException => e
+            if check == :basic
+              return false
+            else
+              raise
+            end
+          end
         elsif not attr == :subscription_type and not value.nil?
           # We have to be pretty flexible here, so we basically just format-check the non-nil values.
           if ([:repos_base, :os_repo, :jboss_repo_base, :os_optional_repo].include?(attr) and not is_valid_url?(value)) or
@@ -36,18 +43,6 @@ module Installer
           end
         end
         true
-      end
-
-      private
-      def valid_types_for_context(context)
-        case context
-        when :origin, :origin_vm
-          return [:none,:yum]
-        when :ose
-          return [:none,:yum,:rhsm,:rhn]
-        else
-          raise Installer::UnrecognizedContextException.new("Installer context '#{context}' is not supported.")
-        end
       end
 
       def subscription_info_for_type(subscription_type)
@@ -94,6 +89,18 @@ module Installer
           raise Installer::SubscriptionTypeNotRecognizedException.new("Subscription type '#{subscription_type}' is not recognized.")
         end
       end
+
+      private
+      def valid_types_for_context(context)
+        case context
+        when :origin, :origin_vm
+          return [:none,:yum]
+        when :ose
+          return [:none,:yum,:rhsm,:rhn]
+        else
+          raise Installer::UnrecognizedContextException.new("Installer context '#{context}' is not supported.")
+        end
+      end
     end
 
     def initialize config, subscription={}
@@ -112,8 +119,9 @@ module Installer
         # These methods do not require other settings
         return true
       else
-        # These others require -all- related attrs
-        self.class.subscription_types[subscription_type.to_sym][:attrs].each_key do |attr|
+        # These others require username and password
+        self.class.subscription_info_for_type(subscription_type.to_sym)[:attrs].each_key do |attr|
+          next if not [:rh_username,:rh_password].include?(attr)
           return false if self.send(attr).nil?
         end
       end
