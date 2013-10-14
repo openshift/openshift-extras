@@ -1742,10 +1742,6 @@ install_named_pkgs()
 
 configure_named()
 {
-
-  # $keyfile will contain a new DNSSEC key for our domain.
-  keyfile=/var/named/${domain}.key
-
   if [ "x$bind_key" = x ]
   then
     # Generate the new key for the domain.
