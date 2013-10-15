@@ -765,6 +765,10 @@ configure_rhsm_channels()
    # have yum sync new list of repos from rhsm before changing settings
    yum repolist
 
+   # The yum-config-manager command is provided by the yum-utils
+   # package.
+   yum_install_or_exit yum-utils
+
    # Note: yum-config-manager never indicates errors in return code, and the output is difficult to parse; so,
    # it is tricky to determine when these fail due to subscription problems etc.
 
