@@ -3,6 +3,7 @@
 # Grab command-line arguments
 args=("$@")
 
+: ${OO_INSTALL_KEEP_ASSETS:="false"}
 : ${TMPDIR:=/tmp}
 [[ $TMPDIR != */ ]] && TMPDIR="${TMPDIR}/"
 
@@ -13,11 +14,17 @@ do
 done
 echo "...looks good."
 
-echo "Downloading oo-install package..."
-curl -o ${TMPDIR}oo-install.zip http://oo-install.rhcloud.com/oo-install.zip
+# All instances of INSTALLPKGNAME are replaced during packaging with the actual package name.
+if [ $OO_INSTALL_KEEP_ASSETS == 'true' ] && [ -e ${TMPDIR}/INSTALLPKGNAME.zip ]
+then
+  echo "Reusing existing installer assets."
+else
+  echo "Downloading oo-install package..."
+  curl -o ${TMPDIR}INSTALLPKGNAME.zip http://oo-install.rhcloud.com/INSTALLPKGNAME.zip
+fi
 
 echo "Extracting oo-install to temporary directory..."
-unzip -qq -o ${TMPDIR}oo-install.zip -d $TMPDIR
+unzip -qq -o ${TMPDIR}INSTALLPKGNAME.zip -d $TMPDIR
 
 echo "Starting oo-install..."
 RUBYDIR='1.9.1'
@@ -26,15 +33,20 @@ if [[ $RUBYVER == ruby\ 1\.8* ]]
 then
   RUBYDIR='1.8'
 fi
-GEM_PATH="${TMPDIR}oo-install/vendor/bundle/ruby/${RUBYDIR}/gems/"
-RUBYLIB="${TMPDIR}oo-install/lib:${TMPDIR}oo-install/vendor/bundle"
+GEM_PATH="${TMPDIR}INSTALLPKGNAME/vendor/bundle/ruby/${RUBYDIR}/gems/"
+RUBYLIB="${TMPDIR}INSTALLPKGNAME/lib:${TMPDIR}oo-install/vendor/bundle"
 for i in `ls $GEM_PATH`
 do
   RUBYLIB="${RUBYLIB}:${GEM_PATH}${i}/lib/"
 done
-GEM_PATH=$GEMPATH RUBYLIB=$RUBYLIB sh -c "${TMPDIR}oo-install/bin/oo-install $@"
+GEM_PATH=$GEMPATH RUBYLIB=$RUBYLIB sh -c "${TMPDIR}INSTALLPKGNAME/bin/oo-install $@"
 
-echo "oo-install exited; removing temporary assets."
-rm -rf ${TMPDIR}oo-install*
+if [ $OO_INSTALL_KEEP_ASSETS == 'true' ]
+then
+  echo "oo-install exited; keeping temporary assets in ${TMPDIR}"
+else
+  echo "oo-install exited; removing temporary assets."
+  rm -rf ${TMPDIR}INSTALLPKGNAME*
+fi
 
 exit
