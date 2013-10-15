@@ -1384,9 +1384,9 @@ EOF
   if [ -z $CONF_NAMED_ENTRIES ]; then
     # Add A records any other components that are being installed locally.
     broker && echo "${broker_hostname%.${domain}}			A	${broker_ip_addr}" >> $nsdb
-    node && echo "${node_hostname%.${domain}}			A	${node_ip_addr}${nl}" >> $nsdb
-    activemq && echo "${activemq_hostname%.${domain}}			A	${cur_ip_addr}${nl}" >> $nsdb
-    datastore && echo "${datastore_hostname%.${domain}}			A	${cur_ip_addr}${nl}" >> $nsdb
+    node && echo "${node_hostname%.${domain}}			A	${node_ip_addr}" >> $nsdb
+    activemq && echo "${activemq_hostname%.${domain}}			A	${cur_ip_addr}" >> $nsdb
+    datastore && echo "${datastore_hostname%.${domain}}			A	${cur_ip_addr}" >> $nsdb
   else
     # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
     pairs=(${NAMED_ENTRIES//,/ })
