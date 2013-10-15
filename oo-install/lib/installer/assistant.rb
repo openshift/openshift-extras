@@ -36,7 +36,7 @@ module Installer
       else
         # Check the Deployment
         unless deployment.is_complete?
-          puts translate :exit_no_deployment
+          puts translate :exit_incomplete_deployment
           return 1
         end
         puts translate :info_wait_config_validation
@@ -159,7 +159,8 @@ module Installer
       # Subscription check
       ui_newpage
       if workflow.check_subscription?
-        if not merged_subscription.is_complete?
+        msub = merged_subscription
+        if not msub.is_complete? or not Installer::Subscription.valid_types_for_context(@context).include?(msub.subscription_type.to_sym)
           ui_show_subscription(translate(:info_force_run_subscription_setup))
           puts "\n"
           @show_menu = true
@@ -333,13 +334,19 @@ module Installer
 
     def ui_show_subscription(message=translate(:subscription_summary))
       values = merged_subscription.to_hash
-      type = values.empty? ? '-' : values['type']
+      type = '-'
+      settings = nil
+      show_settings = false
+      if not values.empty? and Installer::Subscription.valid_types_for_context(@context).include?(values['type'].to_sym)
+        type = values['type']
+        settings = Installer::Subscription.subscription_types(@context)[type.to_sym]
+        show_settings = true
+      end
       table = Terminal::Table.new do |t|
         t.add_row ['Setting','Value']
         t.add_separator
         t.add_row ['type', type]
-        if not values.empty?
-          settings = Installer::Subscription.subscription_types(@context)[type.to_sym]
+        if show_settings
           settings[:attr_order].each do |attr|
             key = attr.to_s
             value = values[key]

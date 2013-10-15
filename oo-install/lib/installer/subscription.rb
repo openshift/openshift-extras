@@ -90,7 +90,6 @@ module Installer
         end
       end
 
-      private
       def valid_types_for_context(context)
         case context
         when :origin, :origin_vm

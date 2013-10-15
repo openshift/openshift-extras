@@ -96,7 +96,12 @@ if config.has_key?('Deployment')
         @puppet_map[@role_map[role]['env_var']] = host_instance['host']
         if role == 'named' and @puppet_map['named_ip_addr'].nil?
           # Try to look up the IP address of the Broker host to set the named IP address
-          ip_lookup_command = '/usr/sbin/ip addr show eth0 | grep \'inet \''
+          ip_path_command = 'command -v ip'
+          if not host_instance['ssh_host'] == 'localhost'
+            ip_path_command = "ssh #{host_instance['user']}@#{host_instance['ssh_host']} \"#{ip_path_command}\""
+          end
+          ip_path = %x[ #{ip_path_command} ].chomp
+          ip_lookup_command = "#{ip_path} addr show eth0 | grep \'inet \'"
           if not host_instance['ssh_host'] == 'localhost'
             ip_lookup_command = "ssh #{host_instance['user']}@#{host_instance['ssh_host']} \"#{ip_lookup_command}\""
           end
@@ -204,7 +209,6 @@ host_order.each do |ssh_host|
   fh = File.new(hostfilepath, 'w')
   fh.write(filetext)
   fh.close
-  exit # TEST
 
   if not ssh_host == 'localhost'
     puts "Copying Puppet configuration script to target #{ssh_host}.\n"

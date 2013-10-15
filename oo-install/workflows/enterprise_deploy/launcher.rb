@@ -101,7 +101,12 @@ if config.has_key?('Deployment')
         @env_map[@role_map[role]['env_var']] = host_instance['host']
         if role == 'named' and @env_map['CONF_NAMED_IP_ADDR'].nil?
           # Try to look up the IP address of the Broker host to set the named IP address
-          ip_lookup_command = 'ifconfig eth0 | grep \'inet \''
+          ip_path_command = 'command -v ip'
+          if not host_instance['ssh_host'] == 'localhost'
+            ip_path_command = "ssh #{host_instance['user']}@#{host_instance['ssh_host']} \"#{ip_path_command}\""
+          end
+          ip_path = %x[ #{ip_path_command} ].chomp
+          ip_lookup_command = "#{ip_path} addr show eth0 | grep \'inet \'"
           if not host_instance['ssh_host'] == 'localhost'
             ip_lookup_command = "ssh #{host_instance['user']}@#{host_instance['ssh_host']} \"#{ip_lookup_command}\""
           end
