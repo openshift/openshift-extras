@@ -57,7 +57,23 @@ p = OptionParser.new do |opts|
   opts.on('-p', '--password PASSWORD', 'Red Hat Login password') do |password|
     options[:rh_password] = password
   end
-end.parse!
+end
+
+begin
+  p.parse!(ARGV)
+rescue OptionParser::MissingArgument => e
+  puts "One of the oo-install arguments is missing a value - #{e.message}"
+  puts p
+  exit 1
+rescue OptionParser::InvalidArgument => e
+  puts "The value for one of the oo-install arguments does not match the required format - #{e.message}"
+  puts p
+  exit 1
+rescue OptionParser::InvalidOption => e
+  puts "An invalid option was passed to oo-install - #{e.message}"
+  puts p
+  exit 1
+end
 
 # All sanity checking has to happen after the arguments are gathered.
 if not options[:workflow_id].nil? and not Installer::Workflow.ids.include?(options[:workflow_id])
@@ -68,7 +84,7 @@ if not options[:subscription_type].nil?
   subscription_types = Installer::Subscription.subscription_types(options[:assistant_context])
   valid_sub_types = subscription_types.keys.map{ |k| k.to_s }.join(', ')
   if not subscription_types.keys.include?(options[:subscription_type].to_sym)
-    puts "Subscription type '#{subscription_type}' not supported for OpenShift #{options[:assistant_context] == :ose ? 'Enterprise' : 'Origin'}.\nValid values are: #{valid_sub_types}. Exiting."
+    puts "Subscription type '#{options[:subscription_type]}' not supported for OpenShift #{options[:assistant_context] == :ose ? 'Enterprise' : 'Origin'}.\nValid values are: #{valid_sub_types}. Exiting."
     exit 1
   end
 end

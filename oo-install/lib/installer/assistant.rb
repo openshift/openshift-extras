@@ -333,20 +333,23 @@ module Installer
 
     def ui_show_subscription(message=translate(:subscription_summary))
       values = merged_subscription.to_hash
-      settings = Installer::Subscription.subscription_types(@context)[values['type'].to_sym]
+      type = values.empty? ? '-' : values['type']
       table = Terminal::Table.new do |t|
         t.add_row ['Setting','Value']
         t.add_separator
-        t.add_row ['type', values['type']]
-        settings[:attr_order].each do |attr|
-          key = attr.to_s
-          value = values[key]
-          if value.nil?
-            value = '-'
-          elsif attr == :rh_password
-            value = '******'
+        t.add_row ['type', type]
+        if not values.empty?
+          settings = Installer::Subscription.subscription_types(@context)[type.to_sym]
+          settings[:attr_order].each do |attr|
+            key = attr.to_s
+            value = values[key]
+            if value.nil?
+              value = '-'
+            elsif attr == :rh_password
+              value = '******'
+            end
+            t << [key, value]
           end
-          t << [key, value]
         end
       end
       ui_newpage
