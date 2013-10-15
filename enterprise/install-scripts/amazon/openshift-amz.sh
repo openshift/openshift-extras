@@ -475,7 +475,7 @@ install_rhc_pkg()
 {
   yum_install_or_exit -y rhc
   # set up the system express.conf so this broker will be used by default
-  echo -e "\nlibra_server = '${broker_hostname}'" >> /etc/openshift/express.conf
+  set_conf /etc/openshift/express.conf libra_server "'${broker_hostname}'"
 }
 
 # Install broker-specific packages.
@@ -587,6 +587,36 @@ install_cartridges()
   #carts="$carts --skip-broken"
 
   yum_install_or_exit -y $carts
+}
+
+# Given the filename of a configuration file, the name of a setting,
+# and a value, check whether the configuration file already assigns the
+# given value to the setting.  If it does not, then comment out any
+# existing setting and add the given setting.
+#
+# The search pattern is /^\s*name\s*=\s*value\s*(|#.*)$/.  The
+# added line will be in the form 'name = value' or, if a short comment
+# is specified, 'name = value # short comment'.  If a long comment is
+# specified, a blank line followed by '# long comment' will be added
+# before the line for the setting itself.
+#
+# $1 = configuration file's filename
+# $2 = setting name
+# $3 = value
+# $4 = short comment (optional)
+# $5 = long comment (optional)
+set_conf()
+{
+  if ! grep -q "^\\s*$2\\s*=\\s*$3\\s*\\(\\|#.*\\)$" "$1"
+  then
+    sed -i -e "s/^\\s*$2\\s*=\\s*/#&/" "$1"
+    if [[ -n "$5" ]]
+    then
+      echo >> "$1"
+      echo "# $5" >> "$1"
+    fi
+    echo "$2 = $3${4:+ #$4}" >> "$1"
+  fi
 }
 
 # Fix up SELinux policy on the broker.
@@ -733,21 +763,26 @@ configure_quotas_on_node()
   fi
 }
 
+# $1 = setting name
+# $2 = value
+# $3 = long comment
+set_sysctl()
+{
+  set_conf sysctl.conf "$1" "$2" '' "$3"
+}
+
 # Turn some sysctl knobs.
 configure_sysctl_on_node()
 {
-  # Increase kernel semaphores to accomodate many httpds.
-  echo "kernel.sem = 250  32000 32  4096" >> /etc/sysctl.conf
+  set_sysctl kernel.sem '250  32000 32  4096' 'Accomodate many httpd instances for OpenShift gears.'
 
-  # Move ephemeral port range to accommodate app proxies.
-  echo "net.ipv4.ip_local_port_range = 15000 35530" >> /etc/sysctl.conf
+  set_sysctl net.ipv4.ip_local_port_range '15000 35530' 'Move the ephemeral port range to accomodate the OpenShift port proxy.'
 
-  # Increase the connection tracking table size.
-  echo "net.netfilter.nf_conntrack_max = 1048576" >> /etc/sysctl.conf
+  set_sysctl net.netfilter.nf_conntrack_max 1048576 'Increase the connection tracking table size for the OpenShift port proxy.'
 
-  # iptables port proxy changes
-  echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
-  echo "net.ipv4.conf.all.route_localnet = 1 " >> /etc/sysctl.conf
+  set_sysctl net.ipv4.ip_forward 1 'Enable forwarding for the OpenShift port proxy.'
+
+  set_sysctl net.ipv4.conf.all.route_localnet 1 'Allow the OpenShift port proxy to route using loopback addresses.'
 
   # Reload sysctl.conf to get the new settings.
   #
@@ -860,11 +895,7 @@ configure_datastore_add_replicants()
 # $2 = value
 set_mongodb()
 {
-  if ! grep -q "^\\s*$1\\s*=\\s*$2" /etc/mongodb.conf
-  then
-    sed -i -e "s/^\\s*$1 = /#&/" /etc/mongodb.conf
-    echo "$1 = $2" >> /etc/mongodb.conf
-  fi
+  set_conf /etc/mongodb.conf "$1" "$2"
 }
 
 configure_datastore()
@@ -911,7 +942,7 @@ configure_datastore()
     lokkit --nostart --port=27017:tcp
 
     echo 'Configuring mongod to listen on external interfaces...'
-    sed -i -e "s/^bind_ip = .*$/bind_ip = 0.0.0.0/" /etc/mongodb.conf
+    set_mongodb bind_ip 0.0.0.0
   fi
 
   # Configure mongod to start on boot.
