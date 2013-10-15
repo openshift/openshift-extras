@@ -52,21 +52,39 @@ configure_repos()
 
   if activemq || broker || datastore || named
   then
+    # The ose-infrastructure channel has the activemq, broker, and mongodb
+    # packages.  The ose-infrastructure and ose-node channels also include
+    # the yum-plugin-priorities package, which is needed for the installation
+    # script itself, so we also enable ose-infrastructure here if we are
+    # installing named.
     need_infra_repo() { :; }
+
+    # The rhscl channel is needed for the ruby193 software collection.
     need_rhscl_repo() { :; }
   fi
 
   if broker
   then
+    # We install the rhc client tool on the broker host.
     need_client_tools_repo() { :; }
   fi
 
   if node
   then
+    # The ose-node channel has node packages including all the cartridges.
     need_node_repo() { :; }
+
     need_jbosseap_cartridge_repo() { :; }
+
+    # The jbosseap and jbossas cartridges require the jbossas packages
+    # in the jbappplatform channel.
     need_jbosseap_repo() { :; }
+
+    # The jbossews cartridge requires the tomcat packages in the jb-ews
+    # channel.
     need_jbossews_repo() { :; }
+
+    # The rhscl channel is needed for the ruby193 software collection.
     need_rhscl_repo() { :; }
   fi
 
@@ -187,7 +205,6 @@ ose_yum_repo_url()
 
 configure_client_tools_repo()
 {
-  # Enable repo with the puddle for broker packages.
   cat > /etc/yum.repos.d/openshift-client.repo <<YUM
 [openshift_client]
 name=OpenShift Client
@@ -203,7 +220,6 @@ YUM
 
 configure_broker_repo()
 {
-  # Enable repo with the puddle for broker packages.
   cat > /etc/yum.repos.d/openshift-infrastructure.repo <<YUM
 [openshift_infrastructure]
 name=OpenShift Infrastructure
@@ -219,7 +235,6 @@ YUM
 
 configure_node_repo()
 {
-  # Enable repo with the puddle for node packages.
   cat > /etc/yum.repos.d/openshift-node.repo <<YUM
 [openshift_node]
 name=OpenShift Node
@@ -235,7 +250,6 @@ YUM
 
 configure_jbosseap_cartridge_repo()
 {
-  # Enable repo with the puddle for the JBossEAP cartridge package.
   cat > /etc/yum.repos.d/openshift-jboss.repo <<YUM
 [openshift_jbosseap]
 name=OpenShift JBossEAP
@@ -251,11 +265,8 @@ YUM
 
 configure_jbosseap_repo()
 {
-  # The JBossEAP cartridge depends on Red Hat's JBoss packages.
-
   if [ "x${CONF_JBOSS_REPO_BASE}" != "x" ]
   then
-  ## configure JBossEAP repo
     cat <<YUM > /etc/yum.repos.d/jbosseap.repo
 [jbosseap]
 name=jbosseap
@@ -272,10 +283,8 @@ YUM
 
 configure_jbossews_repo()
 {
-  # The JBossEWS cartridge depends on Red Hat's JBoss packages.
   if [ "x${CONF_JBOSS_REPO_BASE}" != "x" ]
   then
-  ## configure JBossEWS repo
     cat <<YUM > /etc/yum.repos.d/jbossews.repo
 [jbossews]
 name=jbossews
@@ -292,10 +301,8 @@ YUM
 
 configure_rhscl_repo()
 {
-  # The JBossEWS cartridge depends on Red Hat's JBoss packages.
   if [ "x${CONF_RHSCL_REPO_BASE}" != "x" ]
   then
-  ## configure JBossEWS repo
     cat <<YUM > /etc/yum.repos.d/rhscl.repo
 [rhscl]
 name=rhscl
