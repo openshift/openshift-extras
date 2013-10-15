@@ -1750,7 +1750,6 @@ ${domain}		IN SOA	${named_hostname}. hostmaster.${domain}. (
 \$ORIGIN ${domain}.
 ${named_hostname%.${domain}}			A	${named_ip_addr}
 EOF
-  NAMED_ENTRIES=${CONF_NAMED_ENTRIES}
   if [ -z $CONF_NAMED_ENTRIES ]; then
     # Add A records any other components that are being installed locally.
     broker && echo "${broker_hostname%.${domain}}			A	${broker_ip_addr}" >> $nsdb
@@ -1759,7 +1758,7 @@ EOF
     datastore && echo "${datastore_hostname%.${domain}}			A	${cur_ip_addr}" >> $nsdb
   else
     # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
-    pairs=(${NAMED_ENTRIES//,/ })
+    pairs=(${CONF_NAMED_ENTRIES//,/ })
     for i in "${!pairs[@]}"
     do
       host_ip=${pairs[i]}
