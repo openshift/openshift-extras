@@ -435,7 +435,11 @@ yum_install_or_exit()
 install_rhc_pkg()
 {
   yum_install_or_exit -y rhc
-  # set up the system express.conf so this broker will be used by default
+}
+
+# Set up the system express.conf so our broker will be used by default.
+configure_rhc()
+{
   echo -e "\nlibra_server = '${broker_hostname}'" >> /etc/openshift/express.conf
 }
 
@@ -2156,6 +2160,7 @@ configure_openshift()
   broker && configure_dns_plugin
   broker && configure_httpd_auth
   broker && configure_broker_ssl_cert
+  broker && configure_rhc
 
   node && configure_port_proxy
   node && configure_gears
