@@ -3,9 +3,15 @@
 require 'yaml'
 require 'net/ssh'
 
-CONFIG_FILE = ENV['HOME'] + '/.openshift/oo-install-cfg.yml'
 SOCKET_IP_ADDR = 3
 VALID_IP_ADDR_RE = Regexp.new('^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
+
+# Check ENV for an alternate config file location.
+if ENV.has_key?('CONF_CONFIG_FILE')
+  @config_file = ENV['CONF_CONFIG_FILE']
+else
+  @config_file = ENV['HOME'] + '/.openshift/oo-install-cfg.yml'
+end
 
 # This is a -very- simple way of making sure we don't inadvertently
 # use a multicast IP addr or subnet mask. There's room for
@@ -66,7 +72,7 @@ end
 # Will map hosts to roles
 @hosts = {}
 
-config = YAML.load_file(CONFIG_FILE)
+config = YAML.load_file(@config_file)
 
 # Set values from deployment configuration
 if config.has_key?('Deployment')
@@ -109,7 +115,7 @@ if config.has_key?('Deployment')
           ip_addrs = ip_text.split(/[\s\:\/]/).select{ |v| v.match(VALID_IP_ADDR_RE) }
           good_addr = find_good_ip_addr ip_addrs
           if good_addr.nil?
-            puts "Could not determine a broker IP address for named. Trying socket lookup from this machine."
+            puts "Could not determine a Broker IP address for named. Trying a lookup from the installer host."
             socket_info = nil
             begin
               socket_info = Socket.getaddrinfo(host_instance['host'], 'ssh')
@@ -118,6 +124,7 @@ if config.has_key?('Deployment')
               exit
             end
             @puppet_map['named_ip_addr'] = socket_info[0][SOCKET_IP_ADDR]
+            puts "Using #{@puppet_map['named_ip_addr']} as Broker IP address."
           else
             @puppet_map['named_ip_addr'] = good_addr
           end
@@ -129,12 +136,12 @@ if config.has_key?('Deployment')
 end
 
 if @hosts.empty?
-  puts "The config file at #{CONFIG_FILE} does not contain OpenShift deployment information. Exiting."
+  puts "The config file at #{@config_file} does not contain OpenShift deployment information. Exiting."
   exit 1
 end
 
 if not @target_node_index.nil? and @target_node_host.nil?
-  puts "The list of nodes in the config file at #{CONFIG_FILE} is shorter than the index of the specified node host to be installed. Exiting."
+  puts "The list of nodes in the config file at #{@config_file} is shorter than the index of the specified node host to be installed. Exiting."
   exit 1
 end
 
@@ -215,7 +222,7 @@ host_order.each do |ssh_host|
     system "scp #{hostfilepath} #{user}@#{ssh_host}:~/"
   end
   puts "Running deployment\n"
-  command_parts = [
+  commands = [
     'puppet module install --force openshift/openshift_origin',
     "puppet apply --verbose ~/#{hostfile}",
     "rm ~/#{hostfile}",
@@ -226,15 +233,16 @@ host_order.each do |ssh_host|
       command_parts[idx] = "sudo #{command_parts[idx]}"
     end
   end
-  puppet_command = command_parts.join(' \&\& ')
-  if not ssh_host == 'localhost'
-    puppet_command = "ssh #{user}@#{ssh_host} '#{puppet_command}'"
-  end
-  if system(puppet_command)
-    puts "Installation on target #{ssh_host} completed.\n"
-  else
-    puts "Error installing OpenShift on target #{ssh_host}. Exiting.\n"
-    exit 1
+  commands.each do |command|
+    if not ssh_host == 'localhost'
+      command = "ssh #{user}@#{ssh_host} '#{command}'"
+    end
+    if system(command)
+      puts "Command \"#{command}\" on target #{ssh_host} completed.\n"
+    else
+      puts "Error installing OpenShift on target #{ssh_host}. Exiting.\n"
+      exit 1
+    end
   end
 end
 

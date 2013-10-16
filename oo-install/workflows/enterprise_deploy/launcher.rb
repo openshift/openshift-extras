@@ -3,9 +3,15 @@
 require 'yaml'
 require 'net/ssh'
 
-CONFIG_FILE = ENV['HOME'] + '/.openshift/oo-install-cfg.yml'
 SOCKET_IP_ADDR = 3
 VALID_IP_ADDR_RE = Regexp.new('^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
+
+# Check ENV for an alternate config file location.
+if ENV.has_key?('CONF_CONFIG_FILE')
+  @config_file = ENV['CONF_CONFIG_FILE']
+else
+  @config_file = ENV['HOME'] + '/.openshift/oo-install-cfg.yml'
+end
 
 # If this is the add-a-node scenario, the node to be installed will
 # be passed via the command line
@@ -71,7 +77,7 @@ def find_good_ip_addr list
   nil
 end
 
-config = YAML.load_file(CONFIG_FILE)
+config = YAML.load_file(@config_file)
 
 # Set values from deployment configuration
 if config.has_key?('Deployment')
@@ -135,12 +141,12 @@ if config.has_key?('Deployment')
 end
 
 if @hosts.empty?
-  puts "The config file at #{CONFIG_FILE} does not contain OpenShift deployment information. Exiting."
+  puts "The config file at #{@config_file} does not contain OpenShift deployment information. Exiting."
   exit 1
 end
 
 if not @target_node_index.nil? and @target_node_host.nil?
-  puts "The list of nodes in the config file at #{CONFIG_FILE} is shorter than the index of the specified node host to be installed. Exiting."
+  puts "The list of nodes in the config file at #{@config_file} is shorter than the index of the specified node host to be installed. Exiting."
   exit 1
 end
 
