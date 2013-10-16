@@ -860,6 +860,9 @@ install_rhc_pkg()
 # Set up the system express.conf so our broker will be used by default.
 configure_rhc()
 {
+  # set_conf expects there to be a new line
+  echo "" >> /etc/openshift/express.conf
+
   # set up the system express.conf so this broker will be used by default
   set_conf /etc/openshift/express.conf libra_server "'${broker_hostname}'"
 }
@@ -1152,7 +1155,7 @@ configure_quotas_on_node()
 # $3 = long comment
 set_sysctl()
 {
-  set_conf sysctl.conf "$1" "$2" '' "$3"
+  set_conf /etc/sysctl.conf "$1" "$2" '' "$3"
 }
 
 # Turn some sysctl knobs.
