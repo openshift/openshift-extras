@@ -495,6 +495,7 @@ install_broker_pkgs()
   pkgs="$pkgs rubygem-openshift-origin-auth-remote-user"
   pkgs="$pkgs rubygem-openshift-origin-dns-nsupdate"
   pkgs="$pkgs openshift-origin-console"
+  pkgs="$pkgs rubygem-openshift-origin-admin-console"
 
 
   yum_install_or_exit -y $pkgs
@@ -661,8 +662,6 @@ configure_selinux_policy_on_node()
 
 
   restorecon -rv /var/run
-  # TODO: see if this line is still needed
-  restorecon -rv /opt/rh/ruby193/root/usr/sbin/mcollectived /var/log/ruby193-mcollective.log /opt/rh/ruby193/root/var/run/mcollectived.pid
   restorecon -rv /var/lib/openshift /etc/openshift/node.conf /etc/httpd/conf.d/openshift
 }
 
@@ -711,7 +710,6 @@ configure_cgroups_on_node()
   restorecon -rv /cgroup
   chkconfig cgconfig on
   chkconfig cgred on
-  chkconfig openshift-cgroups on
 }
 
 configure_quotas_on_node()
