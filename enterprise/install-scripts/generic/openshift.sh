@@ -2035,6 +2035,8 @@ fix_broker_routing()
 __default__ REDIRECT:/console
 __default__/console TOHTTPS:127.0.0.1:8118/console
 __default__/broker TOHTTPS:127.0.0.1:8080/broker
+__default__/admin-console TOHTTPS:127.0.0.1:8080/admin-console
+__default__/assets TOHTTPS:127.0.0.1:8080/assets
 EOF
 
   httxt2dbm -f DB -i /etc/httpd/conf.d/openshift/nodes.txt -o /etc/httpd/conf.d/openshift/nodes.db
