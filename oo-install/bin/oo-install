@@ -125,8 +125,8 @@ end
 # Instantiate the cli-provided subscription info in a subscription object
 cli_subscription = Installer::Subscription.new(config)
 cli_subscription.subscription_type = options[:subscription_type]
-cli_subscription.rh_username = options[:username]
-cli_subscription.rh_password = options[:password]
+cli_subscription.rh_username = options[:rh_username]
+cli_subscription.rh_password = options[:rh_password]
 
 # Set up the assistant and get going
 begin

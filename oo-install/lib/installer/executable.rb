@@ -20,13 +20,18 @@ module Installer
       @command = expanded_exec
     end
 
-    def run workflow_cfg, subscription=nil
+    def run workflow_cfg, subscription=nil, config_file_path=nil
       expanded_command = expand_workflow_variables(workflow_cfg)
       env_vars = {}
       if not subscription.nil?
         env_vars = expand_subscription_variables(subscription)
       end
       env_vars.merge!(set_ruby_variables)
+
+      # Pass along the config file path for non-default locations
+      if not config_file_path.nil?
+        env_vars['CONF_CONFIG_FILE'] = config_file_path
+      end
 
       # Set up a pile of env variables
       env_vars.each do |env,val|

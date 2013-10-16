@@ -72,10 +72,10 @@ module Installer
           check_deployment
         end
 
-        say translate :info_unattended_workflow_start
+        say "\n" + translate(:info_unattended_workflow_start)
 
         # Hand it off to the workflow executable
-        workflow.executable.run workflow_cfg, merged_subscription
+        workflow.executable.run workflow_cfg, merged_subscription, config.file_path
       end
       0
     end
@@ -210,7 +210,7 @@ module Installer
       end
 
       # Hand it off to the workflow executable
-      workflow.executable.run workflow_cfg, merged_subscription
+      workflow.executable.run workflow_cfg, merged_subscription, config.file_path
       raise Installer::AssistantWorkflowCompletedException.new
     end
 
@@ -334,6 +334,7 @@ module Installer
 
     def ui_show_subscription(message=translate(:subscription_summary))
       values = merged_subscription.to_hash
+      puts "V: #{values.inspect}\nC: #{cli_subscription.to_hash.inspect}\nF: #{cfg_subscription.to_hash.inspect}"
       type = '-'
       settings = nil
       show_settings = false
@@ -592,7 +593,7 @@ module Installer
           rescue Errno::ENETUNREACH
             say "* Could not reach host"
             deployment_good = false
-          rescue Net::SSH::Exception => e
+          rescue Net::SSH::Exception, SocketError => e
             say "* #{e.message}"
             deployment_good = false
           end
