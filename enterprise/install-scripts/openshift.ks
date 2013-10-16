@@ -1129,7 +1129,6 @@ configure_cgroups_on_node()
   restorecon -rv /cgroup
   chkconfig cgconfig on
   chkconfig cgred on
-  chkconfig openshift-cgroups on
 }
 
 configure_quotas_on_node()
