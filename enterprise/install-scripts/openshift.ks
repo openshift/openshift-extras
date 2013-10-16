@@ -1081,8 +1081,6 @@ configure_selinux_policy_on_node()
 
 
   restorecon -rv /var/run
-  # TODO: see if this line is still needed
-  restorecon -rv /opt/rh/ruby193/root/usr/sbin/mcollectived /var/log/ruby193-mcollective.log /opt/rh/ruby193/root/var/run/mcollectived.pid
   restorecon -rv /var/lib/openshift /etc/openshift/node.conf /etc/httpd/conf.d/openshift
 }
 
