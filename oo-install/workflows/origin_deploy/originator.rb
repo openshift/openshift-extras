@@ -101,6 +101,7 @@ if config.has_key?('Deployment')
       if not role == 'node'
         @puppet_map[@role_map[role]['env_var']] = host_instance['host']
         if role == 'named' and @puppet_map['named_ip_addr'].nil?
+          puts "\nAttempting to discover IP address for host #{host_instance['host']}"
           # Try to look up the IP address of the Broker host to set the named IP address
           ip_path_command = 'command -v ip'
           if not host_instance['ssh_host'] == 'localhost'
@@ -187,10 +188,71 @@ host_order.each do |ssh_host|
 end
 
 # Make it so
+local_dns_key = nil
 host_order.each do |ssh_host|
   user = @hosts[ssh_host]['username']
   host = @hosts[ssh_host]['host']
+  hostfile = "oo_install_configure_#{host}.pp"
   @puppet_map['roles'] = "[" + @hosts[ssh_host]['roles'].map{ |r| "'#{r}'" }.join(',') + "]"
+
+  # Set up the commands that we will be using.
+  commands = {
+    :keycheck => "ls /var/named/K#{@puppet_map['domain']}*.key",
+    :keygen => "dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named #{@puppet_map['domain']}",
+    :keyget => "cat /var/named/K#{@puppet_map['domain']}*.key",
+    :enabledns => 'systemctl enable named.service',
+    :check => 'puppet module list',
+    :install => 'puppet module install openshift/openshift_origin',
+    :apply => "puppet apply --verbose ~/#{hostfile}",
+    :clear => "rm ~/#{hostfile}",
+    :reboot => 'reboot',
+  }
+  # Modify the commands with sudo & ssh as necessary for this target host
+  commands.keys.each do |action|
+    if not user == 'root' and not [:clear].include?(action)
+      commands[action] = "sudo #{commands[action]}"
+    end
+    if not ssh_host == 'localhost'
+      commands[action] = "ssh #{user}@#{ssh_host} '#{commands[action]}'"
+    end
+  end
+
+  # Figure out the DNS key before we write the puppet config file
+  if @hosts[ssh_host]['roles'].include?('named')
+    puts "\nChecking for DNS key on #{ssh_host}"
+    output = `#{commands[:keycheck]}`
+    chkstatus = $?.exitstatus
+    if chkstatus > 0
+      # No key; build one.
+      puts "No DNS key found; attempting to generate one."
+      output = `#{commands[:keygen]}`
+      genstatus = $?.exitstatus
+      if genstatus > 0
+        puts "Could not generate a DNS key. Exiting."
+        exit 1
+      end
+      puts "Key generation successful."
+    else
+      puts "Found key at /var/named/K#{@puppet_map['domain']}*.key"
+    end
+    # Copy the public key info to the config file.
+    key_text = `#{commands[:keyget]}`
+    getstatus = $?.exitstatus
+    if getstatus > 0 or key_text.nil? or key_text == ''
+      puts "Could not read DNS key data from /var/named/K#{@puppet_map['domain']}*.key. Exiting."
+      exit 1
+    end
+    # Format the public key correctly.
+    key_vals = key_text.strip.split(' ')
+    @puppet_map['bind_key'] = "#{key_vals[6]}#{key_vals[7]}"
+    # Finally, make sure the named service is enabled.
+    output = `#{commands[:enabledns]}`
+    dnsstatus = $?.exitstatus
+    if dnsstatus > 0
+      puts "Could not enable named using command '#{commands[:enabledns]}'. Exiting."
+      exit 1
+    end
+  end
 
   # Only include the node config setting for hosts that will have a node installation
   if @hosts[ssh_host]['roles'].include?('node')
@@ -207,8 +269,7 @@ host_order.each do |ssh_host|
   end
   filetext << "}\n"
 
-  # Write it out so we can copy it to targets
-  hostfile = "oo_install_configure_#{host}.pp"
+  # Write it out so we can copy it to the target
   hostfilepath = "#{@tmpdir}/#{hostfile}"
   if File.exists?(hostfilepath)
     File.unlink(hostfilepath)
@@ -221,27 +282,26 @@ host_order.each do |ssh_host|
     puts "Copying Puppet configuration script to target #{ssh_host}.\n"
     system "scp #{hostfilepath} #{user}@#{ssh_host}:~/"
   end
-  puts "Running deployment\n"
-  commands = [
-    'puppet module install --force openshift/openshift_origin',
-    "puppet apply --verbose ~/#{hostfile}",
-    "rm ~/#{hostfile}",
-    'reboot',
-  ]
-  if not user == 'root'
-    [0,1,3].each do |idx|
-      command_parts[idx] = "sudo #{command_parts[idx]}"
+
+  puts "\nRunning Puppet deployment\n\n"
+
+  # Good to go; step through the puppet setup now.
+  has_openshift_module = false
+  [:check,:install,:apply,:clear,:reboot].each do |action|
+    if action == :install and has_openshift_module
+      puts "Skipping module installation."
+      next
     end
-  end
-  commands.each do |command|
-    if not ssh_host == 'localhost'
-      command = "ssh #{user}@#{ssh_host} '#{command}'"
-    end
-    if system(command)
+    command = commands[action]
+    output = `#{command}`
+    if $?.exitstatus == 0
       puts "Command \"#{command}\" on target #{ssh_host} completed.\n"
     else
       puts "Error installing OpenShift on target #{ssh_host}. Exiting.\n"
       exit 1
+    end
+    if action == :check and output.match('openshift')
+      has_openshift_module = true
     end
   end
 end
