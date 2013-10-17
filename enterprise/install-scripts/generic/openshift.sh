@@ -1743,7 +1743,7 @@ EOF
     node && echo "${node_hostname%.${domain}}			A	${node_ip_addr}${nl}" >> $nsdb
     activemq && echo "${activemq_hostname%.${domain}}			A	${cur_ip_addr}${nl}" >> $nsdb
     datastore && echo "${datastore_hostname%.${domain}}			A	${cur_ip_addr}${nl}" >> $nsdb
-  else
+  elif [ "$CONF_NAMED_ENTRIES" =~ : ]
     # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
     pairs=(${CONF_NAMED_ENTRIES//,/ })
     for i in "${!pairs[@]}"
@@ -1752,7 +1752,7 @@ EOF
       host_ip=(${host_ip//:/ })
       echo "${host_ip[0]%.${domain}}			A	${host_ip[1]}" >> $nsdb
     done
-  fi
+  fi # if "none" then just don't add anything
   echo >> $nsdb
 
   # Install the key for the OpenShift Enterprise domain.
