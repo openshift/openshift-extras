@@ -1413,10 +1413,10 @@ EOF
   if [ -z $CONF_NAMED_ENTRIES ]; then
     # Add A records any other components that are being installed locally.
     broker && echo "${broker_hostname%.${domain}}			A	${broker_ip_addr}" >> $nsdb
-    node && echo "${node_hostname%.${domain}}			A	${node_ip_addr}" >> $nsdb
-    activemq && echo "${activemq_hostname%.${domain}}			A	${cur_ip_addr}" >> $nsdb
-    datastore && echo "${datastore_hostname%.${domain}}			A	${cur_ip_addr}" >> $nsdb
-  else
+    node && echo "${node_hostname%.${domain}}			A	${node_ip_addr}${nl}" >> $nsdb
+    activemq && echo "${activemq_hostname%.${domain}}			A	${cur_ip_addr}${nl}" >> $nsdb
+    datastore && echo "${datastore_hostname%.${domain}}			A	${cur_ip_addr}${nl}" >> $nsdb
+  elif [ "$CONF_NAMED_ENTRIES" =~ : ]
     # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
     pairs=(${CONF_NAMED_ENTRIES//,/ })
     for i in "${!pairs[@]}"
@@ -1425,7 +1425,7 @@ EOF
       host_ip=(${host_ip//:/ })
       echo "${host_ip[0]%.${domain}}			A	${host_ip[1]}" >> $nsdb
     done
-  fi
+  fi # if "none" then just don't add anything
   echo >> $nsdb
 
   # Install the key for the OpenShift Enterprise domain.
