@@ -334,7 +334,6 @@ module Installer
 
     def ui_show_subscription(message=translate(:subscription_summary))
       values = merged_subscription.to_hash
-      puts "V: #{values.inspect}\nC: #{cli_subscription.to_hash.inspect}\nF: #{cfg_subscription.to_hash.inspect}"
       type = '-'
       settings = nil
       show_settings = false

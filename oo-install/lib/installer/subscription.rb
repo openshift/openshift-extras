@@ -63,7 +63,7 @@ module Installer
               :jenkins_repo_base => 'The base URL for a Jenkins repository',
               :os_optional_repo => 'The URL for an "Optional" repository for the operating system',
             },
-            :attr_order => [:repos_base,:os_repo,:jboss_repo_base,:os_optional_repo],
+            :attr_order => [:repos_base,:os_repo,:jenkins_repo_base,:jboss_repo_base,:os_optional_repo],
           }
         when :rhsm
           return {
