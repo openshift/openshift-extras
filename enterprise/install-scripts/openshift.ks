@@ -623,7 +623,7 @@ ose_yum_repo_url()
     then # use the release CDN URLs
       declare -A map
       map=([Client]=ose-rhc [Infrastructure]=ose-infra [Node]=ose-node [JBoss_EAP6_Cartridge]=ose-jbosseap)
-      echo "$repos_base/${map[$channel]}/1.2/os"
+      echo "$repos_base/${map[$channel]}/2/os"
     else # use the nightly puddle URLs
       echo "$repos_base/$channel/x86_64/os/"
     fi
@@ -752,26 +752,26 @@ configure_rhn_channels()
   # OSE packages are first priority
   if need_client_tools_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-rhc --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-1.2-rhc]\npriority=1\n" >> $RHNPLUGINCONF
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-rhc --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    echo -e "[rhel-x86_64-server-6-ose-2-rhc]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_infra_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-infrastructure --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-1.2-infrastructure]\npriority=1\n" >> $RHNPLUGINCONF
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-infrastructure --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    echo -e "[rhel-x86_64-server-6-ose-2-infrastructure]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_node_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-node --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-1.2-node]\npriority=1\n" >> $RHNPLUGINCONF
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-node --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    echo -e "[rhel-x86_64-server-6-ose-2-node]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_jbosseap_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-1.2-jbosseap]\npriority=1\n" >> $RHNPLUGINCONF
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    echo -e "[rhel-x86_64-server-6-ose-2-jbosseap]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   # RHEL packages are second priority
@@ -839,26 +839,26 @@ configure_rhsm_channels()
    # and the OpenShift subscription
    if need_infra_repo
    then
-     yum-config-manager --enable rhel-server-ose-1.2-infra-6-rpms
-     yum-config-manager --setopt=rhel-server-ose-1.2-infra-6-rpms.priority=1 rhel-server-ose-1.2-infra-6-rpms --save
+     yum-config-manager --enable rhel-server-ose-2-infra-6-rpms
+     yum-config-manager --setopt=rhel-server-ose-2-infra-6-rpms.priority=1 rhel-server-ose-2-infra-6-rpms --save
    fi
 
    if need_client_tools_repo
    then
-     yum-config-manager --enable rhel-server-ose-1.2-rhc-6-rpms
-     yum-config-manager --setopt=rhel-server-ose-1.2-rhc-6-rpms.priority=1 rhel-server-ose-1.2-rhc-6-rpms --save
+     yum-config-manager --enable rhel-server-ose-2-rhc-6-rpms
+     yum-config-manager --setopt=rhel-server-ose-2-rhc-6-rpms.priority=1 rhel-server-ose-2-rhc-6-rpms --save
    fi
 
    if need_node_repo
    then
-     yum-config-manager --enable rhel-server-ose-1.2-node-6-rpms
-     yum-config-manager --setopt=rhel-server-ose-1.2-node-6-rpms.priority=1 rhel-server-ose-1.2-node-6-rpms --save
+     yum-config-manager --enable rhel-server-ose-2-node-6-rpms
+     yum-config-manager --setopt=rhel-server-ose-2-node-6-rpms.priority=1 rhel-server-ose-2-node-6-rpms --save
    fi
 
    if need_jbosseap_cartridge_repo
    then
-     yum-config-manager --enable rhel-server-ose-1.2-jbosseap-6-rpms
-     yum-config-manager --setopt=rhel-server-ose-1.2-jbosseap-6-rpms.priority=1 rhel-server-ose-1.2-jbosseap-6-rpms --save
+     yum-config-manager --enable rhel-server-ose-2-jbosseap-6-rpms
+     yum-config-manager --setopt=rhel-server-ose-2-jbosseap-6-rpms.priority=1 rhel-server-ose-2-jbosseap-6-rpms --save
    fi
 
    # and JBoss subscriptions for the node
@@ -872,13 +872,14 @@ configure_rhsm_channels()
    if need_jbossews_repo
    then
      yum-config-manager --enable jb-ews-2-for-rhel-6-server-rpms
-     yum-config-manager --setopt=jb-ews-2-for-rhel-6-server-rpms.priority=3 jb-ews-2-for-rhel-6-server-rpms
+     yum-config-manager --setopt=jb-ews-2-for-rhel-6-server-rpms.priority=3 jb-ews-2-for-rhel-6-server-rpms --save
      yum-config-manager --disable jb-ews-1-for-rhel-6-server-rpms
    fi
 
    if need_rhscl_repo
    then
      yum-config-manager --enable rhscl-1-for-rhel-6-server-rpms
+     yum-config-manager --setopt=rhscl-1-for-rhel-6-server-rpms.priority=2 rhscl-1-for-rhel-6-server-rpms --save
    fi
 }
 
@@ -937,7 +938,7 @@ install_node_pkgs()
 {
   pkgs="rubygem-openshift-origin-node ruby193-rubygem-passenger-native"
   pkgs="$pkgs openshift-origin-node-util"
-  pkgs="$pkgs mcollective openshift-origin-msg-node-mcollective"
+  pkgs="$pkgs ruby193-mcollective openshift-origin-msg-node-mcollective"
 
   # We use semanage in this script, so we need to install
   # policycoreutils-python.
