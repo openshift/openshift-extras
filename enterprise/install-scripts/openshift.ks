@@ -1220,14 +1220,6 @@ configure_sysctl_on_node()
   set_sysctl net.ipv4.ip_forward 1 'Enable forwarding for the OpenShift port proxy.'
 
   set_sysctl net.ipv4.conf.all.route_localnet 1 'Allow the OpenShift port proxy to route using loopback addresses.'
-
-  # Reload sysctl.conf to get the new settings.
-  #
-  # Note: We could add -e here to ignore errors that are caused by
-  # options appearing in sysctl.conf that correspond to kernel modules
-  # that are not yet loaded.  On the other hand, adding -e might cause
-  # us to miss some important error messages.
-  sysctl -p /etc/sysctl.conf
 }
 
 
