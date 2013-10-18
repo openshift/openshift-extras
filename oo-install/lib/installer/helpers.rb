@@ -11,7 +11,7 @@ module Installer
     VALID_HOSTNAME_RE = Regexp.new('^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$')
     VALID_USERNAME_RE = Regexp.new('^[a-z][-a-z0-9]*$')
     VALID_DOMAIN_RE = Regexp.new('^[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,6}$')
-    VALID_URL_RE = Regexp.new('^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$')
+    VALID_URL_RE = Regexp.new('^https?:\/\/[\da-z\.-]+:?\d*\/[\w~\/-]*\/?')
     VALID_EMAIL_RE = Regexp.new('@')
     BLANK_STRING_RE = Regexp.new('^\s*$')
 

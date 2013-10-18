@@ -4,7 +4,7 @@ module Installer
   class Subscription
     include Installer::Helpers
 
-    @object_attrs = [:subscription_type, :rh_username, :rh_password, :repos_base, :os_repo, :jboss_repo_base, :os_optional_repo, :sm_reg_pool, :sm_reg_pool_rhel, :rhn_reg_actkey]
+    @object_attrs = [:subscription_type, :rh_username, :rh_password, :repos_base, :os_repo, :jboss_repo_base, :jenkins_repo_base, :os_optional_repo, :sm_reg_pool, :sm_reg_pool_rhel, :rhn_reg_actkey]
 
     attr_reader :config, :type
     attr_accessor *@object_attrs
@@ -35,7 +35,7 @@ module Installer
           end
         elsif not attr == :subscription_type and not value.nil?
           # We have to be pretty flexible here, so we basically just format-check the non-nil values.
-          if ([:repos_base, :os_repo, :jboss_repo_base, :os_optional_repo].include?(attr) and not is_valid_url?(value)) or
+          if ([:repos_base, :os_repo, :jboss_repo_base, :jenkins_repo_base, :os_optional_repo].include?(attr) and not is_valid_url?(value)) or
              (attr == :rh_username and not is_valid_email_addr?(value)) or
              ([:rh_password, :sm_reg_pool, :sm_reg_pool_rhel, :rhn_reg_actkey].include?(attr) and not is_valid_string?(value))
             return false if check == :basic
@@ -59,7 +59,8 @@ module Installer
             :attrs => {
               :repos_base => 'The base URL for the OpenShift repositories',
               :os_repo => 'The URL of a yum repository for the operating system',
-              :jboss_repo_base => 'The base URL for the JBoss repositories',
+              :jboss_repo_base => 'The base URL for a JBoss repository',
+              :jenkins_repo_base => 'The base URL for a Jenkins repository',
               :os_optional_repo => 'The URL for an "Optional" repository for the operating system',
             },
             :attr_order => [:repos_base,:os_repo,:jboss_repo_base,:os_optional_repo],

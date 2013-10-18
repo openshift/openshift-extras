@@ -23,4 +23,6 @@ Deployment:
   DNS:
     app_domain: example.com
 Subscription:
-  type: none
+  type: yum
+  repos_base: https://mirror.openshift.com/pub/openshift-origin/nightly/fedora-19
+  jenkins_repo_base: http://pkg.jenkins-ci.org/redhat
