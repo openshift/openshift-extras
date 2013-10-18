@@ -1364,16 +1364,6 @@ install_named_pkgs()
 
 configure_named()
 {
-  if [ "x$bind_key" = x ]
-  then
-    # Generate the new key for the domain.
-    pushd /var/named
-    rm -f /var/named/K${domain}*
-    dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom ${domain}
-    bind_key="$(grep Key: K${domain}*.private | cut -d ' ' -f 2)"
-    popd
-  fi
-
   # Ensure we have a key for service named status to communicate with BIND.
   rndc-confgen -a -r /dev/urandom
   restorecon /etc/rndc.* /etc/named.*
@@ -1391,50 +1381,6 @@ EOF
   # name.
   rm -rf /var/named/dynamic
   mkdir -p /var/named/dynamic
-
-
-  # Create the initial BIND database.
-  nsdb=/var/named/dynamic/${domain}.db
-  cat <<EOF > $nsdb
-\$ORIGIN .
-\$TTL 1	; 1 seconds (for testing only)
-${domain}		IN SOA	${named_hostname}. hostmaster.${domain}. (
-				2011112904 ; serial
-				60         ; refresh (1 minute)
-				15         ; retry (15 seconds)
-				1800       ; expire (30 minutes)
-				10         ; minimum (10 seconds)
-				)
-			NS	${named_hostname}.
-			MX	10 mail.${domain}.
-\$ORIGIN ${domain}.
-${named_hostname%.${domain}}			A	${named_ip_addr}
-EOF
-  if [ -z $CONF_NAMED_ENTRIES ]; then
-    # Add A records any other components that are being installed locally.
-    broker && echo "${broker_hostname%.${domain}}			A	${broker_ip_addr}" >> $nsdb
-    node && echo "${node_hostname%.${domain}}			A	${node_ip_addr}${nl}" >> $nsdb
-    activemq && echo "${activemq_hostname%.${domain}}			A	${cur_ip_addr}${nl}" >> $nsdb
-    datastore && echo "${datastore_hostname%.${domain}}			A	${cur_ip_addr}${nl}" >> $nsdb
-  elif [ "$CONF_NAMED_ENTRIES" =~ : ]
-    # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
-    pairs=(${CONF_NAMED_ENTRIES//,/ })
-    for i in "${!pairs[@]}"
-    do
-      host_ip=${pairs[i]}
-      host_ip=(${host_ip//:/ })
-      echo "${host_ip[0]%.${domain}}			A	${host_ip[1]}" >> $nsdb
-    done
-  fi # if "none" then just don't add anything
-  echo >> $nsdb
-
-  # Install the key for the OpenShift Enterprise domain.
-  cat <<EOF > /var/named/${domain}.key
-key ${domain} {
-  algorithm HMAC-MD5;
-  secret "${bind_key}";
-};
-EOF
 
   chgrp named -R /var/named
   chown named -R /var/named/dynamic
@@ -1483,17 +1429,19 @@ controls {
 };
 
 include "/etc/named.rfc1912.zones";
-
-include "${domain}.key";
-
-zone "${domain}" IN {
-	type master;
-	file "dynamic/${domain}.db";
-	allow-update { key ${domain} ; } ;
-};
 EOF
   chown root:named /etc/named.conf
   chcon system_u:object_r:named_conf_t:s0 -v /etc/named.conf
+
+  # actually set up the domain zone(s)
+  configure_named_zone "$hosts_domain"
+  # order is important; make sure "the" bind_key is the one for apps
+  if [ "$domain" != "$hosts_domain" ]
+  then configure_named_zone "$domain"
+  fi
+
+  # configure in any hosts as needed
+  configure_hosts_dns
 
   # Configure named to start on boot.
   lokkit --nostart --service=dns
@@ -1503,6 +1451,79 @@ EOF
   service named start
 }
 
+configure_named_zone()
+{
+  zone="$1"
+
+  # Generate the new key for the domain.
+  rm -f /var/named/K${zone}*
+  dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named ${zone}
+  bind_key="$(grep Key: /var/named/K${zone}*.private | cut -d ' ' -f 2)"
+
+  # Install the key where OpenShift Enterprise expects it.
+  cat <<EOF > /var/named/${zone}.key
+key ${zone} {
+  algorithm HMAC-MD5;
+  secret "${bind_key}";
+};
+EOF
+
+  # Create the initial BIND database.
+  nsdb=/var/named/dynamic/${zone}.db
+  cat <<EOF > $nsdb
+\$ORIGIN .
+\$TTL 1	; 1 seconds (for testing only)
+${zone}		IN SOA	ns1.$zone. hostmaster.$zone. (
+				2011112904 ; serial
+				60         ; refresh (1 minute)
+				15         ; retry (15 seconds)
+				1800       ; expire (30 minutes)
+				10         ; minimum (10 seconds)
+				)
+			NS	ns1.${zone}.
+			MX	10 mail.${zone}.
+\$ORIGIN ${zone}.
+ns1			A	${named_ip_addr}
+EOF
+
+
+  # Add a record for the zone to named conf
+  cat <<EOF >> /etc/named.conf
+include "${zone}.key";
+
+zone "${zone}" IN {
+	type master;
+	file "dynamic/${zone}.db";
+	allow-update { key ${zone} ; } ;
+};
+EOF
+
+}
+
+# TODO: use oo-register-dns to do this instead.
+configure_hosts_dns()
+{
+  zone="$hosts_domain"
+  nsdb=/var/named/dynamic/${zone}.db
+  if [ -z $CONF_NAMED_ENTRIES ]; then
+    # Add A records any other components that are being installed locally.
+    broker && echo "${broker_hostname%.${zone}}			A	${broker_ip_addr}" >> $nsdb
+    node && echo "${node_hostname%.${zone}}			A	${node_ip_addr}${nl}" >> $nsdb
+    activemq && echo "${activemq_hostname%.${zone}}			A	${cur_ip_addr}${nl}" >> $nsdb
+    datastore && echo "${datastore_hostname%.${zone}}			A	${cur_ip_addr}${nl}" >> $nsdb
+  elif [[ "$CONF_NAMED_ENTRIES" =~ : ]]; then
+    # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
+    pairs=(${CONF_NAMED_ENTRIES//,/ })
+    for i in "${!pairs[@]}"
+    do
+      host_ip=${pairs[i]}
+      host_ip=(${host_ip//:/ })
+      echo "${host_ip[0]%.${zone}}			A	${host_ip[1]}" >> $nsdb
+    done
+  fi # if "none" then just don't add anything
+  echo >> $nsdb
+
+}
 
 # Make resolv.conf point to our named service, which will resolve the
 # host names used in this installation of OpenShift.  Our named service
@@ -1943,6 +1964,7 @@ is_false()
 #   CONF_BROKER_IP_ADDR
 #   CONF_DATASTORE_HOSTNAME
 #   CONF_DOMAIN
+#   CONF_HOSTS_DOMAIN
 #   CONF_INSTALL_COMPONENTS
 #   CONF_NAMED_HOSTNAME
 #   CONF_NAMED_IP_ADDR
@@ -2005,13 +2027,14 @@ set_defaults()
 
   # The domain name for the OpenShift Enterprise installation.
   domain="${CONF_DOMAIN:-example.com}"
+  hosts_domain="${CONF_HOSTS_DOMAIN:-$domain}"
 
   # hostnames to use for the components (could all resolve to same host)
-  broker_hostname="${CONF_BROKER_HOSTNAME:-broker.${domain}}"
-  node_hostname="${CONF_NODE_HOSTNAME:-node.${domain}}"
-  named_hostname="${CONF_NAMED_HOSTNAME:-ns1.${domain}}"
-  activemq_hostname="${CONF_ACTIVEMQ_HOSTNAME:-activemq.${domain}}"
-  datastore_hostname="${CONF_DATASTORE_HOSTNAME:-datastore.${domain}}"
+  broker_hostname="${CONF_BROKER_HOSTNAME:-broker.${hosts_domain}}"
+  node_hostname="${CONF_NODE_HOSTNAME:-node.${hosts_domain}}"
+  named_hostname="${CONF_NAMED_HOSTNAME:-ns1.${hosts_domain}}"
+  activemq_hostname="${CONF_ACTIVEMQ_HOSTNAME:-activemq.${hosts_domain}}"
+  datastore_hostname="${CONF_DATASTORE_HOSTNAME:-datastore.${hosts_domain}}"
 
   # The hostname name for this host.
   # Note: If this host is, e.g., both a broker and a datastore, we want
