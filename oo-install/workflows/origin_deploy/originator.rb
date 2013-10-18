@@ -37,7 +37,10 @@ end
 @target_node_host = nil
 
 # Default and baked-in config values for the Puppet deployment
-@puppet_map = { 'roles' => ['broker','activemq','datastore','named'] }
+@puppet_map = {
+  'roles' => ['broker','activemq','datastore','named'],
+  'jenkins_repo_base' => 'http://pkg.jenkins-ci.org/redhat',
+}
 
 # These values will be set in a Puppet config file
 @env_input_map = {
@@ -100,16 +103,19 @@ if config.has_key?('Deployment')
       # The env map is passed to each job, but nodes are handled individually
       if not role == 'node'
         @puppet_map[@role_map[role]['env_var']] = host_instance['host']
+        user = host_instance['user']
+        host = host_instance['ssh_host']
         if role == 'named' and @puppet_map['named_ip_addr'].nil?
+          puts "\nAttempting to discover IP address for host #{host_instance['host']}"
           # Try to look up the IP address of the Broker host to set the named IP address
           ip_path_command = 'command -v ip'
           if not host_instance['ssh_host'] == 'localhost'
-            ip_path_command = "ssh #{host_instance['user']}@#{host_instance['ssh_host']} \"#{ip_path_command}\""
+            ip_path_command = "ssh #{user}@#{host} \"#{ip_path_command}\""
           end
           ip_path = %x[ #{ip_path_command} ].chomp
           ip_lookup_command = "#{ip_path} addr show eth0 | grep \'inet \'"
-          if not host_instance['ssh_host'] == 'localhost'
-            ip_lookup_command = "ssh #{host_instance['user']}@#{host_instance['ssh_host']} \"#{ip_lookup_command}\""
+          if not host == 'localhost'
+            ip_lookup_command = "ssh #{user}@#{host} \"#{ip_lookup_command}\""
           end
           ip_text = %x[ #{ip_lookup_command} ].chomp
           ip_addrs = ip_text.split(/[\s\:\/]/).select{ |v| v.match(VALID_IP_ADDR_RE) }
@@ -128,6 +134,31 @@ if config.has_key?('Deployment')
           else
             @puppet_map['named_ip_addr'] = good_addr
           end
+        end
+        if role == 'broker'
+          # In order for the default htpasswd account to work, we must first create an htpasswd file.
+          htpasswd_cmds = {
+            :mkdir_openshift => 'mkdir -p /etc/openshift',
+            :touch_htpasswd => 'touch /etc/openshift/htpasswd',
+          }
+          if not user == 'root'
+            htpasswd_cmds.each_pair do |action,command|
+              htpasswd_cmds[action] = "sudo #{command}"
+            end
+          end
+          full_command = "#{htpasswd_cmds[:mkdir_openshift]} && #{htpasswd_cmds[:touch_htpasswd]}"
+          if not host == 'localhost'
+            full_command = "ssh #{user}@#{host} '#{full_command}'"
+          end
+          puts "Setting up htpasswd for default user account."
+          system full_command
+          if $?.exitstatus > 0
+            puts "Could not create / verify '/etc/openshift/htpasswd' on target host. Exiting."
+            exit
+          end
+        end
+        if role == 'datastore'
+          # Make sure that /etc/hostname is an FQDN that matches
         end
       end
     end
@@ -178,19 +209,84 @@ end
 
 # Summarize the plan
 if @target_node_host.nil?
-  puts "Preparing to install OpenShift Origin on the following hosts:\n"
+  puts "\nPreparing to install OpenShift Origin on the following hosts:\n"
 else
-  puts "Preparing to add this node to an OpenShift Origin system:\n"
+  puts "\nPreparing to add this node to an OpenShift Origin system:\n"
 end
 host_order.each do |ssh_host|
   puts "  * #{ssh_host}: #{@hosts[ssh_host]['roles'].join(', ')}\n"
 end
 
 # Make it so
+local_dns_key = nil
+saw_deployment_error = false
 host_order.each do |ssh_host|
   user = @hosts[ssh_host]['username']
   host = @hosts[ssh_host]['host']
+
+  puts "Deploying host '#{host}'"
+
+  hostfile = "oo_install_configure_#{host}.pp"
   @puppet_map['roles'] = "[" + @hosts[ssh_host]['roles'].map{ |r| "'#{r}'" }.join(',') + "]"
+
+  # Set up the commands that we will be using.
+  commands = {
+    :keycheck => "ls /var/named/K#{@puppet_map['domain']}*.key",
+    :keygen => "dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named #{@puppet_map['domain']}",
+    :keyget => "cat /var/named/K#{@puppet_map['domain']}*.key",
+    :enabledns => 'systemctl enable named.service',
+    :check => 'puppet module list',
+    :install => 'puppet module install openshift/openshift_origin',
+    :apply => "puppet apply --verbose ~/#{hostfile}",
+    :clear => "rm ~/#{hostfile}",
+    :reboot => 'reboot',
+  }
+  # Modify the commands with sudo & ssh as necessary for this target host
+  commands.keys.each do |action|
+    if not user == 'root' and not [:clear].include?(action)
+      commands[action] = "sudo #{commands[action]}"
+    end
+    if not ssh_host == 'localhost'
+      commands[action] = "ssh #{user}@#{ssh_host} '#{commands[action]}'"
+    end
+  end
+
+  # Figure out the DNS key before we write the puppet config file
+  if @hosts[ssh_host]['roles'].include?('named')
+    puts "\nChecking for DNS key on #{ssh_host}..."
+    output = `#{commands[:keycheck]}`
+    chkstatus = $?.exitstatus
+    if chkstatus > 0
+      # No key; build one.
+      puts "...none found; attempting to generate one.\n"
+      output = `#{commands[:keygen]}`
+      genstatus = $?.exitstatus
+      if genstatus > 0
+        puts "Could not generate a DNS key. Exiting."
+        exit 1
+      end
+      puts "Key generation successful."
+    else
+      puts "...found at /var/named/K#{@puppet_map['domain']}*.key\n"
+    end
+    # Copy the public key info to the config file.
+    key_text = `#{commands[:keyget]}`
+    getstatus = $?.exitstatus
+    if getstatus > 0 or key_text.nil? or key_text == ''
+      puts "Could not read DNS key data from /var/named/K#{@puppet_map['domain']}*.key. Exiting."
+      exit 1
+    end
+    # Format the public key correctly.
+    key_vals = key_text.strip.split(' ')
+    @puppet_map['bind_key'] = "#{key_vals[6]}#{key_vals[7]}"
+    # Finally, make sure the named service is enabled.
+    output = `#{commands[:enabledns]}`
+    dnsstatus = $?.exitstatus
+    if dnsstatus > 0
+      puts "Could not enable named using command '#{commands[:enabledns]}'. Exiting."
+      exit 1
+    end
+  end
 
   # Only include the node config setting for hosts that will have a node installation
   if @hosts[ssh_host]['roles'].include?('node')
@@ -207,8 +303,7 @@ host_order.each do |ssh_host|
   end
   filetext << "}\n"
 
-  # Write it out so we can copy it to targets
-  hostfile = "oo_install_configure_#{host}.pp"
+  # Write it out so we can copy it to the target
   hostfilepath = "#{@tmpdir}/#{hostfile}"
   if File.exists?(hostfilepath)
     File.unlink(hostfilepath)
@@ -221,30 +316,37 @@ host_order.each do |ssh_host|
     puts "Copying Puppet configuration script to target #{ssh_host}.\n"
     system "scp #{hostfilepath} #{user}@#{ssh_host}:~/"
   end
-  puts "Running deployment\n"
-  commands = [
-    'puppet module install --force openshift/openshift_origin',
-    "puppet apply --verbose ~/#{hostfile}",
-    "rm ~/#{hostfile}",
-    'reboot',
-  ]
-  if not user == 'root'
-    [0,1,3].each do |idx|
-      command_parts[idx] = "sudo #{command_parts[idx]}"
+
+  puts "\nRunning Puppet deployment\n\n"
+
+  # Good to go; step through the puppet setup now.
+  has_openshift_module = false
+  [:check,:install,:apply,:clear].each do |action|
+    if action == :install and has_openshift_module
+      puts "Skipping module installation."
+      next
     end
-  end
-  commands.each do |command|
-    if not ssh_host == 'localhost'
-      command = "ssh #{user}@#{ssh_host} '#{command}'"
-    end
-    if system(command)
+    command = commands[action]
+    output = `#{command}`
+    if $?.exitstatus == 0
       puts "Command \"#{command}\" on target #{ssh_host} completed.\n"
     else
-      puts "Error installing OpenShift on target #{ssh_host}. Exiting.\n"
-      exit 1
+      saw_deployment_error = true
+      break
+    end
+    if action == :check and output.match('openshift')
+      has_openshift_module = true
     end
   end
+  if saw_deployment_error
+    puts "Exiting due to errors on host '#{host}'"
+    break
+  end
+end
+if saw_deployment_error
+  exit 1
+else
+  puts "OpenShift Origin deployment completed."
 end
 
-puts "OpenShift Origin deployment completed."
 exit

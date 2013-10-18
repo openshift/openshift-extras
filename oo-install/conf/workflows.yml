@@ -22,6 +22,8 @@ RemoteDeployment: Y
 SubscriptionCheck: Y
 RequiredUtilities:
   - puppet
+  - dnssec-keygen
+  - htpasswd
 ---
 Name: OO Node Instance Deployment
 Type:
@@ -40,6 +42,7 @@ RemoteDeployment: Y
 SubscriptionCheck: Y
 RequiredUtilities:
   - puppet
+  - htpasswd
 ---
 Name: Puppet templates
 Type: origin_vm

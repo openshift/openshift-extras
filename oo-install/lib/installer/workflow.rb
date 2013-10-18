@@ -88,6 +88,7 @@ module Installer
         @non_deployment = true
         @remote_execute = false
         @check_deployment = false
+        @check_subscription = false
       else
         @non_deployment = false
       end
