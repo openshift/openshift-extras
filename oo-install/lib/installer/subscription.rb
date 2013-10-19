@@ -36,8 +36,7 @@ module Installer
         elsif not attr == :subscription_type and not value.nil?
           # We have to be pretty flexible here, so we basically just format-check the non-nil values.
           if ([:repos_base, :os_repo, :jboss_repo_base, :jenkins_repo_base, :os_optional_repo].include?(attr) and not is_valid_url?(value)) or
-             (attr == :rh_username and not is_valid_email_addr?(value)) or
-             ([:rh_password, :sm_reg_pool, :sm_reg_pool_rhel, :rhn_reg_actkey].include?(attr) and not is_valid_string?(value))
+             ([:rh_username, :rh_password, :sm_reg_pool, :sm_reg_pool_rhel, :rhn_reg_actkey].include?(attr) and not is_valid_string?(value))
             return false if check == :basic
             raise Installer::SubscriptionSettingNotValidException.new("Subscription setting '#{attr.to_s}' has invalid value '#{value}'.")
           end
