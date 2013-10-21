@@ -68,7 +68,7 @@ module Installer
       end
     end
 
-    def valid? value
+    def valid? deployment, value
       if type == 'remotehost'
         return is_valid_remotehost?(value)
       elsif type == 'mongodbhost'
