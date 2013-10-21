@@ -5,10 +5,10 @@ module Installer
     include Installer::Helpers
 
     attr_reader :role
-    attr_accessor :host, :ssh_host, :user
+    attr_accessor :host, :ip_addr, :ssh_host, :user
 
     def self.attrs
-      %w{host ssh_host user}.map{ |a| a.to_sym }
+      %w{host ssh_host user ip_addr}.map{ |a| a.to_sym }
     end
 
     def initialize role, item={}
@@ -82,6 +82,37 @@ module Installer
       { :stdout => stdout_data, :stderr => stderr_data, :exit_code => exit_code, :exit_signal => exit_signal }
     end
 
+    def has_valid_access?
+      result = ssh_exec!("command -v ip")
+      if result[:exit_code] == 0
+        @ip_exec_path = result[:stdout].chomp
+        return true
+      end
+      false
+    end
+
+    def get_ip_addr_choices
+      # Grab all IPv4 addresses
+      command = "#{ip_exec_path} addr list | grep inet | egrep -v inet6"
+      output = ''
+      if not ssh_host == 'localhost'
+        result = ssh_exec!(command)
+        if not result[:exit_code] == 0
+          puts "Could not connect to #{user}@#{ssh_host} to determine IP address options."
+          return []
+        end
+        output = result[:stdout]
+      else
+        output = `#{command}`
+        if not $?.exitstatus == 0
+          puts "Could not determine IP address options for localhost."
+          return []
+        end
+      end
+      # Make a list of valid, non-loopback, non netmask addresses.
+      output.split(/[\n\s\:\/]/).select{ |v| v.match(VALID_IP_ADDR_RE) and not v == "127.0.0.1" and not v.split('.')[0].to_i == 255 and not v.split('.')[-1].to_i == 255 }
+    end
+
     def root_user?
       @root_user ||= user == 'root'
     end
@@ -109,6 +140,10 @@ module Installer
         return ssh_config[:host_name]
       end
       return nil
+    end
+
+    def ip_exec_path
+      @ip_exec_path
     end
   end
 end
