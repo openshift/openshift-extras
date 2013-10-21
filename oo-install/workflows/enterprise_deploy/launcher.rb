@@ -117,7 +117,7 @@ if config.has_key?('Deployment')
             ip_lookup_command = "ssh #{host_instance['user']}@#{host_instance['ssh_host']} \"#{ip_lookup_command}\""
           end
           ip_text = %x[ #{ip_lookup_command} ].chomp
-          ip_addrs = ip_text.split(/[\s\:]/).select{ |v| v.match(VALID_IP_ADDR_RE) }
+          ip_addrs = ip_text.split(/[\s\:\/]/).select{ |v| v.match(VALID_IP_ADDR_RE) }
           good_addr = find_good_ip_addr ip_addrs
           if good_addr.nil?
             puts "Could not determine a broker IP address for named. Trying socket lookup from this machine."
