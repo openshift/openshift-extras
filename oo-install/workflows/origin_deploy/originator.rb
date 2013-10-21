@@ -263,7 +263,8 @@ host_order.each do |ssh_host|
       genstatus = $?.exitstatus
       if genstatus > 0
         puts "Could not generate a DNS key. Exiting."
-        exit 1
+        saw_deployment_error = true
+        break
       end
       puts "Key generation successful."
     else
@@ -274,7 +275,8 @@ host_order.each do |ssh_host|
     getstatus = $?.exitstatus
     if getstatus > 0 or key_text.nil? or key_text == ''
       puts "Could not read DNS key data from /var/named/K#{@puppet_map['domain']}*.key. Exiting."
-      exit 1
+      saw_deployment_error = true
+      break
     end
     # Format the public key correctly.
     key_vals = key_text.strip.split(' ')
@@ -284,7 +286,8 @@ host_order.each do |ssh_host|
     dnsstatus = $?.exitstatus
     if dnsstatus > 0
       puts "Could not enable named using command '#{commands[:enabledns]}'. Exiting."
-      exit 1
+      saw_deployment_error = true
+      break
     end
   end
 
@@ -312,9 +315,22 @@ host_order.each do |ssh_host|
   fh.write(filetext)
   fh.close
 
+  # Handle the config file copying and delete the original.
   if not ssh_host == 'localhost'
     puts "Copying Puppet configuration script to target #{ssh_host}.\n"
     system "scp #{hostfilepath} #{user}@#{ssh_host}:~/"
+    if not $?.exitstatus == 0
+      puts "Could not copy Puppet config to remote host. Exiting."
+      saw_deployment_error = true
+      break
+    else
+      # Copy succeeded, remove original
+      File.unlink(hostfilepath)
+    end
+  else
+    # localhost; relocate .pp file
+    puts "Moving Puppet configuration to #{ENV['HOME']}"
+    system "mv #{hostfilepath} #{ENV['HOME']}"
   end
 
   puts "\nRunning Puppet deployment\n\n"
