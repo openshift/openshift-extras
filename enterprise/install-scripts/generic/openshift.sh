@@ -1343,7 +1343,7 @@ configure_datastore()
 configure_port_proxy()
 {
   chkconfig openshift-iptables-port-proxy on
-  sed -i '/:OUTPUT ACCEPT \[.*\`]/a \
+  sed -i '/:OUTPUT ACCEPT \[.*\]/a \
 :rhc-app-comm - [0:0]' /etc/sysconfig/iptables
   sed -i '/-A INPUT -i lo -j ACCEPT/a \
 -A INPUT -j rhc-app-comm' /etc/sysconfig/iptables
