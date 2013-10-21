@@ -85,7 +85,7 @@ module Installer
         return false
       end
       workflow.questions.each do |q|
-        if not workflow_cfg.has_key?(q.id) or not q.valid? workflow_cfg[q.id]
+        if not workflow_cfg.has_key?(q.id) or not q.valid?(deployment, workflow_cfg[q.id])
           return false
         end
       end
