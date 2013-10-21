@@ -67,14 +67,16 @@ end
 # This is a -very- simple way of making sure we don't inadvertently
 # use a multicast IP addr or subnet mask. There's room for
 # improvement here.
-def find_good_ip_addr list
+def find_good_ip_addrs list
+  good_addrs = []
   list.each do |addr|
+    next if addr == '127.0.0.1'
     triplets = addr.split('.')
-    if not triplets[0].to_i == 255 and not triplets[2].to_i == 255
-      return addr
+    if not triplets[0].to_i == 255 and not triplets[-1].to_i == 255
+      good_addrs << addr
     end
   end
-  nil
+  good_addrs
 end
 
 config = YAML.load_file(@config_file)
@@ -106,31 +108,48 @@ if config.has_key?('Deployment')
       if not role == 'node'
         @env_map[@role_map[role]['env_var']] = host_instance['host']
         if role == 'named' and @env_map['CONF_NAMED_IP_ADDR'].nil?
-          # Try to look up the IP address of the Broker host to set the named IP address
-          ip_path_command = 'command -v ip'
-          if not host_instance['ssh_host'] == 'localhost'
-            ip_path_command = "ssh #{host_instance['user']}@#{host_instance['ssh_host']} \"#{ip_path_command}\""
-          end
-          ip_path = %x[ #{ip_path_command} ].chomp
-          ip_lookup_command = "#{ip_path} addr show eth0 | grep \'inet \'"
-          if not host_instance['ssh_host'] == 'localhost'
-            ip_lookup_command = "ssh #{host_instance['user']}@#{host_instance['ssh_host']} \"#{ip_lookup_command}\""
-          end
-          ip_text = %x[ #{ip_lookup_command} ].chomp
-          ip_addrs = ip_text.split(/[\s\:\/]/).select{ |v| v.match(VALID_IP_ADDR_RE) }
-          good_addr = find_good_ip_addr ip_addrs
-          if good_addr.nil?
-            puts "Could not determine a broker IP address for named. Trying socket lookup from this machine."
-            socket_info = nil
-            begin
-              socket_info = Socket.getaddrinfo(host_instance['host'], 'ssh')
-            rescue SocketError => e
-              puts "Socket lookup of broker IP address failed. The installation cannot continue."
-              exit
-            end
-            @env_map['CONF_NAMED_IP_ADDR'] = socket_info[0][SOCKET_IP_ADDR]
+          if host_instance.has_key?('ip_addr')
+            @env_map['CONF_NAMED_IP_ADDR'] = host_instance['ip_addr']
           else
-            @env_map['CONF_NAMED_IP_ADDR'] = good_addr
+            # Try to look up the IP address of the Broker host to set the named IP address
+            # 1. Find the path to the 'ip' utility
+            ip_path_command = 'command -v ip'
+            if not host_instance['ssh_host'] == 'localhost'
+              ip_path_command = "ssh #{host_instance['user']}@#{host_instance['ssh_host']} \"#{ip_path_command}\""
+            end
+            ip_path = %x[ #{ip_path_command} ].chomp
+
+            # 2. Get all of the non-loopback, non-netmask IPv4 addresses from the target system
+            ip_lookup_command = "#{ip_path} addr show | grep inet | egrep -v inet6"
+            if not host_instance['ssh_host'] == 'localhost'
+              ip_lookup_command = "ssh #{host_instance['user']}@#{host_instance['ssh_host']} \"#{ip_lookup_command}\""
+            end
+            ip_text = %x[ #{ip_lookup_command} ].chomp
+            ip_addrs = ip_text.split(/[\n\s\:\/]/).select{ |v| v.match(VALID_IP_ADDR_RE) }
+            good_addrs = find_good_ip_addrs ip_addrs
+
+            # 3. Pick the address or tell the user what to change
+            if good_addrs.empty?
+              puts "Could not determine a broker IP address for named. Trying socket lookup from this machine."
+              socket_info = nil
+              begin
+                socket_info = Socket.getaddrinfo(host_instance['host'], 'ssh')
+              rescue SocketError => e
+                puts "Socket lookup of broker IP address failed. The installation cannot continue."
+                exit
+              end
+              @env_map['CONF_NAMED_IP_ADDR'] = socket_info[0][SOCKET_IP_ADDR]
+              puts "Found IP address #{@env_map['CONF_NAMED_IP_ADDR']}.\nThis may fail if the target host is in a different subnet than this local system.\nConsider re-running the installer and manually entering a valid IP address for this target system."
+            elsif good_addrs.length == 1
+              @env_map['CONF_NAMED_IP_ADDR'] = good_addrs[0]
+            else
+              puts "Found multiple possible IP addresses for target host #{host_instance['host']}:"
+              good_addrs.each do |addr|
+                puts "* #{addr}"
+              end
+              puts "The installer will attempt to continue with address #{good_addrs[0]}.\nConsider re-running the installer and manually entering a valid IP address for this target system."
+              @env_map['CONF_NAMED_IP_ADDR'] = good_addrs[0]
+            end
           end
         end
       end

@@ -445,22 +445,31 @@ module Installer
     def edit_host_instance host_instance
       host_instance_is_valid = false
       while not host_instance_is_valid
-        host_instance.ssh_host = ask("Hostname / IP address for SSH access: ") { |q|
-          if not host_instance.ssh_host.nil?
-            q.default = host_instance.ssh_host
+        loop do
+          host_instance.ssh_host = ask("Hostname / IP address for SSH access: ") { |q|
+            if not host_instance.ssh_host.nil?
+              q.default = host_instance.ssh_host
+            end
+            q.validate = lambda { |p| is_valid_hostname_or_ip_addr?(p) }
+            q.responses[:not_valid] = "Enter a valid hostname or IP address"
+          }.to_s
+          host_instance.user = ask("Username for SSH access and installation: ") { |q|
+            if not host_instance.user.nil?
+              q.default = host_instance.user
+            else context == :ose
+              q.default = 'root'
+            end
+            q.validate = lambda { |p| is_valid_username?(p) }
+            q.responses[:not_valid] = "Enter a valid linux username"
+          }.to_s
+          say "Validating #{host_instance.user}@#{host_instance.host}... "
+          if host_instance.has_valid_access?
+            puts "looks good."
+            break
+          else
+            say "\nCould not connect to #{host_instance.ssh_host} with user #{host_instance.user}."
           end
-          q.validate = lambda { |p| is_valid_hostname_or_ip_addr?(p) }
-          q.responses[:not_valid] = "Enter a valid hostname or IP address"
-        }.to_s
-        host_instance.user = ask("Username for SSH access and installation: ") { |q|
-          if not host_instance.user.nil?
-            q.default = host_instance.user
-          else context == :ose
-            q.default = 'root'
-          end
-          q.validate = lambda { |p| is_valid_username?(p) }
-          q.responses[:not_valid] = "Enter a valid linux username"
-        }.to_s
+        end
         host_instance.host = ask("Hostname (for other OpenShift components in the subnet): ") { |q|
           if not host_instance.host.nil?
             q.default = host_instance.host
@@ -470,6 +479,29 @@ module Installer
           q.validate = lambda { |p| is_valid_hostname_or_ip_addr?(p) }
           q.responses[:not_valid] = "Enter a valid hostname or IP address"
         }.to_s
+        if host_instance.role == :broker
+          ip_addrs = host_instance.get_ip_addr_choices
+          case ip_addrs.length
+          when 0
+            say "Could not detect an IP address for this host."
+          when 1
+            say "Detected IP address #{ip_addrs[0]} for this host."
+          else
+            ip_addrs_list = ip_addrs.map{ |a| "* #{a}" }.join("\n")
+            say "Detected the following IP addresses for this host:\n#{ip_addrs_list}"
+          end
+          host_instance.ip_addr = ask("IP address (for Broker named configuration): ") { |q|
+            if not host_instance.ip_addr.nil?
+              q.default = host_instance.ip_addr
+            elsif is_valid_ip_addr?(host_instance.host)
+              q.default = host_instance.host
+            elsif ip_addrs.length > 0
+              q.default = ip_addrs[0]
+            end
+            q.validate = lambda { |p| is_valid_ip_addr?(p) }
+            q.responses[:not_valid] = "Enter a valid IP address."
+          }.to_s
+        end
         host_instance_is_valid = true
       end
     end
