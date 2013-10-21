@@ -58,8 +58,8 @@ class OpenShiftAdminCheckSources:
             self.required_rhsm_repos = filter(None, [self.rhsm_ose_repos.get(xx) for xx in self.opts.role])
             self.required_rhsm_repos += filter(None, [self.rhsm_jboss_repos.get(xx) for xx in self.opts.role])
         self.calculate_enabled_repos()
-        self.uses_rhn = set(self.rhn_ose_repos.values() + self.rhn_jboss_repos.values()).intersection(self.oscs.enabled_repoids())
-        self.uses_rhsm = set(self.rhsm_ose_repos.values() + self.rhsm_jboss_repos.values()).intersection(self.oscs.enabled_repoids())
+        self.uses_rhn = set(self.rhn_ose_repos.values() + [self.rhn_rhel6_repo] + self.rhn_jboss_repos.values()).intersection(self.oscs.enabled_repoids())
+        self.uses_rhsm = set(self.rhsm_ose_repos.values() + [self.rhsm_rhel6_repo] + self.rhsm_jboss_repos.values()).intersection(self.oscs.enabled_repoids())
 
     def calculate_enabled_repos(self):
         enabled = self.oscs.repoids(self.oscs.order_repos_by_priority())
