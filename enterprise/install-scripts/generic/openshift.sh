@@ -148,6 +148,15 @@
 #  CONF_INSTALL_COMPONENTS="node,broker,named,activemq,datastore"
 #CONF_INSTALL_COMPONENTS="node"
 
+# no_jbossews / CONF_NO_JBOSSEWS
+# no_jbosseap / CONF_NO_JBOSSEAP
+#   Default: false; do install JBoss cartridges
+#   If set, skips the parts of the installation that are necessary for
+#   using the JBoss EAP or EWS cartridge, including channels and RPMs.
+#   This makes it easier to install without JBoss channels/repos.
+#CONF_NO_JBOSSEWS=1
+#CONF_NO_JBOSSEAP=1
+
 # install_method / CONF_INSTALL_METHOD
 #   Choose from the following ways to provide packages:
 #     none - install sources are already set up when the script executes (DEFAULT)
@@ -458,9 +467,20 @@ configure_repos()
   if node
   then
     need_node_repo() { :; }
-    need_jbosseap_cartridge_repo() { :; }
-    need_jbosseap_repo() { :; }
-    need_jbossews_repo() { :; }
+
+    if is_false "${CONF_NO_JBOSSEAP}"; then
+      need_jbosseap_cartridge_repo() { :; }
+
+      # The jbosseap and jbossas cartridges require the jbossas packages
+      # in the jbappplatform channel.
+      need_jbosseap_repo() { :; }
+    fi
+
+    if is_false "${CONF_NO_JBOSSEWS}"; then
+      # The jbossews cartridge requires the tomcat packages in the jb-ews
+      # channel.
+      need_jbossews_repo() { :; }
+    fi
   fi
 
   # The configure_yum_repos, configure_rhn_channels, and
@@ -927,10 +947,19 @@ install_cartridges()
     # haproxy support.
     carts="$carts openshift-origin-cartridge-haproxy"
 
-    # JBossEWS support.
-    # Note: Be sure to subscribe to the JBossEWS entitlements during the
-    # base install or in configure_jbossews_repo.
-    carts="$carts openshift-origin-cartridge-jbossews"
+    if is_false "$CONF_NO_JBOSSEWS"; then
+      # JBossEWS support.
+      # Note: Be sure to subscribe to the JBossEWS entitlements during the
+      # base install or in configure_jbossews_repo.
+      carts="$carts openshift-origin-cartridge-jbossews"
+    fi
+
+    if is_false "$CONF_NO_JBOSSEAP"; then
+      # JBossEAP support.
+      # Note: Be sure to subscribe to the JBossEAP entitlements during the
+      # base install or in configure_jbosseap_repo.
+      carts="$carts openshift-origin-cartridge-jbosseap"
+    fi
 
     # JBossEAP support.
     # Note: Be sure to subscribe to the JBossEAP entitlements during the

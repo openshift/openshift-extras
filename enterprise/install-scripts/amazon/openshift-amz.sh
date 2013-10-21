@@ -63,9 +63,20 @@ configure_repos()
   if node
   then
     need_node_repo() { :; }
-    need_jbosseap_cartridge_repo() { :; }
-    need_jbosseap_repo() { :; }
-    need_jbossews_repo() { :; }
+
+    if is_false "${CONF_NO_JBOSSEAP}"; then
+      need_jbosseap_cartridge_repo() { :; }
+
+      # The jbosseap and jbossas cartridges require the jbossas packages
+      # in the jbappplatform channel.
+      need_jbosseap_repo() { :; }
+    fi
+
+    if is_false "${CONF_NO_JBOSSEWS}"; then
+      # The jbossews cartridge requires the tomcat packages in the jb-ews
+      # channel.
+      need_jbossews_repo() { :; }
+    fi
   fi
 
   # The configure_yum_repos, configure_rhn_channels, and
@@ -540,10 +551,19 @@ install_cartridges()
     # haproxy support.
     carts="$carts openshift-origin-cartridge-haproxy"
 
-    # JBossEWS support.
-    # Note: Be sure to subscribe to the JBossEWS entitlements during the
-    # base install or in configure_jbossews_repo.
-    carts="$carts openshift-origin-cartridge-jbossews"
+    if is_false "$CONF_NO_JBOSSEWS"; then
+      # JBossEWS support.
+      # Note: Be sure to subscribe to the JBossEWS entitlements during the
+      # base install or in configure_jbossews_repo.
+      carts="$carts openshift-origin-cartridge-jbossews"
+    fi
+
+    if is_false "$CONF_NO_JBOSSEAP"; then
+      # JBossEAP support.
+      # Note: Be sure to subscribe to the JBossEAP entitlements during the
+      # base install or in configure_jbosseap_repo.
+      carts="$carts openshift-origin-cartridge-jbosseap"
+    fi
 
     # JBossEAP support.
     # Note: Be sure to subscribe to the JBossEAP entitlements during the
