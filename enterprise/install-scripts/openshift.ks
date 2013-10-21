@@ -147,6 +147,15 @@
 #  CONF_INSTALL_COMPONENTS="node,broker,named,activemq,datastore"
 #CONF_INSTALL_COMPONENTS="node"
 
+# no_jbossews / CONF_NO_JBOSSEWS
+# no_jbosseap / CONF_NO_JBOSSEAP
+#   Default: false; do install JBoss cartridges
+#   If set, skips the parts of the installation that are necessary for
+#   using the JBoss EAP or EWS cartridge, including channels and RPMs.
+#   This makes it easier to install without JBoss channels/repos.
+#CONF_NO_JBOSSEWS=1
+#CONF_NO_JBOSSEAP=1
+
 # install_method / CONF_INSTALL_METHOD
 #   Choose from the following ways to provide packages:
 #     none - install sources are already set up when the script executes (DEFAULT)
@@ -203,6 +212,13 @@
 #   The network domain under which apps and hosts will be placed.
 #CONF_DOMAIN="example.com"
 
+# hosts_domain / CONF_HOSTS_DOMAIN
+#   Default: hosts.example.com
+#   If specified and host DNS is to be created, this domain will be created
+#   and used for creating host DNS records (app records will still go in the
+#   main domain).
+#CONF_HOSTS_DOMAIN="hosts.example.com"
+
 # broker_hostname / CONF_BROKER_HOSTNAME
 # node_hostname / CONF_NODE_HOSTNAME
 # named_hostname / CONF_NAMED_HOSTNAME
@@ -222,8 +238,14 @@
 #CONF_NODE_HOSTNAME="node.example.com"
 #CONF_NAMED_HOSTNAME="ns1.example.com"
 #CONF_ACTIVEMQ_HOSTNAME="activemq.example.com"
-#CONF_DATASTORE_HOSTNAME="mongodb.example.com"
+#CONF_DATASTORE_HOSTNAME="datastore.example.com"
 
+# named_entries / CONF_NAMED_ENTRIES
+#   Default: create entries above only for components installed on BIND host.
+#   Comma separated, colon delimited hostname:ipaddress pairs
+#   Specify host DNS entries to be created instead of the defaults.
+#   You may also set to "none" to create no DNS entries for hosts.
+#CONF_NAMED_ENTRIES="broker:192.168.0.1,node:192.168.0.2"
 
 # named_ip_addr / CONF_NAMED_IP_ADDR
 #   Default: current IP if installing named, otherwise broker_ip_addr
@@ -261,6 +283,15 @@
 # Valid options are vhost and mod_rewrite.  vhost is less performant but more
 # extensible.
 #CONF_NODE_APACHE_FRONTEND=mod_rewrite
+
+# keep_hostname / CONF_KEEP_HOSTNAME
+#   Default: false (not set)
+#   Enabling this option prevents the installation script from setting
+#   the hostname on the host, leaving it as found.  Use this option if
+#   the hostname is already set as you like. The default behavior is
+#   to set the hostname, which makes it a little easier to recognize
+#   which host you are looking at when logging in as an administrator.
+#CONF_KEEP_HOSTNAME=true
 
 # no_ntp / CONF_NO_NTP
 #   Default: false
@@ -388,10 +419,6 @@
 # The Krb5KeyTab value of mod_auth_kerb is not configurable -- the keytab
 # is expected in /var/www/openshift/broker/httpd/conf.d/http.keytab
 
-# named_entries / CONF_NAMED_ENTRIES
-#Any additional named entries for the named database.
-#Comma separated, colon delimited hostname:ipaddress pairs
-#CONF_NAMED_ENTRIES
 ########################################################################
 
 #Begin Kickstart Script
@@ -502,17 +529,21 @@ configure_repos()
     # The ose-node channel has node packages including all the cartridges.
     need_node_repo() { :; }
 
-    need_jbosseap_cartridge_repo() { :; }
+    if is_false "${CONF_NO_JBOSSEAP}"; then
+      need_jbosseap_cartridge_repo() { :; }
 
-    # The jbosseap and jbossas cartridges require the jbossas packages
-    # in the jbappplatform channel.
-    need_jbosseap_repo() { :; }
+      # The jbosseap and jbossas cartridges require the jbossas packages
+      # in the jbappplatform channel.
+      need_jbosseap_repo() { :; }
+    fi
 
-    # The jbossews cartridge requires the tomcat packages in the jb-ews
-    # channel.
-    need_jbossews_repo() { :; }
+    if is_false "${CONF_NO_JBOSSEWS}"; then
+      # The jbossews cartridge requires the tomcat packages in the jb-ews
+      # channel.
+      need_jbossews_repo() { :; }
+    fi
 
-    # The rhscl channel is needed for the ruby193 software collection.
+    # The rhscl channel is needed for several cartridge platforms.
     need_rhscl_repo() { :; }
   fi
 
@@ -985,15 +1016,19 @@ install_cartridges()
   # haproxy support.
   carts="$carts openshift-origin-cartridge-haproxy"
 
-  # JBossEWS support.
-  # Note: Be sure to subscribe to the JBossEWS entitlements during the
-  # base install or in configure_jbossews_repo.
-  carts="$carts openshift-origin-cartridge-jbossews"
+  if is_false "$CONF_NO_JBOSSEWS"; then
+    # JBossEWS support.
+    # Note: Be sure to subscribe to the JBossEWS entitlements during the
+    # base install or in configure_jbossews_repo.
+    carts="$carts openshift-origin-cartridge-jbossews"
+  fi
 
-  # JBossEAP support.
-  # Note: Be sure to subscribe to the JBossEAP entitlements during the
-  # base install or in configure_jbosseap_repo.
-  carts="$carts openshift-origin-cartridge-jbosseap"
+  if is_false "$CONF_NO_JBOSSEAP"; then
+    # JBossEAP support.
+    # Note: Be sure to subscribe to the JBossEAP entitlements during the
+    # base install or in configure_jbosseap_repo.
+    carts="$carts openshift-origin-cartridge-jbosseap"
+  fi
 
   # Jenkins server for continuous integration.
   carts="$carts openshift-origin-cartridge-jenkins"
@@ -1783,16 +1818,6 @@ install_named_pkgs()
 
 configure_named()
 {
-  if [ "x$bind_key" = x ]
-  then
-    # Generate the new key for the domain.
-    pushd /var/named
-    rm -f /var/named/K${domain}*
-    dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom ${domain}
-    bind_key="$(grep Key: K${domain}*.private | cut -d ' ' -f 2)"
-    popd
-  fi
-
   # Ensure we have a key for service named status to communicate with BIND.
   rndc-confgen -a -r /dev/urandom
   restorecon /etc/rndc.* /etc/named.*
@@ -1810,50 +1835,6 @@ EOF
   # name.
   rm -rf /var/named/dynamic
   mkdir -p /var/named/dynamic
-
-
-  # Create the initial BIND database.
-  nsdb=/var/named/dynamic/${domain}.db
-  cat <<EOF > $nsdb
-\$ORIGIN .
-\$TTL 1	; 1 seconds (for testing only)
-${domain}		IN SOA	${named_hostname}. hostmaster.${domain}. (
-				2011112904 ; serial
-				60         ; refresh (1 minute)
-				15         ; retry (15 seconds)
-				1800       ; expire (30 minutes)
-				10         ; minimum (10 seconds)
-				)
-			NS	${named_hostname}.
-			MX	10 mail.${domain}.
-\$ORIGIN ${domain}.
-${named_hostname%.${domain}}			A	${named_ip_addr}
-EOF
-  if [ -z $CONF_NAMED_ENTRIES ]; then
-    # Add A records any other components that are being installed locally.
-    broker && echo "${broker_hostname%.${domain}}			A	${broker_ip_addr}" >> $nsdb
-    node && echo "${node_hostname%.${domain}}			A	${node_ip_addr}" >> $nsdb
-    activemq && echo "${activemq_hostname%.${domain}}			A	${cur_ip_addr}" >> $nsdb
-    datastore && echo "${datastore_hostname%.${domain}}			A	${cur_ip_addr}" >> $nsdb
-  else
-    # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
-    pairs=(${CONF_NAMED_ENTRIES//,/ })
-    for i in "${!pairs[@]}"
-    do
-      host_ip=${pairs[i]}
-      host_ip=(${host_ip//:/ })
-      echo "${host_ip[0]%.${domain}}			A	${host_ip[1]}" >> $nsdb
-    done
-  fi
-  echo >> $nsdb
-
-  # Install the key for the OpenShift Enterprise domain.
-  cat <<EOF > /var/named/${domain}.key
-key ${domain} {
-  algorithm HMAC-MD5;
-  secret "${bind_key}";
-};
-EOF
 
   chgrp named -R /var/named
   chown named -R /var/named/dynamic
@@ -1902,17 +1883,19 @@ controls {
 };
 
 include "/etc/named.rfc1912.zones";
-
-include "${domain}.key";
-
-zone "${domain}" IN {
-	type master;
-	file "dynamic/${domain}.db";
-	allow-update { key ${domain} ; } ;
-};
 EOF
   chown root:named /etc/named.conf
   chcon system_u:object_r:named_conf_t:s0 -v /etc/named.conf
+
+  # actually set up the domain zone(s)
+  configure_named_zone "$hosts_domain"
+  # order is important; make sure "the" bind_key is the one for apps
+  if [ "$domain" != "$hosts_domain" ]
+  then configure_named_zone "$domain"
+  fi
+
+  # configure in any hosts as needed
+  configure_hosts_dns
 
   # Configure named to start on boot.
   lokkit --nostart --service=dns
@@ -1922,6 +1905,79 @@ EOF
   service named start
 }
 
+configure_named_zone()
+{
+  zone="$1"
+
+  # Generate the new key for the domain.
+  rm -f /var/named/K${zone}*
+  dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named ${zone}
+  bind_key="$(grep Key: /var/named/K${zone}*.private | cut -d ' ' -f 2)"
+
+  # Install the key where OpenShift Enterprise expects it.
+  cat <<EOF > /var/named/${zone}.key
+key ${zone} {
+  algorithm HMAC-MD5;
+  secret "${bind_key}";
+};
+EOF
+
+  # Create the initial BIND database.
+  nsdb=/var/named/dynamic/${zone}.db
+  cat <<EOF > $nsdb
+\$ORIGIN .
+\$TTL 1	; 1 seconds (for testing only)
+${zone}		IN SOA	ns1.$zone. hostmaster.$zone. (
+				2011112904 ; serial
+				60         ; refresh (1 minute)
+				15         ; retry (15 seconds)
+				1800       ; expire (30 minutes)
+				10         ; minimum (10 seconds)
+				)
+			NS	ns1.${zone}.
+			MX	10 mail.${zone}.
+\$ORIGIN ${zone}.
+ns1			A	${named_ip_addr}
+EOF
+
+
+  # Add a record for the zone to named conf
+  cat <<EOF >> /etc/named.conf
+include "${zone}.key";
+
+zone "${zone}" IN {
+	type master;
+	file "dynamic/${zone}.db";
+	allow-update { key ${zone} ; } ;
+};
+EOF
+
+}
+
+# TODO: use oo-register-dns to do this instead.
+configure_hosts_dns()
+{
+  zone="$hosts_domain"
+  nsdb=/var/named/dynamic/${zone}.db
+  if [ -z $CONF_NAMED_ENTRIES ]; then
+    # Add A records any other components that are being installed locally.
+    broker && echo "${broker_hostname%.${zone}}			A	${broker_ip_addr}" >> $nsdb
+    node && echo "${node_hostname%.${zone}}			A	${node_ip_addr}${nl}" >> $nsdb
+    activemq && echo "${activemq_hostname%.${zone}}			A	${cur_ip_addr}${nl}" >> $nsdb
+    datastore && echo "${datastore_hostname%.${zone}}			A	${cur_ip_addr}${nl}" >> $nsdb
+  elif [[ "$CONF_NAMED_ENTRIES" =~ : ]]; then
+    # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
+    pairs=(${CONF_NAMED_ENTRIES//,/ })
+    for i in "${!pairs[@]}"
+    do
+      host_ip=${pairs[i]}
+      host_ip=(${host_ip//:/ })
+      echo "${host_ip[0]%.${zone}}			A	${host_ip[1]}" >> $nsdb
+    done
+  fi # if "none" then just don't add anything
+  echo >> $nsdb
+
+}
 
 # Make resolv.conf point to our named service, which will resolve the
 # host names used in this installation of OpenShift.  Our named service
@@ -1950,7 +2006,7 @@ configure_controller()
   sed -i -e "s/^DOMAIN_SUFFIX=.*$/DOMAIN_SUFFIX=${domain}/" \
       /etc/openshift/console.conf
 
-  # Configure the broker with the correct hostname, and use random salt
+  # Configure the broker with the correct domain name, and use random salt
   # to the data store (the host running MongoDB).
   sed -i -e "s/^CLOUD_DOMAIN=.*$/CLOUD_DOMAIN=${domain}/" \
       /etc/openshift/broker.conf
@@ -2157,8 +2213,6 @@ configure_network()
   cat <<EOF >> /etc/dhcp/dhclient-eth0.conf
 
 prepend domain-name-servers ${named_ip_addr};
-supersede host-name "${hostname%.${domain}}";
-supersede domain-name "${domain}";
 prepend domain-search "${domain}";
 EOF
 }
@@ -2166,8 +2220,11 @@ EOF
 # Set the hostname
 configure_hostname()
 {
-  sed -i -e "s/HOSTNAME=.*/HOSTNAME=${hostname}/" /etc/sysconfig/network
-  hostname "${hostname}"
+  if [[ ! "$hostname" =~ ^[0-9.]*$ ]]  # hostname is not just an IP
+  then
+    sed -i -e "s/HOSTNAME=.*/HOSTNAME=${hostname}/" /etc/sysconfig/network
+    hostname "${hostname}"
+  fi
 }
 
 # Set some parameters in the OpenShift node configuration file.
@@ -2361,6 +2418,7 @@ is_false()
 #   CONF_BROKER_IP_ADDR
 #   CONF_DATASTORE_HOSTNAME
 #   CONF_DOMAIN
+#   CONF_HOSTS_DOMAIN
 #   CONF_INSTALL_COMPONENTS
 #   CONF_NAMED_HOSTNAME
 #   CONF_NAMED_IP_ADDR
@@ -2423,13 +2481,14 @@ set_defaults()
 
   # The domain name for the OpenShift Enterprise installation.
   domain="${CONF_DOMAIN:-example.com}"
+  hosts_domain="${CONF_HOSTS_DOMAIN:-$domain}"
 
   # hostnames to use for the components (could all resolve to same host)
-  broker_hostname="${CONF_BROKER_HOSTNAME:-broker.${domain}}"
-  node_hostname="${CONF_NODE_HOSTNAME:-node.${domain}}"
-  named_hostname="${CONF_NAMED_HOSTNAME:-ns1.${domain}}"
-  activemq_hostname="${CONF_ACTIVEMQ_HOSTNAME:-activemq.${domain}}"
-  datastore_hostname="${CONF_DATASTORE_HOSTNAME:-datastore.${domain}}"
+  broker_hostname="${CONF_BROKER_HOSTNAME:-broker.${hosts_domain}}"
+  node_hostname="${CONF_NODE_HOSTNAME:-node.${hosts_domain}}"
+  named_hostname="${CONF_NAMED_HOSTNAME:-ns1.${hosts_domain}}"
+  activemq_hostname="${CONF_ACTIVEMQ_HOSTNAME:-activemq.${hosts_domain}}"
+  datastore_hostname="${CONF_DATASTORE_HOSTNAME:-datastore.${hosts_domain}}"
 
   # The hostname name for this host.
   # Note: If this host is, e.g., both a broker and a datastore, we want
@@ -2617,7 +2676,7 @@ configure_host()
   named && configure_named
   update_resolv_conf
   configure_network
-  configure_hostname
+  is_false "$CONF_KEEP_HOSTNAME" && configure_hostname
   echo "OpenShift: Completed configuring host."
 }
 
