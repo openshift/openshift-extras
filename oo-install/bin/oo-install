@@ -108,7 +108,7 @@ end
 
 # Try to instantiate the config object
 begin
-  config = Installer::Config.new(options[:config_file])
+  config = Installer::Config.new(options[:config_file], options[:assistant_context])
 rescue Errno::ENOENT => e
   if not options[:config_file].nil?
     puts "ERROR: The configuration file could not be created at '#{options[:config_file]}'.\nEnsure that the path exists and is writeable."

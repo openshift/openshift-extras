@@ -9,10 +9,10 @@ module Installer
     attr_reader :default_dir, :default_file, :file_template
     attr_accessor :file_path
 
-    def initialize config_file_path=nil
+    def initialize config_file_path=nil, context=:origin
       @default_dir = ENV['HOME'] + '/.openshift'
       @default_file = '/oo-install-cfg.yml'
-      @file_template = gem_root_dir + '/conf/oo-install-cfg.yml.example'
+      @file_template = gem_root_dir + "/conf/oo-install-cfg.yml#{ context == :ose ? '.ose' : '' }.example"
       if config_file_path.nil?
         @file_path = default_dir + default_file
       else
