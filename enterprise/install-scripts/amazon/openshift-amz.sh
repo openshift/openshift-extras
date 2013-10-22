@@ -118,45 +118,9 @@ configure_yum_repos()
 {
 #  configure_rhel_repo
 
-  if need_optional_repo
-  then
-    configure_optional_repo
-  fi
-
-  if need_infra_repo
-  then
-    configure_broker_repo
-  fi
-
-  if need_node_repo
-  then
-    configure_node_repo
-  fi
-
-  if need_jbosseap_cartridge_repo
-  then
-    configure_jbosseap_cartridge_repo
-  fi
-
-  if need_jbosseap_repo
-  then
-    configure_jbosseap_repo
-  fi
-
-  if need_jbossews_repo
-  then
-    configure_jbossews_repo
-  fi
-
-  if need_rhscl_repo
-  then
-    configure_rhscl_repo
-  fi
-
-  if need_client_tools_repo
-  then
-    configure_client_tools_repo
-  fi
+  for repo in optional infra node jbosseap_cartridge jbosseap jbossews client_tools rhscl; do
+    eval "need_${repo}_repo && configure_${repo}_repo"
+  done
 }
 
 configure_rhel_repo()
@@ -226,7 +190,7 @@ sslverify=false
 YUM
 }
 
-configure_broker_repo()
+configure_infra_repo()
 {
   cat > /etc/yum.repos.d/openshift-infrastructure.repo <<YUM
 [openshift_infrastructure]
@@ -1446,11 +1410,9 @@ EOF
   chcon system_u:object_r:named_conf_t:s0 -v /etc/named.conf
 
   # actually set up the domain zone(s)
+  # bind_key is used if set, created if not. both domains use same key.
   configure_named_zone "$hosts_domain"
-  # order is important; make sure "the" bind_key is the one for apps
-  if [ "$domain" != "$hosts_domain" ]
-  then configure_named_zone "$domain"
-  fi
+  [ "$domain" != "$hosts_domain" ] && configure_named_zone "$domain"
 
   # configure in any hosts as needed
   configure_hosts_dns
@@ -1467,12 +1429,14 @@ configure_named_zone()
 {
   zone="$1"
 
-  # Generate the new key for the domain.
-  rm -f /var/named/K${zone}*
-  dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named ${zone}
-  bind_key="$(grep Key: /var/named/K${zone}*.private | cut -d ' ' -f 2)"
+  if [ "x$bind_key" = x ]; then
+    # Generate a new secret key
+    rm -f /var/named/K${zone}*
+    dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named ${zone}
+    bind_key="$(grep Key: /var/named/K${zone}*.private | cut -d ' ' -f 2)"
+  fi
 
-  # Install the key where OpenShift Enterprise expects it.
+  # Install the key where BIND and oo-register-dns expect it.
   cat <<EOF > /var/named/${zone}.key
 key ${zone} {
   algorithm HMAC-MD5;
@@ -2206,14 +2170,29 @@ init_message()
 validate_preflight()
 {
   echo "OpenShift: Begin preflight validation."
-  failure=
+  preflight_failure=
   # Test that this isn't RHEL < 6 or Fedora
+  if ! grep -q "Enterprise.* 6" /etc/redhat-release; then
+    echo "This process needs to begin with Enterprise Linux 6 installed."
+    preflight_failure=1
+  fi
   # Test that SELinux is at least present and not Disabled
+  if ! command -v getenforce || ! [[ $(getenforce) =~ Enforcing|Permissive ]] ; then
+    echo "SELinux needs to be installed and enabled."
+    preflight_failure=1
+  fi
   # Test that rpm/yum exists and isn't totally broken
+  if ! command -v rpm || ! command -v yum; then
+    echo "rpm and yum must be installed."
+    preflight_failure=1
+  fi
+  if ! rpm -V rpm yum; then
+    echo "rpm command failed; there may be a problem with the RPM DB."
+    preflight_failure=1
+  fi
   # Test that known problematic RPMs aren't present
-  # Test that DNS resolution is sane
   # ... ?
-  [ "$failure" ] && abort_install
+  [ "$preflight_failure" ] && abort_install
   echo "OpenShift: Completed preflight validation."
 }
 
