@@ -771,10 +771,10 @@ configure_rhn_channels()
 {
   if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
     echo "Register with RHN using an activation key"
-    rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || abort_install
+    rhnreg_ks --force --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || abort_install
   else
     echo "Register with RHN with username and password"
-    rhnreg_ks --profilename=${hostname} --username ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    rhnreg_ks --force --profilename=${hostname} --username ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
   fi
 
   # RHN method for setting yum priorities and excludes:
@@ -837,7 +837,7 @@ configure_rhn_channels()
 configure_rhsm_channels()
 {
    echo "Register with RHSM"
-   subscription-manager register --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || abort_install
+   subscription-manager register --force --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || abort_install
    # add the necessary subscriptions
    if [ "x$CONF_SM_REG_POOL_RHEL" == x ]; then
      echo "Registering RHEL with any available subscription"
