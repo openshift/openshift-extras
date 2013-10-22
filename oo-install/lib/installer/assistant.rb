@@ -632,7 +632,7 @@ module Installer
         else
           # Check for all required utilities
           workflow.utilities.each do |util|
-            if not system("command -v #{util}")
+            if which(util).nil?
               say "* Could not locate #{util}"
               deployment_good = false
             else

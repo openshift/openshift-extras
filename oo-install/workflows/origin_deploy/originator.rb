@@ -28,6 +28,20 @@ def find_good_ip_addrs list
   good_addrs
 end
 
+
+# SOURCE for which:
+# http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
+def which(cmd)
+  exts = ENV['PATHEXT'] ? ENV['PATHEXT'].split(';') : ['']
+  ENV['PATH'].split(File::PATH_SEPARATOR).each do |path|
+    exts.each { |ext|
+      exe = File.join(path, "#{cmd}#{ext}")
+      return exe if File.executable? exe
+    }
+  end
+  return nil
+end
+
 @tmpdir = ENV['TMPDIR'] || '/tmp'
 if @tmpdir.end_with?('/')
   @tmpdir = @tmpdir.chop
@@ -109,15 +123,20 @@ if config.has_key?('Deployment')
         host = host_instance['ssh_host']
         if role == 'named' and @puppet_map['named_ip_addr'].nil?
           if host_instance.has_key?('ip_addr')
-            @env_map['CONF_NAMED_IP_ADDR'] = host_instance['ip_addr']
+            @puppet_map['named_ip_addr'] = host_instance['ip_addr']
           else
             puts "\nAttempting to discover IP address for host #{host_instance['host']}"
             # Try to look up the IP address of the Broker host to set the named IP address
-            ip_path_command = 'command -v ip'
+            ip_path = nil
             if not host_instance['ssh_host'] == 'localhost'
-              ip_path_command = "ssh #{user}@#{host} \"#{ip_path_command}\""
+              ip_path = %x[ "ssh #{user}@#{host} \"command -v ip\"" ].chomp
+            else
+              ip_path = which("ip")
             end
-            ip_path = %x[ #{ip_path_command} ].chomp
+            if ip_path.nil?
+              puts "Could not determine path to 'ip' command"
+              exit 1
+            end
 
             ip_lookup_command = "#{ip_path} addr | grep inet | egrep -v inet6"
             if not host == 'localhost'
@@ -145,7 +164,7 @@ if config.has_key?('Deployment')
                 puts "* #{addr}"
               end
               puts "The installer will attempt to continue with address #{good_addrs[0]}.\nConsider re-running the installer and manually entering a valid IP address for this target system."
-              @env_map['CONF_NAMED_IP_ADDR'] = good_addrs[0]
+              @puppet_map['named_ip_addr'] = good_addrs[0]
             end
           end
         end
@@ -250,6 +269,7 @@ host_order.each do |ssh_host|
     :keygen => "dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named #{@puppet_map['domain']}",
     :keyget => "cat /var/named/K#{@puppet_map['domain']}*.key",
     :enabledns => 'systemctl enable named.service',
+    :enabledns_rhel => 'service named restart',
     :check => 'puppet module list',
     :install => 'puppet module install openshift/openshift_origin',
     :apply => "puppet apply --verbose ~/#{hostfile}",
@@ -300,9 +320,14 @@ host_order.each do |ssh_host|
     output = `#{commands[:enabledns]}`
     dnsstatus = $?.exitstatus
     if dnsstatus > 0
-      puts "Could not enable named using command '#{commands[:enabledns]}'. Exiting."
-      saw_deployment_error = true
-      break
+      # This may be RHEL
+      output = `#{commands[:enabledns_rhel]}`
+      dnsstatus = $?.exitstatus
+      if dnsstatus > 0
+        puts "Could not enable named using command '#{commands[:enabledns]}'. Exiting."
+        saw_deployment_error = true
+        break
+      end
     end
   end
 

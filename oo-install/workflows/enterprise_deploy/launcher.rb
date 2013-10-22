@@ -79,6 +79,19 @@ def find_good_ip_addrs list
   good_addrs
 end
 
+# SOURCE for which:
+# http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
+def which(cmd)
+  exts = ENV['PATHEXT'] ? ENV['PATHEXT'].split(';') : ['']
+  ENV['PATH'].split(File::PATH_SEPARATOR).each do |path|
+    exts.each { |ext|
+      exe = File.join(path, "#{cmd}#{ext}")
+      return exe if File.executable? exe
+    }
+  end
+  return nil
+end
+
 config = YAML.load_file(@config_file)
 
 # Set values from deployment configuration
@@ -113,11 +126,16 @@ if config.has_key?('Deployment')
           else
             # Try to look up the IP address of the Broker host to set the named IP address
             # 1. Find the path to the 'ip' utility
-            ip_path_command = 'command -v ip'
+            ip_path = nil
             if not host_instance['ssh_host'] == 'localhost'
-              ip_path_command = "ssh #{host_instance['user']}@#{host_instance['ssh_host']} \"#{ip_path_command}\""
+              ip_path = %x[ "ssh #{host_instance['user']}@#{host_instance['ssh_host']} \"command -v ip\"" ].chomp
+            else
+              ip_path = which("ip")
             end
-            ip_path = %x[ #{ip_path_command} ].chomp
+            if ip_path.nil?
+              put "Could not find executable 'ip' on target system."
+              exit 1
+            end
 
             # 2. Get all of the non-loopback, non-netmask IPv4 addresses from the target system
             ip_lookup_command = "#{ip_path} addr show | grep inet | egrep -v inet6"
