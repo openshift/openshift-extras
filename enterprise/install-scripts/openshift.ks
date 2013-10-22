@@ -160,7 +160,7 @@
 #   Choose from the following ways to provide packages:
 #     none - install sources are already set up when the script executes (DEFAULT)
 #     yum - set up yum repos based on config
-#       repos_base / CONF_REPOS_BASE -- see below
+#       ose_repo_base / CONF_OSE_REPO_BASE -- see below
 #       rhel_repo / CONF_RHEL_REPO -- see below
 #       jboss_repo_base / CONF_JBOSS_REPO_BASE -- see below
 #       rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO -- see below
@@ -180,13 +180,53 @@
 #  read -s CONF_SM_REG_PASS
 #  export CONF_SM_REG_PASS
 
-# repos_base / CONF_REPOS_BASE
-#   Default: https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<latest>
+# optional_repo / CONF_OPTIONAL_REPO
+#   Enable unsupported RHEL "optional" repo.
+#   Not usually needed, but may help with temporary dependency mismatches
+#   Default: no
+#CONF_OPTIONAL_REPO=1
+
+
+# # # # # # # # # # # # yum-based install method # # # # # # # # # # # #
+#
+# Define plain old yum repositories for use internally to set up
+# test systems; can also be used for offline installs. The assumed
+# layout of the repositories is that of the CDN used with released
+# products, which is:
+#
+# <base> = http(s)://server/.../x86_64   # top of x86_64 architecture tree
+# <base>/jbeap/6/os         - JBoss repos
+# <base>/jbews/2/os
+# <base>/optional/os        - "optional" channel, not normally needed
+# <base>/os                 - RHEL 6 itself
+# <base>/ose-infra/1.2/os   - Released OpenShift Enterprise repos
+# <base>/ose-jbosseap/1.2/os
+# <base>/ose-node/1.2/os
+# <base>/ose-rhc/1.2/os
+#
+# To use this layout, simply set the CDN base URL below. Alternatively,
+# set repository URLs individually if they are in different locations.
+# RHEL, Optional, and JBoss yum repositories will be created if defined;
+# otherwise they should already be configured for installation to succeed.
+#
+# The nightly OSE build repositories use a different layout from CDN.
+# If the location of these is different from the CDN base and CONF_CDN_LAYOUT
+# is not set, then this layout is defined:
+# <ose_repo_base>/Client/x86_64/os
+# <ose_repo_base>/Infrastructure/x86_64/os
+# <ose_repo_base>/JBoss_EAP6_Cartridge/x86_64/os
+# <ose_repo_base>/Node/x86_64/os
+
+# cdn_repo_base / CONF_CDN_REPO_BASE
+#   Default base URL for all repositories used for the "yum" install method (see above).
+#CONF_CDN_REPO_BASE=http://.../6Server/x86_64
+
+# ose_repo_base / CONF_OSE_REPO_BASE
 #   The base URL for the OpenShift repositories used for the "yum"
 #   install method - the part before Infrastructure/Node/etc.
-#   Note that if this is the same as CONF_RHEL_REPO (without "/os"), then the
+#   Note that if this is the same as CONF_CDN_REPO_BASE, then the
 #   CDN format will be used instead, e.g. x86_64/ose-node/1.2/os
-#CONF_REPOS_BASE="https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<latest>"
+#CONF_OSE_REPO_BASE="https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<latest>"
 
 # rhel_repo / CONF_RHEL_REPO
 #   The URL for a RHEL 6 yum repository used with the "yum" install method.
@@ -194,21 +234,19 @@
 
 # rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO
 #   The URL for a RHEL 6 Optional yum repository used with the "yum" install method.
-#   (only used if CONF_OPTIONAL_REPO is true below)
+#   (only used if CONF_OPTIONAL_REPO is true)
 #   Should end in /6Server/x86_64/optional/os/
 
 # jboss_repo_base / CONF_JBOSS_REPO_BASE
 #   The base URL for the JBoss repositories used with the "yum"
-#   install method - the part before jbeap/jbews - ends in /6/6Server/x86_64
+#   install method - the part before jbeap/jbews - ends in /6Server/x86_64
 
-# optional_repo / CONF_OPTIONAL_REPO
-#   Enable unsupported RHEL "optional" repo.
-#   Default: no
-#CONF_OPTIONAL_REPO=1
 
+# # # # # # # # # # # domains, DNS, hostnames, and IPs # # # # # # # # # # # # # # # # #
+#
 # domain / CONF_DOMAIN
 #   Default: example.com
-#   The network domain under which apps and hosts will be placed.
+#   The network domain under which app DNS entries will be placed.
 #CONF_DOMAIN="example.com"
 
 # hosts_domain / CONF_HOSTS_DOMAIN
@@ -279,9 +317,6 @@
 #   one on its NIC.
 #CONF_NODE_IP_ADDR=10.10.10.10
 
-# A given node can only accept either V1 or V2 cartridges.
-#CONF_NODE_V1_ENABLE=false
-
 # keep_hostname / CONF_KEEP_HOSTNAME
 #   Default: false (not set)
 #   Enabling this option prevents the installation script from setting
@@ -290,6 +325,13 @@
 #   to set the hostname, which makes it a little easier to recognize
 #   which host you are looking at when logging in as an administrator.
 #CONF_KEEP_HOSTNAME=true
+
+
+# # # # # # # # # # # miscellaneous other settings # # # # # # # # # # #
+
+
+# A given node can only accept either V1 or V2 cartridges.
+#CONF_NODE_V1_ENABLE=false
 
 # no_ntp / CONF_NO_NTP
 #   Default: false
@@ -600,10 +642,11 @@ configure_rhel_repo()
   # installing from RHEL. The post section cannot access the method that
   # was used in the base install. This configures a RHEL yum repo which
   # you must supply.
+if [ "${rhel_repo}x" != "x" ]; then
   cat > /etc/yum.repos.d/rhel.repo <<YUM
 [rhel6]
 name=RHEL 6 base OS
-baseurl=${CONF_RHEL_REPO}
+baseurl=${rhel_repo}
 enabled=1
 gpgcheck=0
 priority=2
@@ -611,32 +654,35 @@ sslverify=false
 exclude=tomcat6*
 
 YUM
+fi
 }
 
 configure_optional_repo()
 {
+if [ "${rhel_optional_repo}x" != "x" ]; then
   cat > /etc/yum.repos.d/rheloptional.repo <<YUM
 [rhel6_optional]
 name=RHEL 6 Optional
-baseurl=${CONF_RHEL_OPTIONAL_REPO}
+baseurl=${rhel_optional_repo}
 enabled=1
 gpgcheck=0
 priority=2
 sslverify=false
 
 YUM
+fi
 }
 
 ose_yum_repo_url()
 {
     channel=$1 #one of: Client,Infrastructure,Node,JBoss_EAP6_Cartridge
-    if [ "${CONF_RHEL_REPO%/}" == "${repos_base%/}/os" ] # same repo base as RHEL?
-    then # use the release CDN URLs
+    if is_true "$CONF_CDN_LAYOUT"
+    then # use the release CDN layout for OSE URLs
       declare -A map
       map=([Client]=ose-rhc [Infrastructure]=ose-infra [Node]=ose-node [JBoss_EAP6_Cartridge]=ose-jbosseap)
-      echo "$repos_base/${map[$channel]}/1.2/os"
+      echo "$ose_repo_base/${map[$channel]}/1.2/os"
     else # use the nightly puddle URLs
-      echo "$repos_base/$channel/x86_64/os/"
+      echo "$ose_repo_base/$channel/x86_64/os/"
     fi
 }
 
@@ -704,13 +750,13 @@ configure_jbosseap_repo()
 {
   # The JBossEAP cartridge depends on Red Hat's JBoss packages.
 
-  if [ "x${CONF_JBOSS_REPO_BASE}" != "x" ]
+  if [ "x${jboss_repo_base}" != "x" ]
   then
   ## configure JBossEAP repo
     cat <<YUM > /etc/yum.repos.d/jbosseap.repo
 [jbosseap]
 name=jbosseap
-baseurl=${CONF_JBOSS_REPO_BASE}/jbeap/6/os
+baseurl=${jboss_repo_base}/jbeap/6/os
 enabled=1
 priority=3
 gpgcheck=0
@@ -723,13 +769,13 @@ YUM
 configure_jbossews_repo()
 {
   # The JBossEWS cartridge depends on Red Hat's JBoss packages.
-  if [ "x${CONF_JBOSS_REPO_BASE}" != "x" ]
+  if [ "x${jboss_repo_base}" != "x" ]
   then
   ## configure JBossEWS repo
     cat <<YUM > /etc/yum.repos.d/jbossews.repo
 [jbossews]
 name=jbossews
-baseurl=${CONF_JBOSS_REPO_BASE}/jbews/2/os
+baseurl=${jboss_repo_base}/jbews/2/os
 enabled=1
 priority=3
 gpgcheck=0
@@ -2319,7 +2365,7 @@ is_false()
 # used when configuring BIND and assigning hostnames for the various
 # hosts in the OpenShift PaaS.
 #
-# We also set the $repos_base variable with the base URL for the yum
+# We also set the $ose_repo_base variable with the base URL for the yum
 # repositories that will be used to download OpenShift RPMs.  The value
 # of this variable can be changed to use a custom repository or puddle.
 #
@@ -2348,7 +2394,7 @@ is_false()
 #   named_ip_addr
 #   nameservers
 #   node_hostname
-#   repos_base
+#   ose_repo_base
 #
 # This function makes use of variables that may be set by parse_kernel_cmdline
 # based on the content of /proc/cmdline or may be hardcoded by modifying
@@ -2413,16 +2459,28 @@ set_defaults()
 
   # Following are some settings used in subsequent steps.
 
-  # Where to find the OpenShift repositories; just the base part before
-  # splitting out into Infrastructure/Node/etc.
-  repos_base_default='https://mirror.openshift.com/pub/origin-server/nightly/enterprise/2012-11-15'
-  repos_base="${CONF_REPOS_BASE:-${repos_base_default}}"
-
-  # There a no defaults for these. Customers should be using 
+  # There a no defaults for these. Customers should be using
   # subscriptions via RHN. Internally we use private systems.
   rhel_repo="$CONF_RHEL_REPO"
   jboss_repo_base="$CONF_JBOSS_REPO_BASE"
   rhel_optional_repo="$CONF_RHEL_OPTIONAL_REPO"
+  # Where to find the OpenShift repositories; just the base part before
+  # splitting out into Infrastructure/Node/etc.
+  ose_repo_base="${CONF_OSE_REPO_BASE:-$CONF_REPOS_BASE}"
+
+  # Use CDN layout as the default for all yum repos if this is set.
+  cdn_repo_base="${CONF_CDN_REPO_BASE%/}"
+  if [ "x$cdn_repo_base" != "x" ]; then
+    rhel_repo="${rhel_repo:-$cdn_repo_base/os}"
+    jboss_repo_base="${jboss_repo_base:-$cdn_repo_base}"
+    rhel_optional_repo="${rhel_optional_repo:-$cdn_repo_base/optional/os}"
+    ose_repo_base="${ose_repo_base:-$cdn_repo_base}"
+    if [ "${cdn_repo_base%/}" == "${ose_repo_base%/}" ]; then # same repo layout
+      CONF_CDN_LAYOUT=1  # use the CDN layout for OpenShift yum repos
+    fi
+  elif [ "${rhel_repo%/}" == "${ose_repo_base%/}/os" ]; then # OSE same repo base as RHEL?
+    CONF_CDN_LAYOUT=1  # use the CDN layout for OpenShift yum repos
+  fi
 
   # The domain name for the OpenShift Enterprise installation.
   domain="${CONF_DOMAIN:-example.com}"
