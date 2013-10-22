@@ -6,11 +6,12 @@ module Installer
   class Config
     include Installer::Helpers
 
-    attr_reader :default_dir, :default_file, :file_template
+    attr_reader :default_dir, :default_file, :file_template, :context
     attr_accessor :file_path
 
     def initialize config_file_path=nil, context=:origin
       @default_dir = ENV['HOME'] + '/.openshift'
+      @context = context
       @default_file = '/oo-install-cfg.yml'
       @file_template = gem_root_dir + "/conf/oo-install-cfg.yml#{ context == :ose ? '.ose' : '' }.example"
       if config_file_path.nil?
@@ -55,7 +56,7 @@ module Installer
     end
 
     def get_subscription
-      Installer::Subscription.new(self, (settings.has_key?('Subscription') ? settings['Subscription'] : {}))
+      Installer::Subscription.new(self, context, (settings.has_key?('Subscription') ? settings['Subscription'] : {}))
     end
 
     def set_deployment deployment

@@ -6,18 +6,10 @@ module Installer
 
     @object_attrs = [:subscription_type, :rh_username, :rh_password, :repos_base, :os_repo, :jboss_repo_base, :jenkins_repo_base, :os_optional_repo, :sm_reg_pool, :sm_reg_pool_rhel, :rhn_reg_actkey]
 
-    attr_reader :config, :type
+    attr_reader :config, :type, :context
     attr_accessor *@object_attrs
 
     class << self
-      def subscription_types(context)
-        type_map = {}
-        valid_types_for_context(context).each do |type|
-          type_map[type] = subscription_info_for_type(type)
-        end
-        type_map
-      end
-
       def object_attrs
         @object_attrs
       end
@@ -44,53 +36,7 @@ module Installer
         true
       end
 
-      def subscription_info_for_type(subscription_type)
-        case subscription_type
-        when :none
-          return {
-            :desc => 'No subscription necessary',
-            :attrs => {},
-            :attr_order => [],
-          }
-        when :yum
-          return {
-            :desc => 'Get packages from yum and do not use a subscription',
-            :attrs => {
-              :repos_base => 'The base URL for the OpenShift repositories',
-              :os_repo => 'The URL of a yum repository for the operating system',
-              :jboss_repo_base => 'The base URL for a JBoss repository',
-              :jenkins_repo_base => 'The base URL for a Jenkins repository',
-              :os_optional_repo => 'The URL for an "Optional" repository for the operating system',
-            },
-            :attr_order => [:repos_base,:os_repo,:jenkins_repo_base,:jboss_repo_base,:os_optional_repo],
-          }
-        when :rhsm
-          return {
-            :desc => 'Use Red Hat Subscription Manager',
-            :attrs => {
-              :rh_username => 'Red Hat Login username',
-              :rh_password => 'Red Hat Login password',
-              :sm_reg_pool => 'Pool ID for OpenShift subscription',
-              :sm_reg_pool_rhel => 'Pool ID for RHEL subscription',
-            },
-            :attr_order => [:rh_username,:rh_password,:sm_reg_pool],
-          }
-        when :rhn
-          return {
-            :desc => 'Use Red Hat Network',
-            :attrs => {
-              :rh_username => 'Red Hat Login username',
-              :rh_password => 'Red Hat Login password',
-              :rhn_reg_actkey => 'RHN account activation key',
-            },
-            :attr_order => [:rh_username,:rh_password,:rhn_reg_actkey],
-          }
-        else
-          raise Installer::SubscriptionTypeNotRecognizedException.new("Subscription type '#{subscription_type}' is not recognized.")
-        end
-      end
-
-      def valid_types_for_context(context)
+      def valid_types_for_context context
         case context
         when :origin, :origin_vm
           return [:none,:yum]
@@ -102,13 +48,78 @@ module Installer
       end
     end
 
-    def initialize config, subscription={}
+    def initialize config, context, subscription={}
       @config = config
+      @context = context
       self.class.object_attrs.each do |attr|
         attr_str = attr == :subscription_type ? 'type' : attr.to_s
         if subscription.has_key?(attr_str)
           self.send("#{attr.to_s}=".to_sym, subscription[attr_str])
         end
+      end
+    end
+
+    def subscription_types
+      @subscription_types ||=
+        begin
+          type_map = {}
+          self.class.valid_types_for_context(context).each do |type|
+            type_map[type] = subscription_info(type)
+          end
+          type_map
+        end
+    end
+
+    def subscription_info(type=subscription_type)
+      case type
+      when :none
+        return {
+          :desc => 'No subscription necessary',
+          :attrs => {},
+          :attr_order => [],
+        }
+      when :yum
+        attr_order = [:repos_base,:os_repo,:jenkins_repo_base,:jboss_repo_base,:os_optional_repo]
+
+        # This is a field expedient; openshift.sh doesn't support a distinct jenkins repo base.
+        if context == :ose
+          attr_order = attr_order.select{ |a| not a == :jenkins_repo_base }
+        end
+
+        return {
+          :desc => 'Get packages from yum and do not use a subscription',
+          :attrs => {
+            :repos_base => 'The base URL for the OpenShift repositories',
+            :os_repo => 'The URL of a yum repository for the operating system',
+            :jboss_repo_base => 'The base URL for a JBoss repository',
+            :jenkins_repo_base => 'The base URL for a Jenkins repository',
+            :os_optional_repo => 'The URL for an "Optional" repository for the operating system',
+          },
+          :attr_order => attr_order,
+        }
+      when :rhsm
+        return {
+          :desc => 'Use Red Hat Subscription Manager',
+          :attrs => {
+            :rh_username => 'Red Hat Login username',
+            :rh_password => 'Red Hat Login password',
+            :sm_reg_pool => 'Pool ID for OpenShift subscription',
+            :sm_reg_pool_rhel => 'Pool ID for RHEL subscription',
+          },
+          :attr_order => [:rh_username,:rh_password,:sm_reg_pool],
+        }
+      when :rhn
+        return {
+          :desc => 'Use Red Hat Network',
+          :attrs => {
+            :rh_username => 'Red Hat Login username',
+            :rh_password => 'Red Hat Login password',
+            :rhn_reg_actkey => 'RHN account activation key',
+          },
+          :attr_order => [:rh_username,:rh_password,:rhn_reg_actkey],
+        }
+      else
+        raise Installer::SubscriptionTypeNotRecognizedException.new("Subscription type '#{subscription_type}' is not recognized.")
       end
     end
 

@@ -286,7 +286,7 @@ module Installer
     def ui_edit_subscription
       ui_newpage
       tgt_subscription = save_subscription? ? cfg_subscription : cli_subscription
-      valid_types = Installer::Subscription.subscription_types(@context)
+      valid_types = tgt_subscription.subscription_types
       valid_types_list = valid_types.keys.map{ |t| t.to_s }.join(', ')
       tgt_subscription.subscription_type = ask("What type of subscription should be used? (#{valid_types_list}) ") { |q|
         if not merged_subscription.subscription_type.nil? and valid_types.keys.include?(merged_subscription.subscription_type)
@@ -333,13 +333,14 @@ module Installer
     end
 
     def ui_show_subscription(message=translate(:subscription_summary))
-      values = merged_subscription.to_hash
+      mrg_subscription = merged_subscription
+      values = mrg_subscription.to_hash
       type = '-'
       settings = nil
       show_settings = false
       if not values.empty? and Installer::Subscription.valid_types_for_context(@context).include?(values['type'].to_sym)
         type = values['type']
-        settings = Installer::Subscription.subscription_types(@context)[type.to_sym]
+        settings = mrg_subscription.subscription_types[type.to_sym]
         show_settings = true
       end
       table = Terminal::Table.new do |t|
@@ -542,7 +543,7 @@ module Installer
     end
 
     def merged_subscription
-      @merged_subscription = Installer::Subscription.new(config)
+      @merged_subscription = Installer::Subscription.new(config, context)
       Installer::Subscription.object_attrs.each do |attr|
         value = cli_subscription.send(attr)
         if value.nil?
