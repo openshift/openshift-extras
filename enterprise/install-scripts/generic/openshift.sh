@@ -148,11 +148,20 @@
 #  CONF_INSTALL_COMPONENTS="node,broker,named,activemq,datastore"
 #CONF_INSTALL_COMPONENTS="node"
 
+# no_jbossews / CONF_NO_JBOSSEWS
+# no_jbosseap / CONF_NO_JBOSSEAP
+#   Default: false; do install JBoss cartridges
+#   If set, skips the parts of the installation that are necessary for
+#   using the JBoss EAP or EWS cartridge, including channels and RPMs.
+#   This makes it easier to install without JBoss channels/repos.
+#CONF_NO_JBOSSEWS=1
+#CONF_NO_JBOSSEAP=1
+
 # install_method / CONF_INSTALL_METHOD
 #   Choose from the following ways to provide packages:
 #     none - install sources are already set up when the script executes (DEFAULT)
 #     yum - set up yum repos based on config
-#       repos_base / CONF_REPOS_BASE -- see below
+#       ose_repo_base / CONF_OSE_REPO_BASE -- see below
 #       rhel_repo / CONF_RHEL_REPO -- see below
 #       jboss_repo_base / CONF_JBOSS_REPO_BASE -- see below
 #       rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO -- see below
@@ -172,13 +181,53 @@
 #  read -s CONF_SM_REG_PASS
 #  export CONF_SM_REG_PASS
 
-# repos_base / CONF_REPOS_BASE
-#   Default: https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<latest>
+# optional_repo / CONF_OPTIONAL_REPO
+#   Enable unsupported RHEL "optional" repo.
+#   Not usually needed, but may help with temporary dependency mismatches
+#   Default: no
+#CONF_OPTIONAL_REPO=1
+
+
+# # # # # # # # # # # # yum-based install method # # # # # # # # # # # #
+#
+# Define plain old yum repositories for use internally to set up
+# test systems; can also be used for offline installs. The assumed
+# layout of the repositories is that of the CDN used with released
+# products, which is:
+#
+# <base> = http(s)://server/.../x86_64   # top of x86_64 architecture tree
+# <base>/jbeap/6/os         - JBoss repos
+# <base>/jbews/2/os
+# <base>/optional/os        - "optional" channel, not normally needed
+# <base>/os                 - RHEL 6 itself
+# <base>/ose-infra/1.2/os   - Released OpenShift Enterprise repos
+# <base>/ose-jbosseap/1.2/os
+# <base>/ose-node/1.2/os
+# <base>/ose-rhc/1.2/os
+#
+# To use this layout, simply set the CDN base URL below. Alternatively,
+# set repository URLs individually if they are in different locations.
+# RHEL, Optional, and JBoss yum repositories will be created if defined;
+# otherwise they should already be configured for installation to succeed.
+#
+# The nightly OSE build repositories use a different layout from CDN.
+# If the location of these is different from the CDN base and CONF_CDN_LAYOUT
+# is not set, then this layout is defined:
+# <ose_repo_base>/Client/x86_64/os
+# <ose_repo_base>/Infrastructure/x86_64/os
+# <ose_repo_base>/JBoss_EAP6_Cartridge/x86_64/os
+# <ose_repo_base>/Node/x86_64/os
+
+# cdn_repo_base / CONF_CDN_REPO_BASE
+#   Default base URL for all repositories used for the "yum" install method (see above).
+#CONF_CDN_REPO_BASE=http://.../6Server/x86_64
+
+# ose_repo_base / CONF_OSE_REPO_BASE
 #   The base URL for the OpenShift repositories used for the "yum"
 #   install method - the part before Infrastructure/Node/etc.
-#   Note that if this is the same as CONF_RHEL_REPO (without "/os"), then the
+#   Note that if this is the same as CONF_CDN_REPO_BASE, then the
 #   CDN format will be used instead, e.g. x86_64/ose-node/1.2/os
-#CONF_REPOS_BASE="https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<latest>"
+#CONF_OSE_REPO_BASE="https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<latest>"
 
 # rhel_repo / CONF_RHEL_REPO
 #   The URL for a RHEL 6 yum repository used with the "yum" install method.
@@ -186,22 +235,27 @@
 
 # rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO
 #   The URL for a RHEL 6 Optional yum repository used with the "yum" install method.
-#   (only used if CONF_OPTIONAL_REPO is true below)
+#   (only used if CONF_OPTIONAL_REPO is true)
 #   Should end in /6Server/x86_64/optional/os/
 
 # jboss_repo_base / CONF_JBOSS_REPO_BASE
 #   The base URL for the JBoss repositories used with the "yum"
-#   install method - the part before jbeap/jbews - ends in /6/6Server/x86_64
+#   install method - the part before jbeap/jbews - ends in /6Server/x86_64
 
-# optional_repo / CONF_OPTIONAL_REPO
-#   Enable unsupported RHEL "optional" repo.
-#   Default: no
-#CONF_OPTIONAL_REPO=1
 
+# # # # # # # # # # # domains, DNS, hostnames, and IPs # # # # # # # # # # # # # # # # #
+#
 # domain / CONF_DOMAIN
 #   Default: example.com
-#   The network domain under which apps and hosts will be placed.
+#   The network domain under which app DNS entries will be placed.
 #CONF_DOMAIN="example.com"
+
+# hosts_domain / CONF_HOSTS_DOMAIN
+#   Default: hosts.example.com
+#   If specified and host DNS is to be created, this domain will be created
+#   and used for creating host DNS records (app records will still go in the
+#   main domain).
+#CONF_HOSTS_DOMAIN="hosts.example.com"
 
 # broker_hostname / CONF_BROKER_HOSTNAME
 # node_hostname / CONF_NODE_HOSTNAME
@@ -222,8 +276,14 @@
 #CONF_NODE_HOSTNAME="node.example.com"
 #CONF_NAMED_HOSTNAME="ns1.example.com"
 #CONF_ACTIVEMQ_HOSTNAME="activemq.example.com"
-#CONF_DATASTORE_HOSTNAME="mongodb.example.com"
+#CONF_DATASTORE_HOSTNAME="datastore.example.com"
 
+# named_entries / CONF_NAMED_ENTRIES
+#   Default: create entries above only for components installed on BIND host.
+#   Comma separated, colon delimited hostname:ipaddress pairs
+#   Specify host DNS entries to be created instead of the defaults.
+#   You may also set to "none" to create no DNS entries for hosts.
+#CONF_NAMED_ENTRIES="broker:192.168.0.1,node:192.168.0.2"
 
 # named_ip_addr / CONF_NAMED_IP_ADDR
 #   Default: current IP if installing named, otherwise broker_ip_addr
@@ -257,6 +317,19 @@
 #   This is used for the node to give a public IP, if different from the
 #   one on its NIC.
 #CONF_NODE_IP_ADDR=10.10.10.10
+
+# keep_hostname / CONF_KEEP_HOSTNAME
+#   Default: false (not set)
+#   Enabling this option prevents the installation script from setting
+#   the hostname on the host, leaving it as found.  Use this option if
+#   the hostname is already set as you like. The default behavior is
+#   to set the hostname, which makes it a little easier to recognize
+#   which host you are looking at when logging in as an administrator.
+#CONF_KEEP_HOSTNAME=true
+
+
+# # # # # # # # # # # miscellaneous other settings # # # # # # # # # # #
+
 
 # A given node can only accept either V1 or V2 cartridges.
 #CONF_NODE_V1_ENABLE=false
@@ -387,6 +460,8 @@
 # The Krb5KeyTab value of mod_auth_kerb is not configurable -- the keytab
 # is expected in /var/www/openshift/broker/httpd/conf.d/http.keytab
 
+########################################################################
+
 
 
 ########################################################################
@@ -434,9 +509,20 @@ configure_repos()
   if node
   then
     need_node_repo() { :; }
-    need_jbosseap_cartridge_repo() { :; }
-    need_jbosseap_repo() { :; }
-    need_jbossews_repo() { :; }
+
+    if is_false "${CONF_NO_JBOSSEAP}"; then
+      need_jbosseap_cartridge_repo() { :; }
+
+      # The jbosseap and jbossas cartridges require the jbossas packages
+      # in the jbappplatform channel.
+      need_jbosseap_repo() { :; }
+    fi
+
+    if is_false "${CONF_NO_JBOSSEWS}"; then
+      # The jbossews cartridge requires the tomcat packages in the jb-ews
+      # channel.
+      need_jbossews_repo() { :; }
+    fi
   fi
 
   # The configure_yum_repos, configure_rhn_channels, and
@@ -507,10 +593,11 @@ configure_rhel_repo()
   # installing from RHEL. The post section cannot access the method that
   # was used in the base install. This configures a RHEL yum repo which
   # you must supply.
+if [ "${rhel_repo}x" != "x" ]; then
   cat > /etc/yum.repos.d/rhel.repo <<YUM
 [rhel6]
 name=RHEL 6 base OS
-baseurl=${CONF_RHEL_REPO}
+baseurl=${rhel_repo}
 enabled=1
 gpgcheck=0
 priority=2
@@ -518,32 +605,35 @@ sslverify=false
 exclude=tomcat6*
 
 YUM
+fi
 }
 
 configure_optional_repo()
 {
+if [ "${rhel_optional_repo}x" != "x" ]; then
   cat > /etc/yum.repos.d/rheloptional.repo <<YUM
 [rhel6_optional]
 name=RHEL 6 Optional
-baseurl=${CONF_RHEL_OPTIONAL_REPO}
+baseurl=${rhel_optional_repo}
 enabled=1
 gpgcheck=0
 priority=2
 sslverify=false
 
 YUM
+fi
 }
 
 ose_yum_repo_url()
 {
     channel=$1 #one of: Client,Infrastructure,Node,JBoss_EAP6_Cartridge
-    if [ "${CONF_RHEL_REPO%/}" == "${repos_base%/}/os" ] # same repo base as RHEL?
-    then # use the release CDN URLs
+    if is_true "$CONF_CDN_LAYOUT"
+    then # use the release CDN layout for OSE URLs
       declare -A map
       map=([Client]=ose-rhc [Infrastructure]=ose-infra [Node]=ose-node [JBoss_EAP6_Cartridge]=ose-jbosseap)
-      echo "$repos_base/${map[$channel]}/1.2/os"
+      echo "$ose_repo_base/${map[$channel]}/1.2/os"
     else # use the nightly puddle URLs
-      echo "$repos_base/$channel/x86_64/os/"
+      echo "$ose_repo_base/$channel/x86_64/os/"
     fi
 }
 
@@ -611,13 +701,13 @@ configure_jbosseap_repo()
 {
   # The JBossEAP cartridge depends on Red Hat's JBoss packages.
 
-  if [ "x${CONF_JBOSS_REPO_BASE}" != "x" ]
+  if [ "x${jboss_repo_base}" != "x" ]
   then
   ## configure JBossEAP repo
     cat <<YUM > /etc/yum.repos.d/jbosseap.repo
 [jbosseap]
 name=jbosseap
-baseurl=${CONF_JBOSS_REPO_BASE}/jbeap/6/os
+baseurl=${jboss_repo_base}/jbeap/6/os
 enabled=1
 priority=3
 gpgcheck=0
@@ -630,13 +720,13 @@ YUM
 configure_jbossews_repo()
 {
   # The JBossEWS cartridge depends on Red Hat's JBoss packages.
-  if [ "x${CONF_JBOSS_REPO_BASE}" != "x" ]
+  if [ "x${jboss_repo_base}" != "x" ]
   then
   ## configure JBossEWS repo
     cat <<YUM > /etc/yum.repos.d/jbossews.repo
 [jbossews]
 name=jbossews
-baseurl=${CONF_JBOSS_REPO_BASE}/jbews/2/os
+baseurl=${jboss_repo_base}/jbews/2/os
 enabled=1
 priority=3
 gpgcheck=0
@@ -650,10 +740,10 @@ configure_rhn_channels()
 {
   if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
     echo "Register with RHN using an activation key"
-    rhnreg_ks --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || abort_install
+    rhnreg_ks --force --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || abort_install
   else
     echo "Register with RHN with username and password"
-    rhnreg_ks --profilename=${hostname} --username ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    rhnreg_ks --force --profilename=${hostname} --username ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
   fi
 
   # RHN method for setting yum priorities and excludes:
@@ -709,7 +799,7 @@ configure_rhn_channels()
 configure_rhsm_channels()
 {
    echo "Register with RHSM"
-   subscription-manager register --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || abort_install
+   subscription-manager register --force --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || abort_install
    # add the necessary subscriptions
    if [ "x$CONF_SM_REG_POOL_RHEL" == x ]; then
      echo "Registering RHEL with any available subscription"
@@ -907,10 +997,19 @@ install_cartridges()
     # haproxy support.
     carts="$carts openshift-origin-cartridge-haproxy"
 
-    # JBossEWS support.
-    # Note: Be sure to subscribe to the JBossEWS entitlements during the
-    # base install or in configure_jbossews_repo.
-    carts="$carts openshift-origin-cartridge-jbossews"
+    if is_false "$CONF_NO_JBOSSEWS"; then
+      # JBossEWS support.
+      # Note: Be sure to subscribe to the JBossEWS entitlements during the
+      # base install or in configure_jbossews_repo.
+      carts="$carts openshift-origin-cartridge-jbossews"
+    fi
+
+    if is_false "$CONF_NO_JBOSSEAP"; then
+      # JBossEAP support.
+      # Note: Be sure to subscribe to the JBossEAP entitlements during the
+      # base install or in configure_jbosseap_repo.
+      carts="$carts openshift-origin-cartridge-jbosseap"
+    fi
 
     # JBossEAP support.
     # Note: Be sure to subscribe to the JBossEAP entitlements during the
@@ -1677,19 +1776,6 @@ install_named_pkgs()
 configure_named()
 {
 
-  # $keyfile will contain a new DNSSEC key for our domain.
-  keyfile=/var/named/${domain}.key
-
-  if [ "x$bind_key" = x ]
-  then
-    # Generate the new key for the domain.
-    pushd /var/named
-    rm -f /var/named/K${domain}*
-    dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom ${domain}
-    bind_key="$(grep Key: K${domain}*.private | cut -d ' ' -f 2)"
-    popd
-  fi
-
   # Ensure we have a key for service named status to communicate with BIND.
   rndc-confgen -a -r /dev/urandom
   restorecon /etc/rndc.* /etc/named.*
@@ -1707,40 +1793,6 @@ EOF
   # name.
   rm -rf /var/named/dynamic
   mkdir -p /var/named/dynamic
-
-
-  # Create the initial BIND database.
-  nsdb=/var/named/dynamic/${domain}.db
-  cat <<EOF > $nsdb
-\$ORIGIN .
-\$TTL 1	; 1 seconds (for testing only)
-${domain}		IN SOA	${named_hostname}. hostmaster.${domain}. (
-				2011112904 ; serial
-				60         ; refresh (1 minute)
-				15         ; retry (15 seconds)
-				1800       ; expire (30 minutes)
-				10         ; minimum (10 seconds)
-				)
-			NS	${named_hostname}.
-			MX	10 mail.${domain}.
-\$ORIGIN ${domain}.
-${named_hostname%.${domain}}			A	${named_ip_addr}
-EOF
-
-  # Add A records any other components that are being installed locally.
-  broker && echo "${broker_hostname%.${domain}}			A	${broker_ip_addr}" >> $nsdb
-  node && echo "${node_hostname%.${domain}}			A	${node_ip_addr}${nl}" >> $nsdb
-  activemq && echo "${activemq_hostname%.${domain}}			A	${cur_ip_addr}${nl}" >> $nsdb
-  datastore && echo "${datastore_hostname%.${domain}}			A	${cur_ip_addr}${nl}" >> $nsdb
-  echo >> $nsdb
-
-  # Install the key for the OpenShift Enterprise domain.
-  cat <<EOF > /var/named/${domain}.key
-key ${domain} {
-  algorithm HMAC-MD5;
-  secret "${bind_key}";
-};
-EOF
 
   chgrp named -R /var/named
   chown named -R /var/named/dynamic
@@ -1789,17 +1841,19 @@ controls {
 };
 
 include "/etc/named.rfc1912.zones";
-
-include "${domain}.key";
-
-zone "${domain}" IN {
-	type master;
-	file "dynamic/${domain}.db";
-	allow-update { key ${domain} ; } ;
-};
 EOF
   chown root:named /etc/named.conf
   chcon system_u:object_r:named_conf_t:s0 -v /etc/named.conf
+
+  # actually set up the domain zone(s)
+  configure_named_zone "$hosts_domain"
+  # order is important; make sure "the" bind_key is the one for apps
+  if [ "$domain" != "$hosts_domain" ]
+  then configure_named_zone "$domain"
+  fi
+
+  # configure in any hosts as needed
+  configure_hosts_dns
 
   # Configure named to start on boot.
   lokkit --nostart --service=dns
@@ -1809,6 +1863,79 @@ EOF
   service named start
 }
 
+configure_named_zone()
+{
+  zone="$1"
+
+  # Generate the new key for the domain.
+  rm -f /var/named/K${zone}*
+  dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named ${zone}
+  bind_key="$(grep Key: /var/named/K${zone}*.private | cut -d ' ' -f 2)"
+
+  # Install the key where OpenShift Enterprise expects it.
+  cat <<EOF > /var/named/${zone}.key
+key ${zone} {
+  algorithm HMAC-MD5;
+  secret "${bind_key}";
+};
+EOF
+
+  # Create the initial BIND database.
+  nsdb=/var/named/dynamic/${zone}.db
+  cat <<EOF > $nsdb
+\$ORIGIN .
+\$TTL 1	; 1 seconds (for testing only)
+${zone}		IN SOA	ns1.$zone. hostmaster.$zone. (
+				2011112904 ; serial
+				60         ; refresh (1 minute)
+				15         ; retry (15 seconds)
+				1800       ; expire (30 minutes)
+				10         ; minimum (10 seconds)
+				)
+			NS	ns1.${zone}.
+			MX	10 mail.${zone}.
+\$ORIGIN ${zone}.
+ns1			A	${named_ip_addr}
+EOF
+
+
+  # Add a record for the zone to named conf
+  cat <<EOF >> /etc/named.conf
+include "${zone}.key";
+
+zone "${zone}" IN {
+	type master;
+	file "dynamic/${zone}.db";
+	allow-update { key ${zone} ; } ;
+};
+EOF
+
+}
+
+# TODO: use oo-register-dns to do this instead.
+configure_hosts_dns()
+{
+  zone="$hosts_domain"
+  nsdb=/var/named/dynamic/${zone}.db
+  if [ -z $CONF_NAMED_ENTRIES ]; then
+    # Add A records any other components that are being installed locally.
+    broker && echo "${broker_hostname%.${zone}}			A	${broker_ip_addr}" >> $nsdb
+    node && echo "${node_hostname%.${zone}}			A	${node_ip_addr}${nl}" >> $nsdb
+    activemq && echo "${activemq_hostname%.${zone}}			A	${cur_ip_addr}${nl}" >> $nsdb
+    datastore && echo "${datastore_hostname%.${zone}}			A	${cur_ip_addr}${nl}" >> $nsdb
+  elif [[ "$CONF_NAMED_ENTRIES" =~ : ]]; then
+    # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
+    pairs=(${CONF_NAMED_ENTRIES//,/ })
+    for i in "${!pairs[@]}"
+    do
+      host_ip=${pairs[i]}
+      host_ip=(${host_ip//:/ })
+      echo "${host_ip[0]%.${zone}}			A	${host_ip[1]}" >> $nsdb
+    done
+  fi # if "none" then just don't add anything
+  echo >> $nsdb
+
+}
 
 # Make resolv.conf point to our named service, which will resolve the
 # host names used in this installation of OpenShift.  Our named service
@@ -1837,7 +1964,7 @@ configure_controller()
   sed -i -e "s/^DOMAIN_SUFFIX=.*$/DOMAIN_SUFFIX=${domain}/" \
       /etc/openshift/console.conf
 
-  # Configure the broker with the correct hostname, and use random salt
+  # Configure the broker with the correct domain name, and use random salt
   # to the data store (the host running MongoDB).
   sed -i -e "s/^CLOUD_DOMAIN=.*$/CLOUD_DOMAIN=${domain}/" \
       /etc/openshift/broker.conf
@@ -2042,8 +2169,6 @@ configure_network()
   cat <<EOF >> /etc/dhcp/dhclient-eth0.conf
 
 prepend domain-name-servers ${named_ip_addr};
-supersede host-name "${hostname%.${domain}}";
-supersede domain-name "${domain}";
 prepend domain-search "${domain}";
 EOF
 }
@@ -2051,8 +2176,11 @@ EOF
 # Set the hostname
 configure_hostname()
 {
-  sed -i -e "s/HOSTNAME=.*/HOSTNAME=${hostname}/" /etc/sysconfig/network
-  hostname "${hostname}"
+  if [[ ! "$hostname" =~ ^[0-9.]*$ ]]  # hostname is not just an IP
+  then
+    sed -i -e "s/HOSTNAME=.*/HOSTNAME=${hostname}/" /etc/sysconfig/network
+    hostname "${hostname}"
+  fi
 }
 
 # Set some parameters in the OpenShift node configuration file.
@@ -2192,7 +2320,7 @@ is_false()
 # used when configuring BIND and assigning hostnames for the various
 # hosts in the OpenShift PaaS.
 #
-# We also set the $repos_base variable with the base URL for the yum
+# We also set the $ose_repo_base variable with the base URL for the yum
 # repositories that will be used to download OpenShift RPMs.  The value
 # of this variable can be changed to use a custom repository or puddle.
 #
@@ -2221,7 +2349,7 @@ is_false()
 #   named_ip_addr
 #   nameservers
 #   node_hostname
-#   repos_base
+#   ose_repo_base
 #
 # This function makes use of variables that may be set by parse_kernel_cmdline
 # based on the content of /proc/cmdline or may be hardcoded by modifying
@@ -2237,6 +2365,7 @@ is_false()
 #   CONF_BROKER_IP_ADDR
 #   CONF_DATASTORE_HOSTNAME
 #   CONF_DOMAIN
+#   CONF_HOSTS_DOMAIN
 #   CONF_INSTALL_COMPONENTS
 #   CONF_NAMED_HOSTNAME
 #   CONF_NAMED_IP_ADDR
@@ -2285,26 +2414,39 @@ set_defaults()
 
   # Following are some settings used in subsequent steps.
 
-  # Where to find the OpenShift repositories; just the base part before
-  # splitting out into Infrastructure/Node/etc.
-  repos_base_default='https://mirror.openshift.com/pub/origin-server/nightly/enterprise/2012-11-15'
-  repos_base="${CONF_REPOS_BASE:-${repos_base_default}}"
-
-  # There a no defaults for these. Customers should be using 
+  # There a no defaults for these. Customers should be using
   # subscriptions via RHN. Internally we use private systems.
   rhel_repo="$CONF_RHEL_REPO"
   jboss_repo_base="$CONF_JBOSS_REPO_BASE"
   rhel_optional_repo="$CONF_RHEL_OPTIONAL_REPO"
+  # Where to find the OpenShift repositories; just the base part before
+  # splitting out into Infrastructure/Node/etc.
+  ose_repo_base="${CONF_OSE_REPO_BASE:-$CONF_REPOS_BASE}"
+
+  # Use CDN layout as the default for all yum repos if this is set.
+  cdn_repo_base="${CONF_CDN_REPO_BASE%/}"
+  if [ "x$cdn_repo_base" != "x" ]; then
+    rhel_repo="${rhel_repo:-$cdn_repo_base/os}"
+    jboss_repo_base="${jboss_repo_base:-$cdn_repo_base}"
+    rhel_optional_repo="${rhel_optional_repo:-$cdn_repo_base/optional/os}"
+    ose_repo_base="${ose_repo_base:-$cdn_repo_base}"
+    if [ "${cdn_repo_base%/}" == "${ose_repo_base%/}" ]; then # same repo layout
+      CONF_CDN_LAYOUT=1  # use the CDN layout for OpenShift yum repos
+    fi
+  elif [ "${rhel_repo%/}" == "${ose_repo_base%/}/os" ]; then # OSE same repo base as RHEL?
+    CONF_CDN_LAYOUT=1  # use the CDN layout for OpenShift yum repos
+  fi
 
   # The domain name for the OpenShift Enterprise installation.
   domain="${CONF_DOMAIN:-example.com}"
+  hosts_domain="${CONF_HOSTS_DOMAIN:-$domain}"
 
   # hostnames to use for the components (could all resolve to same host)
-  broker_hostname="${CONF_BROKER_HOSTNAME:-broker.${domain}}"
-  node_hostname="${CONF_NODE_HOSTNAME:-node.${domain}}"
-  named_hostname="${CONF_NAMED_HOSTNAME:-ns1.${domain}}"
-  activemq_hostname="${CONF_ACTIVEMQ_HOSTNAME:-activemq.${domain}}"
-  datastore_hostname="${CONF_DATASTORE_HOSTNAME:-datastore.${domain}}"
+  broker_hostname="${CONF_BROKER_HOSTNAME:-broker.${hosts_domain}}"
+  node_hostname="${CONF_NODE_HOSTNAME:-node.${hosts_domain}}"
+  named_hostname="${CONF_NAMED_HOSTNAME:-ns1.${hosts_domain}}"
+  activemq_hostname="${CONF_ACTIVEMQ_HOSTNAME:-activemq.${hosts_domain}}"
+  datastore_hostname="${CONF_DATASTORE_HOSTNAME:-datastore.${hosts_domain}}"
 
   # The hostname name for this host.
   # Note: If this host is, e.g., both a broker and a datastore, we want
@@ -2492,7 +2634,7 @@ configure_host()
   named && configure_named
   update_resolv_conf
   configure_network
-  configure_hostname
+  is_false "$CONF_KEEP_HOSTNAME" && configure_hostname
   echo "OpenShift: Completed configuring host."
 }
 
