@@ -826,7 +826,7 @@ configure_rhn_channels()
   if need_rhscl_repo
   then
     rhn-channel --add --channel rhscl-1-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-    echo -e "[jb-ews-2-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
+    echo -e "[rhscl-1-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
   fi
 
 
