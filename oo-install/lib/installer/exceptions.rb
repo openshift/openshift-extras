@@ -37,14 +37,32 @@ module Installer
     end
   end
 
+  class WorkflowQuestionReservedVariableException < Exception
+    def initialize(message="A workflow question is using a reserved variable name.", code=1)
+      super(message, code)
+    end
+  end
+
   class WorkflowExecutableException < Exception
     def initialize(message="A workflow executable could not be found or is not system-executable.", code=1)
       super(message, code)
     end
   end
 
+  class WorkflowContextNotRecognizedException < Exception
+    def intialize(message="A workflow 'Contexts' value was not recognized.", code=1)
+      super(message, code)
+    end
+  end
+
+  class WorkflowTargetNotRecognizedException < Exception
+    def intialize(message="A workflow 'Targets' value was not recognized.", code=1)
+      super(message, code)
+    end
+  end
+
   class DeploymentCheckFailedException < Exception
-    def initialize(message="The deployment check was not successful.\nReview the installer output and make any necessary adjustments.", code=1)
+    def initialize(message="The deployment check was not successful. See above for specific issues.", code=1)
       super(message, code)
     end
   end

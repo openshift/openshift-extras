@@ -28,7 +28,7 @@ module Installer
     end
 
     def summarize
-      to_hash.each_pair.map{ |k,v| k.split('_').map{ |word| ['ssh'].include?(word) ? word.upcase : word.capitalize }.join(' ') + ': ' + v.to_s }.join(', ')
+      to_hash.each_pair.map{ |k,v| k.split('_').map{ |word| ['ssh'].include?(word) ? word.upcase : word.capitalize }.join(' ') + ': ' + v.to_s }.sort{ |a,b| a <=> b }.join(', ')
     end
 
     def ssh_target

@@ -65,6 +65,14 @@ module Installer
             q.default = workflow_cfg[id]
           end
         }
+      elsif type == 'version'
+        workflow_cfg[id] = HighLine.ask(text) { |q|
+          if workflow_cfg.has_key?(id) and workflow.versions[workflow_cfg[id]]
+            q.default = workflow_cfg[id]
+          end
+          q.validate = lambda { |p| workflow.versions[p.to_s] }
+          q.responses[:not_valid] = "Supported versions are #{workflow.versions.keys.sort.join(', ')}"
+        }.to_s
       end
     end
 
