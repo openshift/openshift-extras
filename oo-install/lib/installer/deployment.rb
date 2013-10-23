@@ -106,12 +106,12 @@ module Installer
         end
         list = self.send(lsym)
         group = self.class.role_map[role].chop
-        for i in 0..(list.length - 1)
-          current_key = "#{role.to_s}::#{i.to_s}"
+        list.sort{ |a,b| a.host <=> b.host }.each do |instance|
+          current_key = "#{role.to_s}::#{instance.host}"
           if not host_instance_key.nil? and host_instance_key == current_key
-            return list[i]
+            return instance
           end
-          all_host_instances << { :text => "#{group} - #{list[i].summarize}", :value => current_key }
+          all_host_instances << { :text => "#{group} - #{instance.summarize}", :value => current_key }
         end
       end
       if not host_instance_key.nil?

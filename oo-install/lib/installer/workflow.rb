@@ -13,7 +13,7 @@ module Installer
       end
 
       def list(context)
-        workflows_cache.select{ |workflow| workflow.type[context] }
+        workflows_cache.select{ |workflow| workflow.contexts[context] }
       end
 
       def find id
@@ -21,6 +21,10 @@ module Installer
           raise Installer::WorkflowNotFoundException.new "Could not find a workflow with id #{id}."
         end
         workflows_cache.select{ |workflow| workflow.id == id }[0]
+      end
+
+      def supported_versions_for_id id
+        workflows_cache.select{ |workflow| workflow.id == id }[0].versions
       end
 
       private
@@ -57,27 +61,41 @@ module Installer
               raise Installer::WorkflowMissingRequiredSettingException.new "Required field #{field} missing from workflow entry:\n#{workflow.inspect}\n\n"
             end
           end
+          # Check for the reserved variable 'version' in Questions
+          if workflow.has_key?('Questions') and workflow['Questions'].select{ |q| q['Variable'] == 'version' }.length > 0
+            raise Installer::WorkflowQuestionReservedVariableException.new "Workflow question variable 'version' is reserved for use by oo-install"
+          end
         end
         parse_config_file.map{ |record| new(record) }
       end
     end
 
-    attr_reader :name, :type, :summary, :description, :id, :questions, :executable, :path, :utilities
+    attr_reader :name, :contexts, :summary, :description, :id, :questions, :executable, :path, :utilities, :versions, :targets
 
     def initialize config
       @id = config['ID']
       @name = config['Name']
-      if config.has_key?('Type')
-        if config['Type'].kind_of?(String)
-          @type = { config['Type'].to_sym => true }
-        else
-          @type = {}
-          config['Type'].each do |type|
-            @type[type.to_sym] = true
+      if config.has_key?('Contexts')
+        @contexts = {}
+        config['Contexts'].each do |context|
+          if not supported_contexts.include?(context.to_sym)
+            raise Installer::WorkflowContextNotRecognizedException.new("Workflow context '#{context}' is not supported. Legal values are #{supported_contexts.map{ |c| c.to_s }.join(', ')}.")
           end
+          @contexts[context.to_sym] = true
         end
       else
-        @type = { :origin => true }
+        @contexts = { :origin => true }
+      end
+      if config.has_key?('Targets')
+        @targets = {}
+        config['Targets'].each do |target|
+          if not supported_targets.include?(target.to_sym)
+            raise Installer::WorkflowTargetNotRecognizedException.new("Target '#{target}' is not supported. Legal values are #{supported_targets.map{ |t| t.to_s }.join(', ')}.")
+          end
+          @targets[target.to_sym] = true
+        end
+      else
+        @targets = { :fedora => true, :rhel => true }
       end
       @summary = config['Summary']
       @description = config['Description']
@@ -95,6 +113,23 @@ module Installer
       workflow_dir = config.has_key?('WorkflowDir') ? config['WorkflowDir'] : id
       @path = gem_root_dir + "/workflows/" + workflow_dir
       @questions = config.has_key?('Questions') ? config['Questions'].map{ |q| Installer::Question.new(self, q) } : []
+      if config.has_key?('Versions')
+        @versions = {}
+        config['Versions'].each do |version|
+          @versions[version.to_s] = true
+        end
+
+        # Prepend the version question to the questions list.
+        @questions.unshift(
+          Installer::Question.new(
+            self,
+            { 'Text' => "What version do you want to install? (#{versions.keys.sort.join(', ')}) ",
+              'Variable' => 'version',
+              'AnswerType' => 'version',
+            }
+          )
+        )
+      end
       @executable = Installer::Executable.new(self, config['Executable'])
       @utilities = ['yum']
       if config.has_key?('RequiredUtilities')

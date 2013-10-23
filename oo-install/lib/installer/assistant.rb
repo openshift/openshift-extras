@@ -10,14 +10,15 @@ module Installer
   class Assistant
     include Installer::Helpers
 
-    attr_reader :context, :workflow_id
+    attr_reader :context, :workflow_id, :target_version
     attr_accessor :config, :deployment, :cli_subscription, :cfg_subscription, :workflow, :workflow_cfg
 
-    def initialize config, workflow_id=nil, assistant_context=:origin, advanced_mode=false, cli_subscription=nil
+    def initialize config, workflow_id=nil, assistant_context=:origin, advanced_mode=false, cli_subscription=nil, target_version=nil
       @config = config
       if not self.class.supported_contexts.include?(assistant_context)
         raise UnrecognizedContextException.new("Installer context #{assistant_context} not recognized.\nLegal values are #{self.class.supported_contexts.join(', ')}.")
       end
+      @target_version = target_version
       @context = assistant_context
       @advanced_mode = advanced_mode
       @deployment = config.get_deployment
@@ -139,7 +140,13 @@ module Installer
     def ui_workflow id
       @workflow = Installer::Workflow.find(id)
       @workflow_cfg = config.get_workflow_cfg(id)
+      # If the user supplied a desired target version, set it here.
+      if not target_version.nil?
+        @workflow_cfg['version'] = target_version
+      end
       ui_newpage
+
+      puts "W: #{workflow.versions.inspect}"
 
       # Deployment check
       if workflow.check_deployment?
@@ -235,7 +242,13 @@ module Installer
       puts "\n"
       workflow.questions.each do |question|
         if workflow_cfg.has_key?(question.id)
-          say "#{question.id}: #{workflow_cfg[question.id]}"
+          if question.type.start_with?('rolehost')
+            # Look up the host instance to show
+            role = question.type.split(':')[1]
+            say "Target system - " << deployment.find_host_instance_for_workflow(workflow_cfg[question.id], role).summarize
+          else
+            say "#{question.id.capitalize}: #{workflow_cfg[question.id]}"
+          end
         end
       end
     end
@@ -463,9 +476,9 @@ module Installer
             q.validate = lambda { |p| is_valid_username?(p) }
             q.responses[:not_valid] = "Enter a valid linux username"
           }.to_s
-          say "Validating #{host_instance.user}@#{host_instance.host}... "
+          say "Validating #{host_instance.user}@#{host_instance.ssh_host}... "
           if host_instance.has_valid_access?
-            puts "looks good."
+            say "looks good."
             break
           else
             say "\nCould not connect to #{host_instance.ssh_host} with user #{host_instance.user}."
@@ -589,11 +602,27 @@ module Installer
         # Attempt SSH connection for remote hosts
         if not test_host.host == 'localhost' and not test_host.ssh_target == 'localhost'
           begin
-            test_host.get_ssh_session
+            begin
+              test_host.get_ssh_session
+            rescue Errno::ECONNREFUSED => e
+              say "* SSH connection refused; check SSH settings"
+              deployment_good = false
+              # Don't bother to try the rest of the checks
+              next
+            end
+
             say "* SSH connection succeeded"
 
             # Check for all required utilities
             workflow.utilities.each do |util|
+              check_on_role = :all
+              if util.split(":").length == 2
+                check_on_role = util.split(":")[0].to_sym
+                util = util.split(":")[1]
+              end
+              if not check_on_role == :all and not check_on_role == test_host.role
+                next
+              end
               cmd_result = test_host.ssh_exec!("command -v #{util}")
               if not cmd_result[:exit_code] == 0
                 say "* Could not locate #{util}"
@@ -648,9 +677,12 @@ module Installer
             end
           end
         end
-        if not deployment_good
+        if deployment_good == false
           raise Installer::DeploymentCheckFailedException.new
         end
+      end
+      if deployment_good == false
+        raise Installer::DeploymentCheckFailedException.new
       end
     end
   end

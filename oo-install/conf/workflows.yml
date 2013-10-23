@@ -1,6 +1,7 @@
 ---
 Name: VM role setup
-Type: origin_vm
+Contexts:
+  - origin_vm
 Summary: Use this VM in a multi-instance deployment
 Description: You can configure multiple copies of the Origin VM to interact with each other as a distributed Origin system. This option guides you through the setup process.
 ID: vm_role
@@ -11,9 +12,14 @@ Questions:
 Executable: <workflow_path>/vm_originator <q:role>
 ---
 Name: OO Deployment
-Type:
+Contexts:
   - origin
   - origin_vm
+Versions:
+  - 2.0
+Targets:
+  - fedora
+  - rhel
 Summary: Install OpenShift Origin
 Description: To install a new OpenShift Origin deployment on one or more target systems, select this option
 ID: origin_deploy
@@ -22,13 +28,18 @@ RemoteDeployment: Y
 SubscriptionCheck: Y
 RequiredUtilities:
   - puppet
-  - dnssec-keygen
-  - htpasswd
+  - broker:dnssec-keygen
+  - broker:htpasswd
 ---
 Name: OO Node Instance Deployment
-Type:
+Contexts:
   - origin
   - origin_vm
+Versions:
+  - 2.0
+Targets:
+  - fedora
+  - rhel
 Summary: Add a Node to an OpenShift Origin deployment
 Description: If you have already deployed an OpenShift Enterprise system, use this option to add a new Node host to the existing system.
 ID: origin_add_node
@@ -42,10 +53,10 @@ RemoteDeployment: Y
 SubscriptionCheck: Y
 RequiredUtilities:
   - puppet
-  - htpasswd
 ---
 Name: Puppet templates
-Type: origin_vm
+Contexts:
+  - origin_vm
 Summary: Download Puppet templates
 Description: See info on obtaining OpenShift Origin Puppet templates
 ID: puppet_templates
@@ -54,7 +65,8 @@ NonDeployment: Y
 Executable: <workflow_path>/puppet_info
 ---
 Name: Login info
-Type: origin_vm
+Contexts:
+  - origin_vm
 Summary: See login information for this Origin VM
 Description: Shows basic login information for this VM instance.
 ID: login_info
@@ -63,7 +75,13 @@ NonDeployment: Y
 Executable: <workflow_path>/login_info
 ---
 Name: OE Deployment
-Type: ose
+Contexts:
+  - ose
+Versions:
+  - 1.2
+  - 2.0
+Targets:
+  - rhel
 Summary: Install OpenShift Enterprise
 Description: If you currently have no OpenShift Enterprise system, select this option to deploy OpenShift Enterprise to one or more target hosts.
 ID: enterprise_deploy
@@ -72,7 +90,13 @@ RemoteDeployment: y
 SubscriptionCheck: y
 ---
 Name: OE Node-Instance Deployment
-Type: ose
+Contexts:
+  - ose
+Versions:
+  - 1.2
+  - 2.0
+Targets:
+  - rhel
 Summary: Add a Node instance to an OpenShift Enterprise deployment
 Description: If you have already deployed an OpenShift Enterprise system, use this option to add a new Node host to the existing system.
 ID: enterprise_add_node

@@ -29,6 +29,10 @@ module Installer
       [:origin, :origin_vm, :ose]
     end
 
+    def supported_targets
+      [:fedora,:rhel]
+    end
+
     # SOURCE for #which:
     # http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
     def which(cmd)
