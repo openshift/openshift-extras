@@ -1964,9 +1964,9 @@ configure_hosts_dns()
   if [ -z $CONF_NAMED_ENTRIES ]; then
     # Add A records any other components that are being installed locally.
     broker && echo "${broker_hostname%.${zone}}			A	${broker_ip_addr}" >> $nsdb
-    node && echo "${node_hostname%.${zone}}			A	${node_ip_addr}${nl}" >> $nsdb
-    activemq && echo "${activemq_hostname%.${zone}}			A	${cur_ip_addr}${nl}" >> $nsdb
-    datastore && echo "${datastore_hostname%.${zone}}			A	${cur_ip_addr}${nl}" >> $nsdb
+    node && echo "${node_hostname%.${zone}}			A	${node_ip_addr}" >> $nsdb
+    activemq && echo "${activemq_hostname%.${zone}}			A	${cur_ip_addr}" >> $nsdb
+    datastore && echo "${datastore_hostname%.${zone}}			A	${cur_ip_addr}" >> $nsdb
   elif [[ "$CONF_NAMED_ENTRIES" =~ : ]]; then
     # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
     pairs=(${CONF_NAMED_ENTRIES//,/ })
