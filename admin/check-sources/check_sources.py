@@ -17,7 +17,6 @@ NAME = 'oo-admin-check-sources'
 VERSION = '0.1'
 USAGE = 'Apply a thin layer to scalp and sing'
 RHNPLUGINCONF = '/etc/yum/pluginconf.d/rhnplugin.conf'
-PackageCopy = namedtuple('PackageCopy', 'name, arch, epoch, version, release, repoid')
 
 class OpenShiftCheckSources:
     conf_backups = {}
@@ -215,7 +214,7 @@ class OpenShiftCheckSources:
 
     def all_repoids(self):
         """Returns a list of repoids for all currently enabled repositories"""
-        return self.repoids()
+        return self.repoids(self.all_repos())
 
     def enabled_repos(self):
         """Returns a list of all currently enabled repositories"""
