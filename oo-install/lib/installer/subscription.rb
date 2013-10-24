@@ -4,7 +4,8 @@ module Installer
   class Subscription
     include Installer::Helpers
 
-    @object_attrs = [:subscription_type, :rh_username, :rh_password, :repos_base, :os_repo, :jboss_repo_base, :jenkins_repo_base, :os_optional_repo, :sm_reg_pool, :sm_reg_pool_rhel, :rhn_reg_actkey]
+    @repo_attrs = [:repos_base, :jboss_repo_base, :jenkins_repo_base, :scl_repo, :os_repo, :os_optional_repo]
+    @object_attrs = [:subscription_type, :rh_username, :rh_password, :sm_reg_pool, :sm_reg_pool_rhel, :rhn_reg_actkey].concat(@repo_attrs)
 
     attr_reader :config, :type, :context
     attr_accessor *@object_attrs
@@ -12,6 +13,10 @@ module Installer
     class << self
       def object_attrs
         @object_attrs
+      end
+
+      def repo_attrs
+        @repo_attrs
       end
 
       def valid_attr? attr, value, check=:basic
@@ -27,7 +32,7 @@ module Installer
           end
         elsif not attr == :subscription_type and not value.nil?
           # We have to be pretty flexible here, so we basically just format-check the non-nil values.
-          if ([:repos_base, :os_repo, :jboss_repo_base, :jenkins_repo_base, :os_optional_repo].include?(attr) and not is_valid_url?(value)) or
+          if (@repo_attrs.include?(attr) and not is_valid_url?(value)) or
              ([:rh_username, :rh_password, :sm_reg_pool, :sm_reg_pool_rhel, :rhn_reg_actkey].include?(attr) and not is_valid_string?(value))
             return false if check == :basic
             raise Installer::SubscriptionSettingNotValidException.new("Subscription setting '#{attr.to_s}' has invalid value '#{value}'.")
@@ -79,23 +84,17 @@ module Installer
           :attr_order => [],
         }
       when :yum
-        attr_order = [:repos_base,:os_repo,:jenkins_repo_base,:jboss_repo_base,:os_optional_repo]
-
-        # This is a field expedient; openshift.sh doesn't support a distinct jenkins repo base.
-        if context == :ose
-          attr_order = attr_order.select{ |a| not a == :jenkins_repo_base }
-        end
-
         return {
           :desc => 'Get packages from yum and do not use a subscription',
           :attrs => {
             :repos_base => 'The base URL for the OpenShift repositories',
-            :os_repo => 'The URL of a yum repository for the operating system',
             :jboss_repo_base => 'The base URL for a JBoss repository',
             :jenkins_repo_base => 'The base URL for a Jenkins repository',
+            :scl_repo => 'The base URL for an SCL repository',
+            :os_repo => 'The URL of a yum repository for the operating system',
             :os_optional_repo => 'The URL for an "Optional" repository for the operating system',
           },
-          :attr_order => attr_order,
+          :attr_order => self.class.repo_attrs,
         }
       when :rhsm
         return {

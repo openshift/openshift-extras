@@ -30,7 +30,10 @@ module Installer
     end
 
     def supported_targets
-      [:fedora,:rhel]
+      { :fedora => 'Fedora',
+        :rhel => 'Red Hat Enterprise Linux',
+        :other => 'non-Fedora, non-RHEL',
+      }
     end
 
     # SOURCE for #which:
@@ -156,4 +159,3 @@ module Installer
     end
   end
 end
-

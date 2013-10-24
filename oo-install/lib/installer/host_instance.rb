@@ -18,6 +18,55 @@ module Installer
       end
     end
 
+    def has_valid_access?
+      result = ssh_exec!("command -v ip")
+      if result[:exit_code] == 0
+        @ip_exec_path = result[:stdout].chomp
+        return true
+      end
+      false
+    end
+
+    def root_user?
+      user == 'root'
+    end
+
+    def localhost?
+      host == 'localhost'
+    end
+
+    def is_valid?(check=:basic)
+      if not is_valid_hostname_or_ip_addr?(host)
+        return false if check == :basic
+        raise Installer::HostInstanceHostNameException.new("Host instance host name / IP address '#{host}' in the #{role.to_s} list is invalid.")
+      end
+      if not is_valid_hostname_or_ip_addr?(ssh_host)
+        return false if check == :basic
+        raise Installer::HostInstanceHostNameException.new("Host instance host name / IP address '#{host}' in the #{role.to_s} list is invalid.")
+      end
+      if not is_valid_username?(user)
+        return false if check == :basic
+        raise Installer::HostInstanceUserNameException.new("Host instance '#{host}' in the #{group.to_s} list has an invalid user name '#{user}'.")
+      end
+      true
+    end
+
+    def host_type
+      @host_type ||=
+        begin
+          type_output = exec_on_host!('cat /etc/redhat-release')
+          type_result = :other
+          if type_output[:exit_code] == 0
+            if type_output[:stdout].match(/^Fedora/)
+              type_result = :fedora
+            elsif type_output[:stdout].match(/^Red Hat Enterprise Linux/)
+              type_result = :rhel
+            end
+          end
+          type_result
+        end
+    end
+
     def to_hash
       output = {}
       self.class.attrs.each do |attr|
@@ -44,6 +93,14 @@ module Installer
 
     def close_ssh_session
       @ssh_session.close
+    end
+
+    def exec_on_host!(command)
+      if localhost?
+        local_exec!(command)
+      else
+        ssh_exec!(command)
+      end
     end
 
     # Origin version located at
@@ -82,13 +139,10 @@ module Installer
       { :stdout => stdout_data, :stderr => stderr_data, :exit_code => exit_code, :exit_signal => exit_signal }
     end
 
-    def has_valid_access?
-      result = ssh_exec!("command -v ip")
-      if result[:exit_code] == 0
-        @ip_exec_path = result[:stdout].chomp
-        return true
-      end
-      false
+    def local_exec!(command)
+      stdout_data = %x[#{command}]
+      exit_code = $?.exitstatus
+      { :stdout => stdout_data, :exit_code => exit_code }
     end
 
     def get_ip_addr_choices
@@ -111,26 +165,6 @@ module Installer
       end
       # Make a list of valid, non-loopback, non netmask addresses.
       output.split(/[\n\s\:\/]/).select{ |v| v.match(VALID_IP_ADDR_RE) and not v == "127.0.0.1" and not v.split('.')[0].to_i == 255 and not v.split('.')[-1].to_i == 255 }
-    end
-
-    def root_user?
-      @root_user ||= user == 'root'
-    end
-
-    def is_valid?(check=:basic)
-      if not is_valid_hostname_or_ip_addr?(host)
-        return false if check == :basic
-        raise Installer::HostInstanceHostNameException.new("Host instance host name / IP address '#{host}' in the #{role.to_s} list is invalid.")
-      end
-      if not is_valid_hostname_or_ip_addr?(ssh_host)
-        return false if check == :basic
-        raise Installer::HostInstanceHostNameException.new("Host instance host name / IP address '#{host}' in the #{role.to_s} list is invalid.")
-      end
-      if not is_valid_username?(user)
-        return false if check == :basic
-        raise Installer::HostInstanceUserNameException.new("Host instance '#{host}' in the #{group.to_s} list has an invalid user name '#{user}'.")
-      end
-      true
     end
 
     private

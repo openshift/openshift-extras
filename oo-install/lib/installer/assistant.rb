@@ -310,6 +310,9 @@ module Installer
       }.to_s
       type_settings = valid_types[tgt_subscription.subscription_type.to_sym]
       type_settings[:attr_order].each do |attr|
+        if tgt_subscription.subscription_type == 'yum' and not workflow.repositories.empty? and not workflow.repositories.include?(attr)
+          next
+        end
         desc = type_settings[:attrs][attr]
         question = attr == :rh_password ? '<%= @key %>' : "#{desc}? "
         if save_subscription? or not [:rh_username, :rh_password].include?(attr)
@@ -362,6 +365,10 @@ module Installer
         t.add_row ['type', type]
         if show_settings
           settings[:attr_order].each do |attr|
+            # If this workflow specifies supported yum repositories, honor that list
+            if type == 'yum' and not workflow.repositories.empty? and not workflow.repositories.include?(attr)
+              next
+            end
             key = attr.to_s
             value = values[key]
             if value.nil?
@@ -598,57 +605,78 @@ module Installer
       deployment_good = true
       deployment.by_ssh_host.each_pair do |ssh_host,instance_list|
         test_host = instance_list[0]
+        ssh_host_roles = instance_list.map{ |h| h.role }
         say "\nChecking #{test_host.host}:"
         # Attempt SSH connection for remote hosts
-        if not test_host.host == 'localhost' and not test_host.ssh_target == 'localhost'
+        if not test_host.localhost?
           begin
-            begin
-              test_host.get_ssh_session
-            rescue Errno::ECONNREFUSED => e
-              say "* SSH connection refused; check SSH settings"
-              deployment_good = false
-              # Don't bother to try the rest of the checks
-              next
+            test_host.get_ssh_session
+          rescue Errno::ECONNREFUSED => e
+            say "* SSH connection refused; check SSH settings"
+            deployment_good = false
+            # Don't bother to try the rest of the checks
+            next
+          end
+          say "* SSH connection succeeded"
+        end
+
+        # Check the target host deployment type
+        if workflow.targets[test_host.host_type].nil?
+          if workflow.targets.keys.length == 1
+            say "* Target host does not appear to be a #{supported_targets[workflow.targets.keys[0]]} system"
+          else
+            say "* Target host does not appear to be of these types: #{workflow.targets.map{ |t| supported_targets[t] }.join(', ')}"
+          end
+          deployment_good = false
+          next
+        else
+          say "* Target host is running #{supported_targets[test_host.host_type]}"
+        end
+
+        # Check for all required utilities
+        workflow.utilities.each do |util|
+          check_on_role = :all
+          if util.split(":").length == 2
+            check_on_role = util.split(":")[0].to_sym
+            util = util.split(":")[1]
+          end
+          if not check_on_role == :all and not ssh_host_roles.include?(check_on_role)
+            next
+          end
+          cmd_result = test_host.exec_on_host!("command -v #{util}")
+          if not cmd_result[:exit_code] == 0
+            say "* Could not locate #{util}... "
+            find_result = test_host.exec_on_host!("yum -q provides */#{util}")
+            if not find_result[:exit_code] == 0
+              say "no suggestions available"
+            else
+              ui_suggest_rpms(find_result[:stdout])
             end
-
-            say "* SSH connection succeeded"
-
-            # Check for all required utilities
-            workflow.utilities.each do |util|
-              check_on_role = :all
-              if util.split(":").length == 2
-                check_on_role = util.split(":")[0].to_sym
-                util = util.split(":")[1]
-              end
-              if not check_on_role == :all and not check_on_role == test_host.role
-                next
-              end
-              cmd_result = test_host.ssh_exec!("command -v #{util}")
-              if not cmd_result[:exit_code] == 0
-                say "* Could not locate #{util}"
+            deployment_good = false
+          else
+            if not test_host.root_user?
+              say "* Located #{util}... "
+              sudo_result = test_host.exec_on_host!("command -v sudo")
+              if not sudo_result[:exit_code] == 0
+                say "could not locate sudo"
                 deployment_good = false
               else
-                if not test_host.root_user?
-                  say "* Located #{util}... "
-                  sudo_result = test_host.ssh_exec!("command -v sudo")
-                  if not sudo_result[:exit_code] == 0
-                    say "could not locate sudo"
-                    deployment_good = false
-                  else
-                    sudo_cmd_result = test_host.ssh_exec!("#{sudo_result[:stdout]} #{util} --version")
-                    if not sudo_cmd_result[:exit_code] == 0
-                      say "could not invoke '#{util} --version' with sudo"
-                      deployment_good = false
-                    else
-                      say "invoked '#{util} --version' with sudo"
-                    end
-                  end
+                sudo_cmd_result = test_host.exec_on_host!("#{sudo_result[:stdout]} #{util} --version")
+                if not sudo_cmd_result[:exit_code] == 0
+                  say "could not invoke '#{util} --version' with sudo"
+                  deployment_good = false
                 else
-                  say "* Located #{util}"
+                  say "invoked '#{util} --version' with sudo"
                 end
               end
+            else
+              say "* Located #{util}"
             end
+          end
+        end
 
+        if not test_host.localhost?
+          begin
             # Close the ssh session
             test_host.close_ssh_session
           rescue Errno::ENETUNREACH
@@ -658,24 +686,6 @@ module Installer
             say "* #{e.message}"
             deployment_good = false
           end
-        else
-          # Check for all required utilities
-          workflow.utilities.each do |util|
-            if which(util).nil?
-              say "* Could not locate #{util}"
-              deployment_good = false
-            else
-              say "* Located #{util}"
-              if not test_host.root_user?
-                if not system("sudo #{util} --version")
-                  say "* Could not invoke '#{util} --version' with sudo"
-                  deployment_good = false
-                else
-                  say "* Invoked '#{util} --version' with sudo"
-                end
-              end
-            end
-          end
         end
         if deployment_good == false
           raise Installer::DeploymentCheckFailedException.new
@@ -683,6 +693,20 @@ module Installer
       end
       if deployment_good == false
         raise Installer::DeploymentCheckFailedException.new
+      end
+    end
+
+    def ui_suggest_rpms(yum_provides_text)
+      # This titanic operation teases out package names from the `yum -q provides` output
+      # The sort at the end puts packages in descending order, placing packages with a ':' to the end of the list
+      yum_packages = yum_provides_text.split("\n").select{ |l| l.match(/^\w/) }.map{ |l| l.split(' ')[0] }.select{ |l| l.match(/\./) }.uniq.sort{ |a,b| (b <=> a if ((a.match(/:/) and b.match(/:/)) or (not a.match(/:/) and not b.match(/:/)))) || ((a.match(/:/) ? 1 : -1) <=> (b.match(/:/) ? 1 : -1)) }
+      if yum_packages.length > 0
+        say "try to `yum install` one of:"
+        yum_packages.each do |pkg|
+        say "  - #{pkg}"
+      end
+      else
+        say "you will need to add a repository that provides this."
       end
     end
   end
