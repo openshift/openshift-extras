@@ -49,8 +49,8 @@ end
 
 # If this is the add-a-node scenario, the node to be installed will
 # be passed via the command line
-@target_node_index = ARGV[0].nil? ? nil : ARGV[0].split('::')[1].to_i
-@target_node_host = nil
+@target_node_hostname = ARGV[0].nil? ? nil : ARGV[0].split('::')[1].to_i
+@target_node_ssh_host = nil
 
 # Default and baked-in config values for the Puppet deployment
 @puppet_map = {
@@ -105,10 +105,9 @@ if config.has_key?('Deployment')
       exit 1
     end
 
-    for idx in 0..(@deployment_cfg[@role_map[role]['deploy_list']].length - 1)
-      host_instance = @deployment_cfg[@role_map[role]['deploy_list']][idx]
-      if role == 'node' and @target_node_index == idx
-        @target_node_host = host_instance['ssh_host']
+    @deployment_cfg[@role_map[role]['deploy_list']].each do |host_instance|
+      if role == 'node' and @target_node_hostname == host_instance['host']
+        @target_node_ssh_host = host_instance['ssh_host']
       end
       # The host map helps us sanity check and call Puppet jobs
       if not @hosts.has_key?(host_instance['ssh_host'])
@@ -129,7 +128,7 @@ if config.has_key?('Deployment')
             # Try to look up the IP address of the Broker host to set the named IP address
             ip_path = nil
             if not host_instance['ssh_host'] == 'localhost'
-              ip_path = %x[ "ssh #{user}@#{host} \"command -v ip\"" ].chomp
+              ip_path = %x[ ssh #{user}@#{host} 'command -v ip' ].chomp
             else
               ip_path = which("ip")
             end
@@ -205,8 +204,8 @@ if @hosts.empty?
   exit 1
 end
 
-if not @target_node_index.nil? and @target_node_host.nil?
-  puts "The list of nodes in the config file at #{@config_file} is shorter than the index of the specified node host to be installed. Exiting."
+if not @target_node_hostname.nil? and @target_node_ssh_host.nil?
+  puts "The list of nodes in the config file at #{@config_file} does not contain an entry for #{@target_node_hostname}. Exiting."
   exit 1
 end
 
@@ -218,7 +217,7 @@ end
     puts "Multiple instances of role type '#{@role_map[duplicate]['role']}' are specified for installation on the same target host (#{ssh_host}).\nThis is not a valid configuration. Exiting."
     exit 1
   end
-  if not @target_node_host.nil? and @target_node_host == ssh_host and (roles.length > 1 or not roles[0] == 'node')
+  if not @target_node_hostname.nil? and @target_node_ssh_host == ssh_host and (roles.length > 1 or not roles[0] == 'node')
     puts "The specified node to be added also contains other OpenShift components.\nNodes can only be added as standalone components on their own systems. Exiting."
     exit 1
   end
@@ -227,12 +226,12 @@ end
 # Set the installation order
 host_order = []
 @utility_install_order.each do |role|
-  if not role == 'node' and not @target_node_host.nil?
+  if not role == 'node' and not @target_node_ssh_host.nil?
     next
   end
   @hosts.select{ |key,hash| hash['roles'].include?(role) }.each do |matched_host|
     ssh_host = matched_host[0]
-    if not @target_node_host.nil? and not @target_node_host == ssh_host
+    if not @target_node_ssh_host.nil? and not @target_node_ssh_host == ssh_host
       next
     end
     if not host_order.include?(ssh_host)
@@ -242,7 +241,7 @@ host_order = []
 end
 
 # Summarize the plan
-if @target_node_host.nil?
+if @target_node_ssh_host.nil?
   puts "\nPreparing to install OpenShift Origin on the following hosts:\n"
 else
   puts "\nPreparing to add this node to an OpenShift Origin system:\n"

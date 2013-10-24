@@ -2,6 +2,8 @@
 Name: VM role setup
 Contexts:
   - origin_vm
+Targets:
+  - fedora
 Summary: Use this VM in a multi-instance deployment
 Description: You can configure multiple copies of the Origin VM to interact with each other as a distributed Origin system. This option guides you through the setup process.
 ID: vm_role
@@ -15,17 +17,24 @@ Name: OO Deployment
 Contexts:
   - origin
   - origin_vm
-Versions:
-  - 2.0
+# Versions:
+#  - 2.0
 Targets:
   - fedora
   - rhel
+  - other
 Summary: Install OpenShift Origin
 Description: To install a new OpenShift Origin deployment on one or more target systems, select this option
 ID: origin_deploy
 Executable: <workflow_path>/originator.rb
 RemoteDeployment: Y
 SubscriptionCheck: Y
+Repositories:
+  - repos_base
+  - jboss_repo_base
+  - jenkins_repo_base
+  - os_repo
+  - os_optional_repo
 RequiredUtilities:
   - puppet
   - broker:dnssec-keygen
@@ -35,11 +44,12 @@ Name: OO Node Instance Deployment
 Contexts:
   - origin
   - origin_vm
-Versions:
-  - 2.0
+# Versions:
+#  - 2.0
 Targets:
   - fedora
   - rhel
+  - other
 Summary: Add a Node to an OpenShift Origin deployment
 Description: If you have already deployed an OpenShift Enterprise system, use this option to add a new Node host to the existing system.
 ID: origin_add_node
@@ -51,6 +61,12 @@ Questions:
 Executable: <workflow_path>/originator.rb <q:rolehost>
 RemoteDeployment: Y
 SubscriptionCheck: Y
+Repositories:
+  - repos_base
+  - jboss_repo_base
+  - jenkins_repo_base
+  - os_repo
+  - os_optional_repo
 RequiredUtilities:
   - puppet
 ---
@@ -74,37 +90,88 @@ SkipDeploymentCheck: Y
 NonDeployment: Y
 Executable: <workflow_path>/login_info
 ---
-Name: OE Deployment
+Name: OE 1.2 Deployment
 Contexts:
   - ose
-Versions:
-  - 1.2
-  - 2.0
 Targets:
   - rhel
-Summary: Install OpenShift Enterprise
-Description: If you currently have no OpenShift Enterprise system, select this option to deploy OpenShift Enterprise to one or more target hosts.
-ID: enterprise_deploy
-Executable: <workflow_path>/launcher.rb
+# Versions:
+#  - 1.2
+Summary: Install OpenShift Enterprise 1.2
+Description: If you currently have no OpenShift Enterprise 1.2 system, select this option to deploy OpenShift Enterprise to one or more target hosts.
+ID: enterprise12_deploy
+WorkflowDir: enterprise_deploy
+Executable: <workflow_path>/launcher.rb 1.2
 RemoteDeployment: y
 SubscriptionCheck: y
+Repositories:
+  - repos_base
+  - jboss_repo_base
+  - os_repo
+  - os_optional_repo
 ---
-Name: OE Node-Instance Deployment
+Name: OE 1.2 Node-Instance Deployment
 Contexts:
   - ose
-Versions:
-  - 1.2
-  - 2.0
 Targets:
   - rhel
-Summary: Add a Node instance to an OpenShift Enterprise deployment
-Description: If you have already deployed an OpenShift Enterprise system, use this option to add a new Node host to the existing system.
-ID: enterprise_add_node
+# Versions:
+#  - 1.2
+Summary: Add a Node to OpenShift Enterprise 1.2
+Description: If you have already deployed an OpenShift Enterprise 1.2 system, use this option to add a new Node host to the existing system.
+ID: enterprise12_add_node
 WorkflowDir: enterprise_deploy
 Questions:
   - Text: From your list of Nodes, which instance would you like to deploy?
     Variable: rolehost
     AnswerType: rolehost:node
-Executable: <workflow_path>/launcher.rb <q:rolehost>
+Executable: <workflow_path>/launcher.rb 1.2 <q:rolehost>
 RemoteDeployment: y
 SubscriptionCheck: y
+Repositories:
+  - repos_base
+  - jboss_repo_base
+  - os_repo
+  - os_optional_repo
+# ---
+# Name: OE 2.0 Deployment
+# Contexts:
+#   - ose
+# Targets:
+#   - rhel
+# Summary: Install OpenShift Enterprise 2.0
+# Description: If you currently have no OpenShift Enterprise 2.0 system, select this option to deploy OpenShift Enterprise to one or more target hosts.
+# ID: enterprise20_deploy
+# WorkflowDir: enterprise_deploy
+# Executable: <workflow_path>/launcher.rb 2.0
+# RemoteDeployment: y
+# SubscriptionCheck: y
+# Repositories:
+#   - repos_base
+#   - jboss_repo_base
+#   - scl_repo
+#   - os_repo
+#   - os_optional_repo
+# ---
+# Name: OE 2.0 Node-Instance Deployment
+# Contexts:
+#   - ose
+# Targets:
+#   - rhel
+# Summary: Add a Node to OpenShift Enterprise 2.0
+# Description: If you have already deployed an OpenShift Enterprise 2.0 system, use this option to add a new Node host to the existing system.
+# ID: enterprise20_add_node
+# WorkflowDir: enterprise_deploy
+# Questions:
+#   - Text: From your list of Nodes, which instance would you like to deploy?
+#     Variable: rolehost
+#     AnswerType: rolehost:node
+# Executable: <workflow_path>/launcher.rb 2.0 <q:rolehost>
+# RemoteDeployment: y
+# SubscriptionCheck: y
+# Repositories:
+#   - repos_base
+#   - jboss_repo_base
+#   - scl_repo
+#   - os_repo
+#   - os_optional_repo

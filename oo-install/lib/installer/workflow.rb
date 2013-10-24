@@ -2,6 +2,7 @@ require 'installer/exceptions'
 require 'installer/helpers'
 require 'installer/executable'
 require 'installer/question'
+require 'installer/subscription'
 
 module Installer
   class Workflow
@@ -70,7 +71,7 @@ module Installer
       end
     end
 
-    attr_reader :name, :contexts, :summary, :description, :id, :questions, :executable, :path, :utilities, :versions, :targets
+    attr_reader :name, :contexts, :summary, :description, :id, :questions, :executable, :path, :utilities, :versions, :targets, :repositories
 
     def initialize config
       @id = config['ID']
@@ -89,13 +90,13 @@ module Installer
       if config.has_key?('Targets')
         @targets = {}
         config['Targets'].each do |target|
-          if not supported_targets.include?(target.to_sym)
+          if not supported_targets.keys.include?(target.to_sym)
             raise Installer::WorkflowTargetNotRecognizedException.new("Target '#{target}' is not supported. Legal values are #{supported_targets.map{ |t| t.to_s }.join(', ')}.")
           end
-          @targets[target.to_sym] = true
+          @targets[target.to_sym] = supported_targets[target.to_sym]
         end
       else
-        @targets = { :fedora => true, :rhel => true }
+        @targets = { :fedora => supported_targets[:fedora], :rhel => supported_targets[:rhel] }
       end
       @summary = config['Summary']
       @description = config['Description']
@@ -113,6 +114,8 @@ module Installer
       workflow_dir = config.has_key?('WorkflowDir') ? config['WorkflowDir'] : id
       @path = gem_root_dir + "/workflows/" + workflow_dir
       @questions = config.has_key?('Questions') ? config['Questions'].map{ |q| Installer::Question.new(self, q) } : []
+
+      # Supported version info
       if config.has_key?('Versions')
         @versions = {}
         config['Versions'].each do |version|
@@ -130,6 +133,19 @@ module Installer
           )
         )
       end
+
+      # Repository info
+      @repositories = []
+      if config.has_key?('Repositories')
+        supported_repos = Installer::Subscription.repo_attrs
+        config['Repositories'].each do |repo|
+          if not supported_repos.include?(repo.to_sym)
+            raise Installer::WorkflowRepositoryNotRecognizedException.new("Repository '#{repo}' is not supported. Legal values are #{supported_repos.map{ |t| t.to_s }.join(', ')}.")
+          end
+          @repositories << repo.to_sym
+        end
+      end
+
       @executable = Installer::Executable.new(self, config['Executable'])
       @utilities = ['yum']
       if config.has_key?('RequiredUtilities')
