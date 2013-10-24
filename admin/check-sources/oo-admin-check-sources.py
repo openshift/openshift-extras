@@ -95,14 +95,18 @@ class OpenShiftAdminCheckSources:
                     if not product or repo.product == product]
         return repo_db.find_repos(**kwargs)
         
-    def _sub_ver(self, subscription, version):
+    def _sub_ver(self, subscription, version = None):
         if subscription == 'rhsm':
             self.subscription = RHSM
         if subscription == 'rhn':
             self.subscription = RHN
-        if not self.opts.oo_version:
+        if self.opts.oo_version:
+            return True
+        if version:
             self._print_report('start', 'Detected installed OpenShift Enterprise version %s'%version)
             self.opts.oo_version = version
+            return True
+        return False
 
     def guess_ose_version(self):
         matches = repo_db.find_repos_by_repoid(self.oscs.all_repoids())
@@ -146,6 +150,11 @@ class OpenShiftAdminCheckSources:
         if rhn_1_2_avail:
             self._sub_ver('rhn', '1.2')
             return True
+        for fxn_rcheck, sub in [(self.oscs.repo_is_rhsm, 'rhsm'), (self.oscs.repo_is_rhn, 'rhn')]:
+            if self.subscription == UNKNOWN:
+                for repoid in self.oscs.all_repoids():
+                    if fxn_rcheck(repoid) and self._sub_ver(sub):
+                        return True
         return False
 
     def help_quit(self, msg=None):
@@ -376,7 +385,10 @@ class OpenShiftAdminCheckSources:
             return False
         self.massage_roles()
         if not self.guess_ose_version():
-            self._print_report('start', 'ERROR: Could not determine subscription type or product version. Register your system to RHSM or RHN and re-run this script with the --oo_version argument')
+            if self.subscription == UNKNOWN:
+                self._print_report('start', 'ERROR: Could not determine subscription type. Register your system to RHSM or RHN.')
+            if not self.opts.oo_version:
+                self._print_report('start', 'ERROR: Could not determine product version. Please re-run this script with the --oo_version argument.')
             return False
         yum_plugin_priorities = self.verify_yum_plugin_priorities()
         self.check_disabled_repos()
