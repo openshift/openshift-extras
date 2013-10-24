@@ -4,6 +4,7 @@ import sys
 import repo_db
 from check_sources import OpenShiftCheckSources
 from itertools import chain
+import logging
 
 OSE_PRIORITY = 10
 RHEL_PRIORITY = 20
@@ -30,33 +31,25 @@ class OpenShiftAdminCheckSources:
     pri_header = False
     pri_resolve_header = False
 
-    rhn_ose_repos = {'node': 'rhel-x86_64-server-6-ose-1.2-node',
-                     'broker': 'rhel-x86_64-server-6-ose-1.2-infrastructure',
-                     'client': 'rhel-x86_64-server-6-ose-1.2-rhc',
-                     'node-eap': 'rhel-x86_64-server-6-ose-1.2-jbosseap'}
-    rhsm_ose_repos = {'node':  'rhel-server-ose-1.2-node-6-rpms',
-                      'broker': 'rhel-server-ose-1.2-infra-6-rpms',
-                      'client': 'rhel-server-ose-1.2-rhc-6-rpms',
-                      'node-eap':  'rhel-server-ose-1.2-jbosseap-6-rpms'}
-
-    rhsm_rhel6_repo = 'rhel-6-server-rpms'
-    rhn_rhel6_repo = 'rhel-x86_64-server-6'
-
-    rhn_jboss_repos = {'node': 'jb-ews-2-x86_64-server-6-rpm',
-                       'node-eap': 'jbappplatform-6-x86_64-server-6-rpm'}
-
-    rhsm_jboss_repos = {'node': 'jb-ews-2-for-rhel-6-server-rpms',
-                        'node-eap': 'jb-eap-6-for-rhel-6-server-rpms'}
-
-    report_sections = ['start', 'missing', 'priority', 'end']
-
     def __init__(self, opts, opt_parser):
         self.opts = opts
         self.opt_parser = opt_parser
+        self._setup_logger()
         self.oscs = OpenShiftCheckSources()
         self.report = {}
         self.subscription = UNKNOWN
 
+    def _setup_logger(self):
+        self.opts.loglevel = logging.INFO
+        self.logger = logging.getLogger() # TODO: log to file if specified, with requested severity
+        self.logger.setLevel(self.opts.loglevel)
+        ch = logging.StreamHandler(sys.stdout)
+        ch.setLevel(self.opts.loglevel)
+        ch.setFormatter(logging.Formatter("%(message)s"))
+        self.logger.addHandler(ch)
+        # if self.opts.logfile:
+        #     self.logger.addHandler(logfilehandler)
+        
     def required_repos(self):
         return flatten([repo_db.find_repos(subscription = self.subscription,
                                            role = rr,
@@ -103,7 +96,7 @@ class OpenShiftAdminCheckSources:
         if self.opts.oo_version:
             return True
         if version:
-            self._print_report('start', 'Detected installed OpenShift Enterprise version %s'%version)
+            self.logger.info('Detected installed OpenShift Enterprise version %s'%version)
             self.opts.oo_version = version
             return True
         return False
@@ -157,40 +150,15 @@ class OpenShiftAdminCheckSources:
                         return True
         return False
 
-    def help_quit(self, msg=None):
-        if msg:
-            print msg
-        self.opt_parser.print_help()
-        sys.exit(1)
-
-    def do_report(self):
-        """Output long-form report to log file
-
-        TODO: Add logfile
-        """
-        for section in self.report_sections:
-            if section in self.report:
-                sys.stdout.write('\n'.join(self.report[section]))
-            print ""
-
-    def _print_report(self, section, msg):
-        # TODO: Add "level" field, allow supression of messages by
-        # level (DEBUG, INFO, WARNING, ERROR, etc.)
-        if not section in self.report:
-            self.report[section] = []
-        self.report[section].append(msg)
-        print msg
-
-
     def verify_yum_plugin_priorities(self):
         """Make sure the required yum plugin package yum-plugin-priorities is installed
 
         TODO: Install automatically if --fix is specified?
         """
-        self._print_report('start', 'Checking if yum-plugin-priorities is installed')
+        self.logger.info('Checking if yum-plugin-priorities is installed')
         if not self.oscs.verify_package('yum-plugin-priorities'):
-            self._print_report('start', 'Required package yum-plugin-priorities is not installed. Install the package with the following command:')
-            self._print_report('start', '# yum install yum-plugin-priorities')
+            self.logger.error('Required package yum-plugin-priorities is not installed. Install the package with the following command:')
+            self.logger.error('# yum install yum-plugin-priorities')
             return False
         return True
 
@@ -202,30 +170,30 @@ class OpenShiftAdminCheckSources:
     def _set_pri(self, repoid, priority):
         if not self.pri_header:
             self.pri_header = True
-            self._print_report('priority', 'Resolving repository/channel/subscription priority conflicts')
+            self.logger.info('Resolving repository/channel/subscription priority conflicts')
         if self.opts.fix:
-            self._print_report('priority', "Setting priority for repository %s to %d"%(repoid, priority))
+            self.logger.warning("Setting priority for repository %s to %d"%(repoid, priority))
             self.oscs.set_repo_priority(repoid, priority)
         else:
             if not self.pri_resolve_header:
                 self.pri_resolve_header = True
                 if self.oscs.repo_is_rhn(repoid):
-                    self._print_report('priority', "To resolve conflicting repositories, update /yum/pluginconf.d/rhnplugin.conf with the following changes:")
+                    self.logger.error("To resolve conflicting repositories, update /yum/pluginconf.d/rhnplugin.conf with the following changes:")
                 else:
-                    self._print_report('priority', "To resolve conflicting repositories, update repo priority by running:")
+                    self.logger.error("To resolve conflicting repositories, update repo priority by running:")
             # TODO: in the next version this should read "# subscription-manager override --repo=%s --add=priority:%d"
             if self.oscs.repo_is_rhn(repoid):
-                self._print_report('priority', "Set priority=%d in the [%s] section"%(priority, repoid))
+                self.logger.error("Set priority=%d in the [%s] section"%(priority, repoid))
             else:
-                self._print_report('priority', "# yum-config-manager --setopt=%s.priority=%d %s --save"%(repoid, priority, repoid))
+                self.logger.error("# yum-config-manager --setopt=%s.priority=%d %s --save"%(repoid, priority, repoid))
 
     def _check_valid_pri(self, repos):
         bad_repos = [(xx, self.oscs.repo_priority(xx)) for xx in repos if self.oscs.repo_priority(xx) >= 99]
         if bad_repos:
-            self._print_report('priority', 'The calculated priorities for the following repoids are too large (>= 99)')
+            self.logger.error('The calculated priorities for the following repoids are too large (>= 99)')
             for repoid, pri in bad_repos:
-                self._print_report('priority', '    %s'%repoid)
-            self._print_report('priority', 'Please re-run this script with the --fix argument to set an appropriate priority, or update the system priorities by hand')
+                self.logger.error('    %s'%repoid)
+            self.logger.error('Please re-run this script with the --fix argument to set an appropriate priority, or update the system priorities by hand')
             return False
         return True
 
@@ -250,7 +218,7 @@ class OpenShiftAdminCheckSources:
                 self._set_pri(repoid, JBOSS_PRIORITY)
 
     def verify_priorities(self):
-        self._print_report('priority', 'Checking channel/repository priorities')
+        self.logger.info('Checking channel/repository priorities')
         ose = self.blessed_repoids(enabled=True, required=True, product='ose')
         jboss = self.blessed_repoids(enabled=True, required=True, product='jboss')
         rhel = self.blessed_repoids(product='rhel')[0]
@@ -265,34 +233,35 @@ class OpenShiftAdminCheckSources:
             if self.opts.fix:
                 for ii in disabled_repos:
                     if self.oscs.enable_repo(ii):
-                        self._print_report('missing', 'Enabled repository %s'%ii)
-                self.calculate_enabled_repos()
+                        self.logger.warning('Enabled repository %s'%ii)
             else:
-                self._print_report('missing', "The required OpenShift Enterprise repositories are disabled: %s"%disabled_repos)
+                self.logger.error("The required OpenShift Enterprise repositories are disabled: %s"%disabled_repos)
                 if self.subscription == RHN:
-                    self._print_report('missing', 'Make the following modifications to /etc/yum/pluginconf.d/rhnplugin.conf')
+                    self.logger.error('Make the following modifications to /etc/yum/pluginconf.d/rhnplugin.conf')
                 else:
-                    self._print_report('missing', "Enable these repositories with the following commands:")
+                    self.logger.error("Enable these repositories with the following commands:")
                 for repoid in disabled_repos:
                     if self.subscription == RHN:
-                        self._print_report('missing', "    Set enabled=1 in the [%s] section"%repoid)
+                        self.logger.error("    Set enabled=1 in the [%s] section"%repoid)
+                    elif self.subscription == RHSM:
+                        self.logger.error("# subscription-manager repos --enable=%s"%repoid)
                     else:
-                        self._print_report('missing', "# yum-config-manager --enablerepo=%s %s --save"%(repoid, repoid))
+                        self.logger.error("# yum-config-manager --enable %s"%repoid)
         return True
 
     def check_missing_repos(self):
         missing_repos = [repo for repo in self.blessed_repoids(required = True) if repo not in self.oscs.all_repoids()]
         if missing_repos:
-            self._print_report('missing', "The required OpenShift Enterprise repositories are missing: %s"%missing_repos)
+            self.logger.error("The required OpenShift Enterprise repositories are missing: %s"%missing_repos)
             if self.subscription == RHSM:
-                self._print_report('missing', 'Follow the instructions at the following URL to add the necessary subscriptions for the selected roles: https://access.redhat.com/site/documentation//en-US/OpenShift_Enterprise/1/html/Deployment_Guide/chap-Installing_and_Configuring_Node_Hosts.html#Using_Red_Hat_Subscription_Management1')
-                self._print_report('missing', 'After adding the subscriptions, verify that the following repoids are available and enabled:')
+                self.logger.error('Follow the instructions at the following URL to add the necessary subscriptions for the selected roles: https://access.redhat.com/site/documentation//en-US/OpenShift_Enterprise/1/html/Deployment_Guide/chap-Installing_and_Configuring_Node_Hosts.html#Using_Red_Hat_Subscription_Management1')
+                self.logger.error('After adding the subscriptions, verify that the following repoids are available and enabled:')
                 for repoid in missing_repos:
-                    self._print_report('missing', "    %s"%repoid)
+                    self.logger.error("    %s"%repoid)
             elif self.subscription == RHN:
-                self._print_report('missing', "Add the missing repositories with the following commands:")
+                self.logger.error("Add the missing repositories with the following commands:")
                 for repoid in missing_repos:
-                    self._print_report('missing', "# rhn-channel -a -c %s"%repoid)
+                    self.logger.error("# rhn-channel -a -c %s"%repoid)
         return True             # Needed?
 
     def verify_repo_priority(self, repoid, required_repos):
@@ -322,7 +291,7 @@ class OpenShiftAdminCheckSources:
             try:
                 ose_pkgs = self.oscs.packages_for_repo(repoid, disable_priorities = True)
             except KeyError as ke:
-                self._print_report('missing', 'Repository %s not enabled'%ke.message)
+                self.logger.error('Repository %s not enabled'%ke.message)
             ose_pkg_names = sorted(set([xx.name for xx in ose_pkgs]))
             # print "ose_pkg_names count: %d"%(len(ose_pkg_names))
             # print "ose_pkg_names: "
@@ -335,7 +304,7 @@ class OpenShiftAdminCheckSources:
         return True
 
     def guess_role(self):
-        self._print_report('start', 'WARNING: No roles have been specified. Attempting to guess the roles for this system...')
+        self.logger.warning('No roles have been specified. Attempting to guess the roles for this system...')
         self.opts.role = []
         if self.oscs.verify_package('openshift-origin-broker'):
             self.opts.role.append('broker')
@@ -346,10 +315,10 @@ class OpenShiftAdminCheckSources:
         if self.oscs.verify_package('openshift-origin-cartridge-jbosseap'):
             self.opts.role.append('node-eap')
         if not self.opts.role:
-            self._print_report('start', 'ERROR: No roles could be detected.')
+            self.logger.error('No roles could be detected.')
             return False
-        self._print_report('start', 'If the roles listed below are incorrect or incomplete, please re-run this script with the appropriate --role arguments')
-        self._print_report('start', '\n'.join(('    %s'%role for role in self.opts.role)))
+        self.logger.warning('If the roles listed below are incorrect or incomplete, please re-run this script with the appropriate --role arguments')
+        self.logger.warning('\n'.join(('    %s'%role for role in self.opts.role)))
         return True
 
     def validate_roles(self):
@@ -357,7 +326,7 @@ class OpenShiftAdminCheckSources:
             return True
         for role in self.opts.role:
             if not role in self.valid_roles:
-                self._print_report('start', 'ERROR: You have specified an invalid role: %s is not one of %s'%(role, self.valid_roles))
+                self.logger.error('You have specified an invalid role: %s is not one of %s'%(role, self.valid_roles))
                 self.opt_parser.print_help()
                 return False
         return True
@@ -365,7 +334,7 @@ class OpenShiftAdminCheckSources:
     def validate_version(self):
         if self.opts.oo_version:
             if not self.opts.oo_version in self.valid_oo_versions:
-                self._print_report('start', 'ERROR: You have specified an invalid version: %s is not one of %s'%(self.opts.oo_version, self.valid_oo_versions))
+                self.logger.error('You have specified an invalid version: %s is not one of %s'%(self.opts.oo_version, self.valid_oo_versions))
                 self.opt_parser.print_help()
                 return False
         return True
@@ -378,7 +347,7 @@ class OpenShiftAdminCheckSources:
             if 'node-eap' in self.opts.role and not 'node' in self.opts.role:
                 self.opts.role.append('node')
             if 'node' in self.opts.role and not 'node-eap' in self.opts.role:
-                self._print_report('start', 'NOTE: If this system will be providing the JBossEAP cartridge, re-run this command with the --role=node-eap argument')
+                self.logger.warning('If this system will be providing the JBossEAP cartridge, re-run this command with the --role=node-eap argument')
 
     def main(self):
         if not self.validate_roles():
@@ -386,26 +355,27 @@ class OpenShiftAdminCheckSources:
         self.massage_roles()
         if not self.guess_ose_version():
             if self.subscription == UNKNOWN:
-                self._print_report('start', 'ERROR: Could not determine subscription type. Register your system to RHSM or RHN.')
+                self.logger.error('Could not determine subscription type. Register your system to RHSM or RHN.')
             if not self.opts.oo_version:
-                self._print_report('start', 'ERROR: Could not determine product version. Please re-run this script with the --oo_version argument.')
+                self.logger.error('Could not determine product version. Please re-run this script with the --oo_version argument.')
             return False
         yum_plugin_priorities = self.verify_yum_plugin_priorities()
         self.check_disabled_repos()
         self.check_missing_repos()
         if not yum_plugin_priorities:
-            self._print_report('priority', 'Skipping yum priorities verification')
+            self.logger.warning('Skipping yum priorities verification')
         else:
             self.verify_priorities()
             self.find_package_conflicts()
         if not self.opts.fix:
-            self._print_report('end', 'NOTE: Please re-run this tool after making any recommended repairs to this system')
+            self.logger.info('Please re-run this tool after making any recommended repairs to this system')
         # oacs.do_report()
 
 
 if __name__ == "__main__":
     ROLE_HELP='Role of this server (broker, node, node-eap, client)'
     OO_VERSION_HELP='Version of OpenShift Enterprise in use on this system (1.2, 2.0, etc.)'
+
 
     try:
         import argparse
