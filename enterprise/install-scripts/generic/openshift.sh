@@ -754,30 +754,34 @@ configure_rhn_channels()
   # OSE packages are first priority
   if need_client_tools_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-rhc --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-2-rhc]\npriority=1\n" >> $RHNPLUGINCONF
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-rhc-beta --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    echo -e "[rhel-x86_64-server-6-ose-2-rhc-beta]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_infra_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-infrastructure --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-2-infrastructure]\npriority=1\n" >> $RHNPLUGINCONF
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-infrastructure-beta --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    echo -e "[rhel-x86_64-server-6-ose-2-infrastructure-beta]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_node_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-node --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-2-node]\npriority=1\n" >> $RHNPLUGINCONF
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-node-beta --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    echo -e "[rhel-x86_64-server-6-ose-2-node-beta]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_jbosseap_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-2-jbosseap]\npriority=1\n" >> $RHNPLUGINCONF
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-jbosseap-beta --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    echo -e "[rhel-x86_64-server-6-ose-2-jbosseap-beta]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   # RHEL packages are second priority
+  #rhn-channel --add --channel rhel-x86_64-server-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
   echo -e "[rhel-x86_64-server-6]\npriority=2\nexclude=tomcat6*\n" >> $RHNPLUGINCONF
+  # While RHEL 6.5 is in beta, add that channel
+  rhn-channel --add --channel rhel-x86_64-server-6-beta --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+  echo -e "[rhel-x86_64-server-6-beta]\npriority=2\nexclude=tomcat6*\n" >> $RHNPLUGINCONF
 
   # JBoss packages are third priority -- and all else is lower
   if need_jbosseap_repo
@@ -794,8 +798,8 @@ configure_rhn_channels()
 
   if need_rhscl_repo
   then
-    rhn-channel --add --channel rhscl-1-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-    echo -e "[rhscl-1-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
+    rhn-channel --add --channel rhel-x86_64-server-6-rhscl-1 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    echo -e "[rhel-x86_64-server-6-rhscl-1]\npriority=3\n" >> $RHNPLUGINCONF
   fi
 
 
@@ -810,10 +814,7 @@ configure_rhsm_channels()
    echo "Register with RHSM"
    subscription-manager register --force --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || abort_install
    # add the necessary subscriptions
-   if [ "x$CONF_SM_REG_POOL_RHEL" == x ]; then
-     echo "Registering RHEL with any available subscription"
-     subscription-manager attach --auto || abort_install
-   else
+   if [ "x$CONF_SM_REG_POOL_RHEL" != x ]; then
      echo "Registering RHEL subscription from pool id $CONF_SM_REG_POOL_RHEL"
      subscription-manager attach --pool $CONF_SM_REG_POOL_RHEL || abort_install
    fi
@@ -837,30 +838,34 @@ configure_rhsm_channels()
    then
      yum-config-manager --enable rhel-6-server-optional-rpms
    fi
+   # for the duration of the RHEL 6.5 beta need to enable that too
+   yum-config-manager --enable rhel-6-server-beta-rpms.priority=2
+   yum-config-manager --setopt=rhel-6-server-beta-rpms.priority=2 rhel-6-server-beta-rpms --save
+   yum-config-manager --setopt="rhel-6-server-beta-rpms.exclude=tomcat6*" rhel-6-server-beta-rpms --save
 
-   # and the OpenShift subscription
+   # and the OpenShift subscription (beta until 2.0 is GA)
    if need_infra_repo
    then
-     yum-config-manager --enable rhel-server-ose-2-infra-6-rpms
-     yum-config-manager --setopt=rhel-server-ose-2-infra-6-rpms.priority=1 rhel-server-ose-2-infra-6-rpms --save
+     yum-config-manager --enable rhel-6-server-ose-2-beta-infra-rpms
+     yum-config-manager --setopt=rhel-6-server-ose-2-beta-infra-rpms.priority=1 rhel-6-server-ose-2-beta-infra-rpms --save
    fi
 
    if need_client_tools_repo
    then
-     yum-config-manager --enable rhel-server-ose-2-rhc-6-rpms
-     yum-config-manager --setopt=rhel-server-ose-2-rhc-6-rpms.priority=1 rhel-server-ose-2-rhc-6-rpms --save
+     yum-config-manager --enable rhel-6-server-ose-2-beta-rhc-rpms
+     yum-config-manager --setopt=rhel-6-server-ose-2-beta-rhc-rpms.priority=1 rhel-6-server-ose-2-beta-rhc-rpms --save
    fi
 
    if need_node_repo
    then
-     yum-config-manager --enable rhel-server-ose-2-node-6-rpms
-     yum-config-manager --setopt=rhel-server-ose-2-node-6-rpms.priority=1 rhel-server-ose-2-node-6-rpms --save
+     yum-config-manager --enable rhel-6-server-ose-2-beta-node-rpms
+     yum-config-manager --setopt=rhel-6-server-ose-2-beta-node-rpms.priority=1 rhel-6-server-ose-2-beta-node-rpms --save
    fi
 
    if need_jbosseap_cartridge_repo
    then
-     yum-config-manager --enable rhel-server-ose-2-jbosseap-6-rpms
-     yum-config-manager --setopt=rhel-server-ose-2-jbosseap-6-rpms.priority=1 rhel-server-ose-2-jbosseap-6-rpms --save
+     yum-config-manager --enable rhel-6-server-ose-2-beta-jbosseap-rpms
+     yum-config-manager --setopt=rhel-6-server-ose-2-beta-jbosseap-rpms.priority=1 rhel-6-server-ose-2-beta-jbosseap-rpms --save
    fi
 
    # and JBoss subscriptions for the node
