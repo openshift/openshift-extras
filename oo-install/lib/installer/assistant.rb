@@ -643,7 +643,12 @@ module Installer
           if not check_on_role == :all and not ssh_host_roles.include?(check_on_role)
             next
           end
-          cmd_result = test_host.exec_on_host!("command -v #{util}")
+          cmd_result = {}
+          if test_host.localhost?
+            cmd_result[:exit_code] = which(util).nil? ? 1 : 0
+          else
+            cmd_result = test_host.exec_on_host!("command -v #{util}")
+          end
           if not cmd_result[:exit_code] == 0
             say "* Could not locate #{util}... "
             find_result = test_host.exec_on_host!("yum -q provides */#{util}")
@@ -656,7 +661,13 @@ module Installer
           else
             if not test_host.root_user?
               say "* Located #{util}... "
-              sudo_result = test_host.exec_on_host!("command -v sudo")
+              sudo_result = {}
+              if test_host.localhost?
+                sudo_result[:stdout] = which('sudo')
+                sudo_result[:exit_code] = sudo_result[:stdout].nil? ? 1 : 0
+              else
+                sudo_result = test_host.exec_on_host!("command -v sudo")
+              end
               if not sudo_result[:exit_code] == 0
                 say "could not locate sudo"
                 deployment_good = false
