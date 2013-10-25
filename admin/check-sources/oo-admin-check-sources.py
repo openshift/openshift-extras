@@ -13,6 +13,8 @@ OTHER_PRIORITY = 40
 
 UNKNOWN, RHSM, RHN = ('unknown', 'rhsm', 'rhn')
 
+ATTACH_ENTITLEMENTS_URL = 'https://access.redhat.com/site/articles/522923'
+
 def flatten(llist):
     """Cheap and easy flatten - only works up to two degrees of nesting.
 
@@ -51,16 +53,15 @@ class OpenShiftAdminCheckSources:
         #     self.logger.addHandler(logfilehandler)
         
     def required_repos(self):
+        # Include the base RHEL repo in the required repos
+        roles = self.opts.role + ['base']
         return flatten([repo_db.find_repos(subscription = self.subscription,
                                            role = rr,
                                            product_version = self.opts.oo_version)
-                        for rr in self.opts.role])
+                        for rr in roles])
 
     def required_repoids(self):
-        return flatten([repo_db.find_repoids(subscription = self.subscription,
-                                             role = rr,
-                                             product_version = self.opts.oo_version)
-                        for rr in self.opts.role])
+        return [repo.repoid for repo in self.required_repos()]
 
     def enabled_blessed_repos(self):
         enabled = self.oscs.enabled_repoids()
@@ -157,7 +158,7 @@ class OpenShiftAdminCheckSources:
         """
         self.logger.info('Checking if yum-plugin-priorities is installed')
         if not self.oscs.verify_package('yum-plugin-priorities'):
-            if list(self.oscs.yb.searchGenerator(['name'], ['yum-plugin-priorities'])):
+            if self.oscs.package_available('yum-plugin-priorities'):
                 self.logger.error('Required package yum-plugin-priorities is not installed. Install the package with the following command:')
                 self.logger.error('# yum install yum-plugin-priorities')
             else:
@@ -255,16 +256,10 @@ class OpenShiftAdminCheckSources:
     def check_missing_repos(self):
         missing_repos = [repo for repo in self.blessed_repoids(required = True) if repo not in self.oscs.all_repoids()]
         if missing_repos:
-            self.logger.error("The required OpenShift Enterprise repositories are missing: %s"%missing_repos)
-            if self.subscription == RHSM:
-                self.logger.error('Follow the instructions at the following URL to add the necessary subscriptions for the selected roles: https://access.redhat.com/site/documentation//en-US/OpenShift_Enterprise/1/html/Deployment_Guide/chap-Installing_and_Configuring_Node_Hosts.html#Using_Red_Hat_Subscription_Management1')
-                self.logger.error('After adding the subscriptions, verify that the following repoids are available and enabled:')
-                for repoid in missing_repos:
-                    self.logger.error("    %s"%repoid)
-            elif self.subscription == RHN:
-                self.logger.error("Add the missing repositories with the following commands:")
-                for repoid in missing_repos:
-                    self.logger.error("# rhn-channel -a -c %s"%repoid)
+            self.logger.error("The required OpenShift Enterprise repositories are missing:")
+            for ii in missing_repos:
+                self.logger.error("    %s"%ii)
+            self.logger.error('Please verify that an OpenShift Enterprise subscription is attached to this system using either RHN Classic or Red Hat Subscription Manager by following the instructions here: %s'%ATTACH_ENTITLEMENTS_URL)
         return True             # Needed?
 
     def verify_repo_priority(self, repoid, required_repos):
@@ -358,7 +353,8 @@ class OpenShiftAdminCheckSources:
         self.massage_roles()
         if not self.guess_ose_version():
             if self.subscription == UNKNOWN:
-                self.logger.error('Could not determine subscription type. Register your system to RHSM or RHN.')
+                self.logger.error('Could not determine subscription type.')
+                self.logger.error('Please attach an OpenShift Enterprise subscription to this system using either RHN Classic or Red Hat Subscription Manager by following the instructions here: %s'%ATTACH_ENTITLEMENTS_URL)
             if not self.opts.oo_version:
                 self.logger.error('Could not determine product version. Please re-run this script with the --oo_version argument.')
             return False
