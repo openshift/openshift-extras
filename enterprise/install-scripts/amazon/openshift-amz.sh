@@ -118,45 +118,9 @@ configure_yum_repos()
 {
 #  configure_rhel_repo
 
-  if need_optional_repo
-  then
-    configure_optional_repo
-  fi
-
-  if need_infra_repo
-  then
-    configure_broker_repo
-  fi
-
-  if need_node_repo
-  then
-    configure_node_repo
-  fi
-
-  if need_jbosseap_cartridge_repo
-  then
-    configure_jbosseap_cartridge_repo
-  fi
-
-  if need_jbosseap_repo
-  then
-    configure_jbosseap_repo
-  fi
-
-  if need_jbossews_repo
-  then
-    configure_jbossews_repo
-  fi
-
-  if need_rhscl_repo
-  then
-    configure_rhscl_repo
-  fi
-
-  if need_client_tools_repo
-  then
-    configure_client_tools_repo
-  fi
+  for repo in optional infra node jbosseap_cartridge jbosseap jbossews client_tools rhscl; do
+    eval "need_${repo}_repo && configure_${repo}_repo"
+  done
 }
 
 configure_rhel_repo()
@@ -226,7 +190,7 @@ sslverify=false
 YUM
 }
 
-configure_broker_repo()
+configure_infra_repo()
 {
   cat > /etc/yum.repos.d/openshift-infrastructure.repo <<YUM
 [openshift_infrastructure]
@@ -341,30 +305,34 @@ configure_rhn_channels()
   # OSE packages are first priority
   if need_client_tools_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-rhc --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-2-rhc]\npriority=1\n" >> $RHNPLUGINCONF
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-rhc-beta --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    echo -e "[rhel-x86_64-server-6-ose-2-rhc-beta]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_infra_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-infrastructure --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-2-infrastructure]\npriority=1\n" >> $RHNPLUGINCONF
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-infrastructure-beta --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    echo -e "[rhel-x86_64-server-6-ose-2-infrastructure-beta]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_node_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-node --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-2-node]\npriority=1\n" >> $RHNPLUGINCONF
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-node-beta --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    echo -e "[rhel-x86_64-server-6-ose-2-node-beta]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   if need_jbosseap_repo
   then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-2-jbosseap]\npriority=1\n" >> $RHNPLUGINCONF
+    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-jbosseap-beta --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    echo -e "[rhel-x86_64-server-6-ose-2-jbosseap-beta]\npriority=1\n" >> $RHNPLUGINCONF
   fi
 
   # RHEL packages are second priority
+  #rhn-channel --add --channel rhel-x86_64-server-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
   echo -e "[rhel-x86_64-server-6]\npriority=2\nexclude=tomcat6*\n" >> $RHNPLUGINCONF
+  # While RHEL 6.5 is in beta, add that channel
+  rhn-channel --add --channel rhel-x86_64-server-6-beta --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+  echo -e "[rhel-x86_64-server-6-beta]\npriority=2\nexclude=tomcat6*\n" >> $RHNPLUGINCONF
 
   # JBoss packages are third priority -- and all else is lower
   if need_jbosseap_repo
@@ -381,8 +349,8 @@ configure_rhn_channels()
 
   if need_rhscl_repo
   then
-    rhn-channel --add --channel rhscl-1-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS}
-    echo -e "[rhscl-1-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
+    rhn-channel --add --channel rhel-x86_64-server-6-rhscl-1 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    echo -e "[rhel-x86_64-server-6-rhscl-1]\npriority=3\n" >> $RHNPLUGINCONF
   fi
 
 
@@ -397,10 +365,7 @@ configure_rhsm_channels()
    echo "Register with RHSM"
    subscription-manager register --force --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || abort_install
    # add the necessary subscriptions
-   if [ "x$CONF_SM_REG_POOL_RHEL" == x ]; then
-     echo "Registering RHEL with any available subscription"
-     subscription-manager attach --auto || abort_install
-   else
+   if [ "x$CONF_SM_REG_POOL_RHEL" != x ]; then
      echo "Registering RHEL subscription from pool id $CONF_SM_REG_POOL_RHEL"
      subscription-manager attach --pool $CONF_SM_REG_POOL_RHEL || abort_install
    fi
@@ -424,30 +389,34 @@ configure_rhsm_channels()
    then
      yum-config-manager --enable rhel-6-server-optional-rpms
    fi
+   # for the duration of the RHEL 6.5 beta need to enable that too
+   yum-config-manager --enable rhel-6-server-beta-rpms.priority=2
+   yum-config-manager --setopt=rhel-6-server-beta-rpms.priority=2 rhel-6-server-beta-rpms --save
+   yum-config-manager --setopt="rhel-6-server-beta-rpms.exclude=tomcat6*" rhel-6-server-beta-rpms --save
 
-   # and the OpenShift subscription
+   # and the OpenShift subscription (beta until 2.0 is GA)
    if need_infra_repo
    then
-     yum-config-manager --enable rhel-server-ose-2-infra-6-rpms
-     yum-config-manager --setopt=rhel-server-ose-2-infra-6-rpms.priority=1 rhel-server-ose-2-infra-6-rpms --save
+     yum-config-manager --enable rhel-6-server-ose-2-beta-infra-rpms
+     yum-config-manager --setopt=rhel-6-server-ose-2-beta-infra-rpms.priority=1 rhel-6-server-ose-2-beta-infra-rpms --save
    fi
 
    if need_client_tools_repo
    then
-     yum-config-manager --enable rhel-server-ose-2-rhc-6-rpms
-     yum-config-manager --setopt=rhel-server-ose-2-rhc-6-rpms.priority=1 rhel-server-ose-2-rhc-6-rpms --save
+     yum-config-manager --enable rhel-6-server-ose-2-beta-rhc-rpms
+     yum-config-manager --setopt=rhel-6-server-ose-2-beta-rhc-rpms.priority=1 rhel-6-server-ose-2-beta-rhc-rpms --save
    fi
 
    if need_node_repo
    then
-     yum-config-manager --enable rhel-server-ose-2-node-6-rpms
-     yum-config-manager --setopt=rhel-server-ose-2-node-6-rpms.priority=1 rhel-server-ose-2-node-6-rpms --save
+     yum-config-manager --enable rhel-6-server-ose-2-beta-node-rpms
+     yum-config-manager --setopt=rhel-6-server-ose-2-beta-node-rpms.priority=1 rhel-6-server-ose-2-beta-node-rpms --save
    fi
 
    if need_jbosseap_cartridge_repo
    then
-     yum-config-manager --enable rhel-server-ose-2-jbosseap-6-rpms
-     yum-config-manager --setopt=rhel-server-ose-2-jbosseap-6-rpms.priority=1 rhel-server-ose-2-jbosseap-6-rpms --save
+     yum-config-manager --enable rhel-6-server-ose-2-beta-jbosseap-rpms
+     yum-config-manager --setopt=rhel-6-server-ose-2-beta-jbosseap-rpms.priority=1 rhel-6-server-ose-2-beta-jbosseap-rpms --save
    fi
 
    # and JBoss subscriptions for the node
@@ -1446,11 +1415,9 @@ EOF
   chcon system_u:object_r:named_conf_t:s0 -v /etc/named.conf
 
   # actually set up the domain zone(s)
+  # bind_key is used if set, created if not. both domains use same key.
   configure_named_zone "$hosts_domain"
-  # order is important; make sure "the" bind_key is the one for apps
-  if [ "$domain" != "$hosts_domain" ]
-  then configure_named_zone "$domain"
-  fi
+  [ "$domain" != "$hosts_domain" ] && configure_named_zone "$domain"
 
   # configure in any hosts as needed
   configure_hosts_dns
@@ -1467,12 +1434,14 @@ configure_named_zone()
 {
   zone="$1"
 
-  # Generate the new key for the domain.
-  rm -f /var/named/K${zone}*
-  dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named ${zone}
-  bind_key="$(grep Key: /var/named/K${zone}*.private | cut -d ' ' -f 2)"
+  if [ "x$bind_key" = x ]; then
+    # Generate a new secret key
+    rm -f /var/named/K${zone}*
+    dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named ${zone}
+    bind_key="$(grep Key: /var/named/K${zone}*.private | cut -d ' ' -f 2)"
+  fi
 
-  # Install the key where OpenShift Enterprise expects it.
+  # Install the key where BIND and oo-register-dns expect it.
   cat <<EOF > /var/named/${zone}.key
 key ${zone} {
   algorithm HMAC-MD5;
@@ -2206,14 +2175,29 @@ init_message()
 validate_preflight()
 {
   echo "OpenShift: Begin preflight validation."
-  failure=
+  preflight_failure=
   # Test that this isn't RHEL < 6 or Fedora
+  if ! grep -q "Enterprise.* 6" /etc/redhat-release; then
+    echo "This process needs to begin with Enterprise Linux 6 installed."
+    preflight_failure=1
+  fi
   # Test that SELinux is at least present and not Disabled
+  if ! command -v getenforce || ! [[ $(getenforce) =~ Enforcing|Permissive ]] ; then
+    echo "SELinux needs to be installed and enabled."
+    preflight_failure=1
+  fi
   # Test that rpm/yum exists and isn't totally broken
+  if ! command -v rpm || ! command -v yum; then
+    echo "rpm and yum must be installed."
+    preflight_failure=1
+  fi
+  if ! rpm -V rpm yum; then
+    echo "rpm command failed; there may be a problem with the RPM DB."
+    preflight_failure=1
+  fi
   # Test that known problematic RPMs aren't present
-  # Test that DNS resolution is sane
   # ... ?
-  [ "$failure" ] && abort_install
+  [ "$preflight_failure" ] && abort_install
   echo "OpenShift: Completed preflight validation."
 }
 
