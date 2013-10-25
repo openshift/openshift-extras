@@ -280,6 +280,10 @@ class OpenShiftCheckSources:
             return self._yb_no_pri().pkgSack.returnPackages(repoid=repoid)
         return self.yb.pkgSack.returnPackages(repoid=repoid)
 
+    def package_available(self, name):
+        sg = self.yb.searchGenerator(['name'], [name])
+        return next((pkg for pkg in sg if pkg[0].name == name), None)
+
     def verify_package(self, name, version=None, release=None, source=None):
         """Verifies that the named package matches the provided criteria
 
