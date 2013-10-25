@@ -239,7 +239,9 @@ class OpenShiftAdminCheckSources:
                     if self.oscs.enable_repo(ii):
                         self.logger.warning('Enabled repository %s'%ii)
             else:
-                self.logger.error("The required OpenShift Enterprise repositories are disabled: %s"%disabled_repos)
+                self.logger.error("The required OpenShift Enterprise repositories are disabled:")
+                for ii in disabled_repos:
+                    self.logger.error("    %s"%ii)
                 if self.subscription == RHN:
                     self.logger.error('Make the following modifications to /etc/yum/pluginconf.d/rhnplugin.conf')
                 else:
@@ -282,23 +284,21 @@ class OpenShiftAdminCheckSources:
         enabled_ose_repos = self.blessed_repoids(enabled = True, required = True, product = 'ose')
         enabled_jboss_repos = self.blessed_repoids(enabled = True, required = True, product = 'jboss')
         rhel6_repo = self.blessed_repoids(product='rhel')
+        if not rhel6_repo[0] in self.oscs.enabled_repoids():
+            rhel6_repo = []
         required_repos = enabled_ose_repos + rhel6_repo + enabled_jboss_repos
         if not self._check_valid_pri(required_repos):
             return False
         for repoid in required_repos:
             try:
                 ose_pkgs = self.oscs.packages_for_repo(repoid, disable_priorities = True)
+                ose_pkg_names = sorted(set([xx.name for xx in ose_pkgs]))
+                other_pkg_matches = [xx for xx in self.oscs.all_packages_matching(ose_pkg_names, True) if xx.repoid not in all_blessed_repos]
+                conflicts = sorted(set([xx.repoid for xx in other_pkg_matches]))
+                for ii in conflicts:
+                    self.verify_repo_priority(ii, required_repos)
             except KeyError as ke:
-                self.logger.error('Repository %s not enabled'%ke.message)
-            ose_pkg_names = sorted(set([xx.name for xx in ose_pkgs]))
-            # print "ose_pkg_names count: %d"%(len(ose_pkg_names))
-            # print "ose_pkg_names: "
-            # map(sys.stdout.write, ('    %s\n'%xx for xx in ose_pkg_names))
-            other_pkg_matches = [xx for xx in self.oscs.all_packages_matching(ose_pkg_names, True) if xx.repoid not in all_blessed_repos]
-            conflicts = sorted(set([xx.repoid for xx in other_pkg_matches]))
-            # map(sys.stdout.write, ('nvr: %s-%s-%s   repoid: %s\n'%(xx.name, xx.ver, xx.release, xx.repoid) for xx in other_pkg_matches))
-            for ii in conflicts:
-                self.verify_repo_priority(ii, required_repos)
+                self.logger.error('Repository %s not enabled'%repoid)
         return True
 
     def guess_role(self):
