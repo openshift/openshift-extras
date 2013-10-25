@@ -182,12 +182,12 @@ class OpenShiftAdminCheckSources:
             if not self.pri_resolve_header:
                 self.pri_resolve_header = True
                 if self.oscs.repo_is_rhn(repoid):
-                    self.logger.error("To resolve conflicting repositories, update /yum/pluginconf.d/rhnplugin.conf with the following changes:")
+                    self.logger.error("To resolve conflicting repositories, update /etc/yum/pluginconf.d/rhnplugin.conf with the following changes:")
                 else:
                     self.logger.error("To resolve conflicting repositories, update repo priority by running:")
             # TODO: in the next version this should read "# subscription-manager override --repo=%s --add=priority:%d"
             if self.oscs.repo_is_rhn(repoid):
-                self.logger.error("Set priority=%d in the [%s] section"%(priority, repoid))
+                self.logger.error("    Set priority=%d in the [%s] section"%(priority, repoid))
             else:
                 self.logger.error("# yum-config-manager --setopt=%s.priority=%d %s --save"%(repoid, priority, repoid))
 
