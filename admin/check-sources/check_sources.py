@@ -12,6 +12,7 @@ sys.path.insert(0,'/usr/share/yum-cli')
 from utils import YumUtilBase
 from iniparse import INIConfig
 from collections import namedtuple
+from optparse import OptionParser
 
 NAME = 'oo-admin-check-sources'
 VERSION = '0.1'
@@ -36,8 +37,14 @@ class OpenShiftCheckSources:
         self.yb.preconf.quiet = True
         self.yb.preconf.debuglevel = 0
         self.yb.preconf.plugin_types = (plugins.TYPE_CORE, plugins.TYPE_INTERACTIVE)
+        op = OptionParser()
+        self.yb.preconf.optparser = op
         self.yb.conf.cache = os.geteuid() != 0
         self.yb.conf.disable_excludes = []
+        opts, args = op.parse_args([])
+        # The yum security plugin will crap pants if the plugin
+        # cmdline isn't set up:
+        self.yb.plugins.setCmdLine(opts, args)
 
     def _yb_no_pri(self):
         npyb = YumUtilBase(NAME, VERSION, USAGE)

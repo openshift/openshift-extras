@@ -157,8 +157,11 @@ class OpenShiftAdminCheckSources:
         """
         self.logger.info('Checking if yum-plugin-priorities is installed')
         if not self.oscs.verify_package('yum-plugin-priorities'):
-            self.logger.error('Required package yum-plugin-priorities is not installed. Install the package with the following command:')
-            self.logger.error('# yum install yum-plugin-priorities')
+            if list(self.oscs.yb.searchGenerator(['name'], ['yum-plugin-priorities'])):
+                self.logger.error('Required package yum-plugin-priorities is not installed. Install the package with the following command:')
+                self.logger.error('# yum install yum-plugin-priorities')
+            else:
+                self.logger.error('Required package yum-plugin-priorities is not available.')
             return False
         return True
 
@@ -364,6 +367,8 @@ class OpenShiftAdminCheckSources:
         self.check_missing_repos()
         if not yum_plugin_priorities:
             self.logger.warning('Skipping yum priorities verification')
+            if not self.opts.role:
+                self.logger.warning('Please specify at least one role for this system with the --role command')
         else:
             self.verify_priorities()
             self.find_package_conflicts()
