@@ -171,20 +171,20 @@
 #       rhscl_repo_base / CONF_RHSCL_REPO_BASE -- see below
 #       rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO -- see below
 #     rhsm - use subscription-manager
-#       sm_reg_name / CONF_SM_REG_NAME
-#       sm_reg_pass / CONF_SM_REG_PASS
+#       rhn_user / CONF_RHN_USER
+#       rhn_pass / CONF_RHN_PASS
 #       sm_reg_pool / CONF_SM_REG_POOL - pool ID for OpenShift subscription (required)
-#       sm_reg_pool_rhel / CONF_SM_REG_POOL_RHEL - pool ID for RHEL subscription (optional)
+#       sm_reg_pool_rhel / CONF_SM_REG_POOL_RHEL - pool ID for non-standard RHEL subscription (optional)
 #     rhn - use rhn-register
-#       rhn_reg_name / CONF_RHN_REG_NAME
-#       rhn_reg_pass / CONF_RHN_REG_PASS
+#       rhn_user / CONF_RHN_USER
+#       rhn_pass / CONF_RHN_PASS
 #       rhn_reg_actkey / CONF_RHN_REG_ACTKEY - optional activation key
 #   Default: none
 #CONF_INSTALL_METHOD="yum"
 
 # Hint: when running as a cmdline script, to enter your password invisibly:
-#  read -s CONF_SM_REG_PASS
-#  export CONF_SM_REG_PASS
+#  read -s CONF_RHN_PASS
+#  export CONF_RHN_PASS
 
 # optional_repo / CONF_OPTIONAL_REPO
 #   Enable unsupported RHEL "optional" repo.
@@ -615,9 +615,9 @@ configure_repos()
   esac
 
   # Install yum-plugin-priorities
-  yum clean all
+  yum $disable_plugin clean all
   echo "Installing yum-plugin-priorities; if something goes wrong here, check your install source."
-  yum_install_or_exit -y yum-plugin-priorities
+  yum_install_or_exit yum-plugin-priorities
   echo "OpenShift: Completed configuring repos."
 }
 
@@ -787,6 +787,23 @@ YUM
   fi
 }
 
+rhn_setopt() # e.g. rhn_setopt myrepo foo=bar
+{
+  # RHN method for setting yum priorities and excludes:
+  RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
+
+  repo=$1; shift
+  echo "setting $@ on channel $repo"
+  # subscribe to channel if not already
+  [[ "$(rhn-channel -l)" == *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
+  # NOTE: this next bit could go haywire with repo names that include special regex chars
+  sed -i "/^\\[$repo\\]/,/^\\[/{ /^\\[/ !d }" $RHNPLUGINCONF   # remove previous [repo] section if there
+  sed -i "/^\\[$repo\\]/ d" $RHNPLUGINCONF   # remove previous section header if there
+  echo "[$repo]" >> $RHNPLUGINCONF
+  for opt in "$@"; do echo "$opt" >> $RHNPLUGINCONF; done
+  echo >> $RHNPLUGINCONF
+}
+
 configure_rhn_channels()
 {
   if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
@@ -794,153 +811,98 @@ configure_rhn_channels()
     rhnreg_ks --force --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || abort_install
   else
     echo "Register with RHN with username and password"
-    rhnreg_ks --force --profilename=${hostname} --username ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    rhnreg_ks --force --profilename=${hostname} --username ${CONF_RHN_USER} --password ${CONF_RHN_PASS} || abort_install
   fi
 
   # RHN method for setting yum priorities and excludes:
   RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
 
   # OSE packages are first priority
-  if need_client_tools_repo
-  then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-rhc-beta --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-2-rhc-beta]\npriority=1\n" >> $RHNPLUGINCONF
-  fi
-
-  if need_infra_repo
-  then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-infrastructure-beta --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-2-infrastructure-beta]\npriority=1\n" >> $RHNPLUGINCONF
-  fi
-
-  if need_node_repo
-  then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-node-beta --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-2-node-beta]\npriority=1\n" >> $RHNPLUGINCONF
-  fi
-
-  if need_jbosseap_repo
-  then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-2-jbosseap-beta --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-2-jbosseap-beta]\npriority=1\n" >> $RHNPLUGINCONF
-  fi
+  need_client_tools_repo && rhn_setopt rhel-x86_64-server-6-ose-2-rhc-beta priority=1
+  need_infra_repo && rhn_setopt rhel-x86_64-server-6-ose-2-infrastructure-beta priority=1
+  need_node_repo && rhn_setopt rhel-x86_64-server-6-ose-2-node-beta priority=1
+  need_jbosseap_repo && rhn_setopt rhel-x86_64-server-6-ose-2-jbosseap-beta priority=1
 
   # RHEL packages are second priority
-  #rhn-channel --add --channel rhel-x86_64-server-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-  echo -e "[rhel-x86_64-server-6]\npriority=2\nexclude=tomcat6*\n" >> $RHNPLUGINCONF
+  rhn_setopt rhel-x86_64-server-6 priority=2 "exclude=tomcat6*"
   # While RHEL 6.5 is in beta, add that channel
-  rhn-channel --add --channel rhel-x86_64-server-6-beta --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-  echo -e "[rhel-x86_64-server-6-beta]\npriority=2\nexclude=tomcat6*\n" >> $RHNPLUGINCONF
+  rhn_setopt rhel-x86_64-server-6-beta priority=2 "exclude=tomcat6*"
 
   # JBoss packages are third priority -- and all else is lower
-  if need_jbosseap_repo
-  then
-    rhn-channel --add --channel jbappplatform-6-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[jbappplatform-6-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
-  fi
+  need_jbosseap_repo && rhn_setopt jbappplatform-6-x86_64-server-6-rpm priority=3
+  need_jbossews_repo && rhn_setopt jb-ews-2-x86_64-server-6-rpm priority=3
 
-  if need_jbossews_repo
-  then
-    rhn-channel --add --channel jb-ews-2-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[jb-ews-2-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
-  fi
+  need_rhscl_repo && rhn_setopt rhel-x86_64-server-6-rhscl-1 priority=3
+  need_optional_repo && rhn_setopt rhel-x86_64-server-optional-6
+}
 
-  if need_rhscl_repo
-  then
-    rhn-channel --add --channel rhel-x86_64-server-6-rhscl-1 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-rhscl-1]\npriority=3\n" >> $RHNPLUGINCONF
-  fi
-
-
-  if need_optional_repo
-  then
-    rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-  fi
+ycm_setopt() # e.g. ycm_setopt myrepo foo=bar; must have an option to do anything
+{
+  repo=$1; shift
+  echo "setting $@ on repo $repo"
+  for repo_opt in "$@"; do
+     # Note: yum-config-manager never indicates errors with a return code. We will check the output
+     # to determine when these fail due to subscription problems etc.
+     # In the output foo=bar becomes "foo = bar"
+    [[ "$(yum-config-manager $disable_plugin --setopt="${repo}.${repo_opt}" "$repo" --enable)" == *"${repo_opt//=/ = }"* ]] \
+        || abort_install "Failed to set option $repo_opt on $repo."
+  done
 }
 
 configure_rhsm_channels()
 {
    echo "Register with RHSM"
-   subscription-manager register --force --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || abort_install
+   subscription-manager register --force --username=$CONF_RHN_USER --password=$CONF_RHN_PASS || abort_install
    # add the necessary subscriptions
    if [ "x$CONF_SM_REG_POOL_RHEL" != x ]; then
      echo "Registering RHEL subscription from pool id $CONF_SM_REG_POOL_RHEL"
      subscription-manager attach --pool $CONF_SM_REG_POOL_RHEL || abort_install
    fi
-   echo "Registering OpenShift subscription from pool id $CONF_SM_REG_POOL_RHEL"
+   echo "Registering OpenShift subscription from pool id $CONF_SM_REG_POOL"
    subscription-manager attach --pool $CONF_SM_REG_POOL || abort_install
 
    # have yum sync new list of repos from rhsm before changing settings
-   yum repolist
+   yum $disable_plugin repolist
 
-   # The yum-config-manager command is provided by the yum-utils
-   # package.
+   # The yum-config-manager command is provided by the yum-utils package.
    yum_install_or_exit yum-utils
+   # we need to ensure the channel is enabled in order to get the priorities plugin
+   ycm_setopt rhel-6-server-ose-2-beta-infra-rpms enabled=True
+   # We also need the priorities plugin from infra channel, before we start setting priorities.
+   yum_install_or_exit yum-plugin-priorities
 
-   # Note: yum-config-manager never indicates errors in return code, and the output is difficult to parse; so,
-   # it is tricky to determine when these fail due to subscription problems etc.
 
    # configure the RHEL subscription
-   yum-config-manager --setopt=rhel-6-server-rpms.priority=2 rhel-6-server-rpms --save
-   yum-config-manager --setopt="rhel-6-server-rpms.exclude=tomcat6*" rhel-6-server-rpms --save
-   if need_optional_repo
-   then
-     yum-config-manager --enable rhel-6-server-optional-rpms
-   fi
+   ycm_setopt rhel-6-server-rpms priority=2 "exclude=tomcat6*"
+   need_optional_repo && ycm_setopt rhel-6-server-optional-rpms enabled=True
    # for the duration of the RHEL 6.5 beta need to enable that too
-   yum-config-manager --enable rhel-6-server-beta-rpms.priority=2
-   yum-config-manager --setopt=rhel-6-server-beta-rpms.priority=2 rhel-6-server-beta-rpms --save
-   yum-config-manager --setopt="rhel-6-server-beta-rpms.exclude=tomcat6*" rhel-6-server-beta-rpms --save
+   ycm_setopt rhel-6-server-beta-rpms priority=2 "exclude=tomcat6*"
 
    # and the OpenShift subscription (beta until 2.0 is GA)
-   if need_infra_repo
-   then
-     yum-config-manager --enable rhel-6-server-ose-2-beta-infra-rpms
-     yum-config-manager --setopt=rhel-6-server-ose-2-beta-infra-rpms.priority=1 rhel-6-server-ose-2-beta-infra-rpms --save
-   fi
-
-   if need_client_tools_repo
-   then
-     yum-config-manager --enable rhel-6-server-ose-2-beta-rhc-rpms
-     yum-config-manager --setopt=rhel-6-server-ose-2-beta-rhc-rpms.priority=1 rhel-6-server-ose-2-beta-rhc-rpms --save
-   fi
-
-   if need_node_repo
-   then
-     yum-config-manager --enable rhel-6-server-ose-2-beta-node-rpms
-     yum-config-manager --setopt=rhel-6-server-ose-2-beta-node-rpms.priority=1 rhel-6-server-ose-2-beta-node-rpms --save
-   fi
-
-   if need_jbosseap_cartridge_repo
-   then
-     yum-config-manager --enable rhel-6-server-ose-2-beta-jbosseap-rpms
-     yum-config-manager --setopt=rhel-6-server-ose-2-beta-jbosseap-rpms.priority=1 rhel-6-server-ose-2-beta-jbosseap-rpms --save
-   fi
+   need_infra_repo && ycm_setopt rhel-6-server-ose-2-beta-infra-rpms priority=1
+   need_client_tools_repo && ycm_setopt rhel-6-server-ose-2-beta-rhc-rpms priority=1
+   need_node_repo && ycm_setopt rhel-6-server-ose-2-beta-node-rpms priority=1
+   need_jbosseap_cartridge_repo && ycm_setopt rhel-6-server-ose-2-beta-jbosseap-rpms priority=1
+   # SCL now handles many dependencies
+   # need_rhscl_repo && ycm_setopt rhscl-1-for-rhel-6-server-rpms priority=2  #"should" be this
+   need_rhscl_repo && ycm_setopt rhel-server-rhscl-6-eus-rpms priority=2      # for beta appears to be this
 
    # and JBoss subscriptions for the node
-   if need_jbosseap_repo
-   then
-     yum-config-manager --enable jb-eap-6-for-rhel-6-server-rpms
-     yum-config-manager --setopt=jb-eap-6-for-rhel-6-server-rpms.priority=3 jb-eap-6-for-rhel-6-server-rpms --save
-     yum-config-manager --disable jb-eap-5-for-rhel-6-server-rpms
+   if need_jbosseap_repo; then
+     ycm_setopt jb-eap-6-for-rhel-6-server-rpms priority=3
+     yum-config-manager $disable_plugin --disable jb-eap-5-for-rhel-6-server-rpms > /dev/null
    fi
 
-   if need_jbossews_repo
-   then
-     yum-config-manager --enable jb-ews-2-for-rhel-6-server-rpms
-     yum-config-manager --setopt=jb-ews-2-for-rhel-6-server-rpms.priority=3 jb-ews-2-for-rhel-6-server-rpms --save
-     yum-config-manager --disable jb-ews-1-for-rhel-6-server-rpms
+   if need_jbossews_repo; then
+     ycm_setopt jb-ews-2-for-rhel-6-server-rpms priority=3
+     yum-config-manager $disable_plugin --disable jb-ews-1-for-rhel-6-server-rpms > /dev/null
    fi
 
-   if need_rhscl_repo
-   then
-     yum-config-manager --enable rhscl-1-for-rhel-6-server-rpms
-     yum-config-manager --setopt=rhscl-1-for-rhel-6-server-rpms.priority=2 rhscl-1-for-rhel-6-server-rpms --save
-   fi
 }
 
 abort_install()
 {
+  [[ "$@"x == x ]] || echo "$@"
   # don't change this; could be used as an automation cue.
   echo "Aborting OpenShift Installation."
   exit 1
@@ -948,7 +910,7 @@ abort_install()
 
 yum_install_or_exit()
 {
-  yum install $*
+  yum install -y $* $disable_plugin
   if [ $? -ne 0 ]
   then
     echo "Command failed: yum install $*"
@@ -960,7 +922,7 @@ yum_install_or_exit()
 # Install the client tools.
 install_rhc_pkg()
 {
-  yum_install_or_exit -y rhc
+  yum_install_or_exit rhc
 }
 
 # Set up the system express.conf so our broker will be used by default.
@@ -986,7 +948,7 @@ install_broker_pkgs()
   pkgs="$pkgs rubygem-openshift-origin-admin-console"
 
 
-  yum_install_or_exit -y $pkgs
+  yum_install_or_exit $pkgs
 }
 
 # Install node-specific packages.
@@ -1016,7 +978,7 @@ install_node_pkgs()
       ;;
   esac
 
-  yum_install_or_exit -y $pkgs
+  yum_install_or_exit $pkgs
 }
 
 # Remove abrt-addon-python if necessary
@@ -1025,7 +987,7 @@ install_node_pkgs()
 remove_abrt_addon_python()
 {
   if grep 'Enterprise Linux Server release 6.4' /etc/redhat-release && rpm -q abrt-addon-python && rpm -q openshift-origin-cartridge-python; then
-    yum remove -y abrt-addon-python || abort_install
+    yum $disable_plugin remove -y abrt-addon-python || abort_install
   fi
 }
 
@@ -1086,7 +1048,7 @@ install_cartridges()
   # still install as much as possible.
   #carts="$carts --skip-broken"
 
-  yum_install_or_exit -y $carts
+  yum_install_or_exit $carts
 }
 
 # Given the filename of a configuration file, the name of a setting,
@@ -1295,7 +1257,7 @@ configure_sshd_on_node()
 
 install_datastore_pkgs()
 {
-  yum_install_or_exit -y mongodb-server
+  yum_install_or_exit mongodb-server
 }
 
 # The init script lies to us as of version 2.0.2-1.el6_3: The start 
@@ -1592,7 +1554,7 @@ EOF
 
 install_activemq_pkgs()
 {
-  yum_install_or_exit -y activemq
+  yum_install_or_exit activemq
 }
 
 configure_activemq()
@@ -1838,7 +1800,7 @@ EOF
 
 install_named_pkgs()
 {
-  yum_install_or_exit -y bind bind-utils
+  yum_install_or_exit bind bind-utils
 }
 
 configure_named()
@@ -2121,7 +2083,7 @@ configure_httpd_auth()
   # and CONF_BROKER_KRB_AUTH_REALMS are specified
   if [ -n "$CONF_BROKER_KRB_SERVICE_NAME" ] && [ -n "$CONF_BROKER_KRB_AUTH_REALMS" ]
   then
-    yum_install_or_exit -y mod_auth_kerb
+    yum_install_or_exit mod_auth_kerb
     for d in /var/www/openshift/broker/httpd/conf.d /var/www/openshift/console/httpd/conf.d
     do
       sed -e "s#KrbServiceName.*#KrbServiceName ${CONF_BROKER_KRB_SERVICE_NAME}#" \
@@ -2516,6 +2478,16 @@ set_defaults()
   elif [ "${rhel_repo%/}" == "${ose_repo_base%/}/os" ]; then # OSE same repo base as RHEL?
     CONF_CDN_LAYOUT=1  # use the CDN layout for OpenShift yum repos
   fi
+  # no need to waste time checking both subscription plugins if using one
+  disable_plugin=""
+  [[ "$CONF_INSTALL_METHOD" == "rhsm" ]] && disable_plugin='--disableplugin=rhnplugin'
+  [[ "$CONF_INSTALL_METHOD" == "rhn" ]] && disable_plugin='--disableplugin=subscription-manager'
+  # could do the same for "yum" method but it's more likely to surprise someone
+  #[[ "$CONF_INSTALL_METHOD" == "yum" ]] && disable_plugin='--disableplugin=subscription-manager --disableplugin=rhnplugin'
+
+  # remap subscription parameters used previously
+  CONF_RHN_USER=${CONF_RHN_USER:-${CONF_SM_REG_NAME:-$CONF_RHN_REG_NAME}}
+  CONF_RHN_PASS=${CONF_RHN_PASS:-${CONF_SM_REG_PASS:-$CONF_RHN_REG_PASS}}
 
   # The domain name for the OpenShift Enterprise installation.
   domain="${CONF_DOMAIN:-example.com}"
@@ -2689,8 +2661,23 @@ validate_preflight()
     echo "rpm and yum must be installed."
     preflight_failure=1
   fi
-  if ! rpm -V rpm yum; then
+  if ! rpm -q rpm yum; then
     echo "rpm command failed; there may be a problem with the RPM DB."
+    preflight_failure=1
+  fi
+  # test that subscription parameters are available if needed
+  if [[ "$CONF_INSTALL_METHOD" =~ rhn|rhsm ]]; then
+    if [ ! "$CONF_RHN_USER" -o ! "$CONF_RHN_PASS" ]; then
+      echo "Install method $CONF_INSTALL_METHOD requires an RHN user and password."
+      preflight_failure=1
+    fi
+  fi
+  if [ "$CONF_INSTALL_METHOD" = rhsm -a ! "$CONF_SM_REG_POOL" ]; then
+    echo "Install method rhsm requires a poolid."
+    preflight_failure=1
+  fi
+  if [ "$CONF_INSTALL_METHOD" = yum -a ! "$ose_repo_base" ]; then
+    echo "Install method yum requires providing URLs for at least OpenShift repos."
     preflight_failure=1
   fi
   # Test that known problematic RPMs aren't present
@@ -2703,10 +2690,10 @@ install_rpms()
 {
   echo "OpenShift: Begin installing RPMs."
   # we often rely on latest selinux policy and other updates
-  yum update -y || abort_install
+  yum $disable_plugin update -y || abort_install
   # Install ntp and ntpdate because they may not be present in a RHEL
   # minimal install.
-  yum_install_or_exit -y ntp ntpdate
+  yum_install_or_exit ntp ntpdate
 
   # install what we need for various components
   named && install_named_pkgs
@@ -2806,11 +2793,7 @@ set_defaults
 
 for action in ${actions//,/ }
 do
-  if ! [ "$(type -t "$action")" = function ]
-  then
-    echo "Invalid action: ${action}"
-    abort_install
-  fi
+  [ "$(type -t "$action")" = function ] || abort_install "Invalid action: ${action}"
   "$action"
 done
 
