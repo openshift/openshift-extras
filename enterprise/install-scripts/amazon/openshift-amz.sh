@@ -350,9 +350,11 @@ configure_rhsm_channels()
 
    # The yum-config-manager command is provided by the yum-utils package.
    yum_install_or_exit yum-utils
-   # we need to ensure the channel is enabled in order to get the priorities plugin
-   ycm_setopt rhel-server-ose-1.2-infra-rpms enabled=True
-   # We also need the priorities plugin from infra channel, before we start setting priorities.
+   # We also need the priorities plugin before we start setting priorities, or that fails.
+   # We need to ensure the right channel is enabled in order to get the priorities plugin.
+   if need_node_repo; then ycm_setopt rhel-server-ose-1.2-node-rpms enabled=True
+   else ycm_setopt rhel-server-ose-1.2-infra-rpms enabled=True
+   fi
    yum_install_or_exit yum-plugin-priorities
 
    # configure the RHEL subscription
