@@ -885,7 +885,7 @@ configure_rhsm_channels()
    need_jbosseap_cartridge_repo && ycm_setopt rhel-6-server-ose-2-beta-jbosseap-rpms priority=1
    # SCL now handles many dependencies
    # need_rhscl_repo && ycm_setopt rhscl-1-for-rhel-6-server-rpms priority=2  #"should" be this
-   need_rhscl_repo && ycm_setopt rhel-server-rhscl-6-eus-rpms priority=2      # for beta appears to be this
+   need_rhscl_repo && ycm_setopt rhel-server-rhscl-6-rpms priority=2      # for beta appears to be this
 
    # and JBoss subscriptions for the node
    if need_jbosseap_repo; then
