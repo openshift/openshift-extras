@@ -3,28 +3,42 @@
 This package is a general-purpose installation tool for [OpenShift](http://www.openshift.com/). It supports a number of deployment scenarios and is extensible through the definition of installer Workflows.
 
 ## Installation
+The latest stable version of the installer is available for "curl-to-shell" use from the OpenShift cloud. To use it, run:
 
-Add this line to your application's Gemfile:
+    sh <(curl -s http://oo-install.rhcloud.com/)
 
-    gem 'oo-install'
+from the command line of any system with ruby 1.8.7 or above plus unzip and curl. Depending on what you are trying to install (OpenShift Origin versus OpenShift Enterprise), your target system may require additional RPMs. The installer will attempt to suggest RPM packages to install to provide the necessary utilities.
 
-And then execute:
+## Running oo-install from source
+If you would prefer to run the installer from source, you will need to use the [bundler](http://bundler.io/) gem to set up the right environment.
 
-    $ bundle
+1. Clone [openshift-extras](https://github.com/openshift/openshift-extras/)
+2. `cd openshift-extras/oo-install`
+3. `bundle install`
+4. `bundle exec bin/oo-install`
 
-Or install it yourself as:
+## Command-line options
 
-    $ gem install oo-install
+The following command-line options are currently supported:
 
-## Usage
+    -a, --advanced-mode              Enable access to message server and db server customization.
+    -c, --config-file FILEPATH       The path to an alternate config file
+        --create-config              Use with "-c" to create and use a new alternate config file
+    -w, --workflow WORKFLOW_ID       The installer workflow for unattended deployment.
+    -e, --enterprise-mode            Show OpenShift Enterprise options (ignored in unattended mode)
+        --openshift-version VERSION  Specify the version of OpenShift to be installed (default is latest)
+    -s, --subscription-type TYPE     The software source for installation packages.
+    -u, --username USERNAME          Red Hat Login username
+    -p, --password PASSWORD          Red Hat Login password
 
-You can start the installer from the shell by typing
+- - -
 
-    $ oo-install
+**NOTE**:  
+In order to pass arguments to the curl-to-shell command, enclose them in quotes.
 
-To run an unattended installation, use:
+    sh <(curl -s http://oo-install.rhcloud.com/) "-c alternate/config/file.yml -w origin_add_node -s yum"
 
-    $ oo-install -w <workflow_id>
+- - -
 
 ## Contributing
 
