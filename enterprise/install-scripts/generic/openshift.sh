@@ -332,6 +332,26 @@
 #   which host you are looking at when logging in as an administrator.
 #CONF_KEEP_HOSTNAME=true
 
+# keep_nameservers / CONF_KEEP_NAMESERVERS
+#   Default: false (not set)
+#   Enabling this option prevents the installation script from placing
+#   the OpenShift nameserver at the top of /etc/resolv.conf, which is
+#   the default (because rogue DNS is assumed). Set this to true if
+#   OpenShift app DNS is properly delegated/authoritative.
+#CONF_KEEP_NAMESERVERS=true
+
+# forward_dns / CONF_FORWARD_DNS
+#   Default: ! keep_nameservers (so typically, true)
+#   This option determines whether the BIND server being installed will
+#   forward requests for which it is not authoritative to upstream DNS
+#   servers or not. In a rogue DNS install, forwarding will make for
+#   a better client experience, so the default is true; however this
+#   should not be done if the service is open to the internet as it
+#   can be used to magnify DDoS attacks.  If OpenShift DNS is properly
+#   delegated/authoritative then this is not necessary at all and
+#   should be false.
+#CONF_FORWARD_DNS=false
+
 
 # # # # # # # # # # # miscellaneous other settings # # # # # # # # # # #
 
@@ -1739,12 +1759,18 @@ configure_named()
   chown root:named /etc/rndc.key
   chmod 640 /etc/rndc.key
 
-  # Set up DNS forwarding.
-  cat <<EOF > /var/named/forwarders.conf
-forwarders { ${nameservers} } ;
-EOF
-  restorecon /var/named/forwarders.conf
-  chmod 644 /var/named/forwarders.conf
+  # Set up DNS forwarding if so directed.
+  forwarders="recursion no;"
+  if is_true "$CONF_FORWARD_DNS"; then
+    echo "forwarders { ${nameservers} } ;" > /var/named/forwarders.conf
+    restorecon /var/named/forwarders.conf
+    chmod 644 /var/named/forwarders.conf
+    forwarders='// set forwarding to the next nearest server (from DHCP response)
+	forward only;
+        include "forwarders.conf";
+	recursion yes;
+'
+  fi
 
   # Install the configuration file for the OpenShift Enterprise domain
   # name.
@@ -1772,14 +1798,11 @@ options {
         statistics-file "/var/named/data/named_stats.txt";
         memstatistics-file "/var/named/data/named_mem_stats.txt";
 	allow-query     { any; };
-	recursion yes;
 
 	/* Path to ISC DLV key */
 	bindkeys-file "/etc/named.iscdlv.key";
 
-	// set forwarding to the next nearest server (from DHCP response
-	forward only;
-        include "forwarders.conf";
+	$forwarders
 };
 
 logging {
@@ -1827,6 +1850,7 @@ configure_named_zone()
     rm -f /var/named/K${zone}*
     dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named ${zone}
     bind_key="$(grep Key: /var/named/K${zone}*.private | cut -d ' ' -f 2)"
+    rm -f /var/named/K${zone}*
   fi
 
   # Install the key where BIND and oo-register-dns expect it.
@@ -1897,7 +1921,7 @@ configure_hosts_dns()
 # Make resolv.conf point to our named service, which will resolve the
 # host names used in this installation of OpenShift.  Our named service
 # will forward other requests to some other DNS servers.
-update_resolv_conf()
+configure_dns_resolution()
 {
   # Update resolv.conf to use our named.
   #
@@ -1906,6 +1930,14 @@ update_resolv_conf()
   # nonfunctional.  However, our private named must appear first in
   # order for hostnames private to our OpenShift PaaS to resolve.
   sed -i -e "1i# The named we install for our OpenShift PaaS must appear first.\\nnameserver ${named_ip_addr}\\n" /etc/resolv.conf
+
+  # Append resolution conf to the DHCP configuration.
+  cat <<EOF >> /etc/dhcp/dhclient-eth0.conf
+
+prepend domain-name-servers ${named_ip_addr};
+prepend domain-search "${domain}";
+EOF
+
 }
 
 
@@ -2116,17 +2148,6 @@ SomeOrganization
 SomeOrganizationalUnit
 ${broker_hostname}
 root@${domain}
-EOF
-}
-
-# Configure IP address and hostname.
-configure_network()
-{
-  # Append some stuff to the DHCP configuration.
-  cat <<EOF >> /etc/dhcp/dhclient-eth0.conf
-
-prepend domain-name-servers ${named_ip_addr};
-prepend domain-search "${domain}";
 EOF
 }
 
@@ -2453,6 +2474,11 @@ set_defaults()
     named_ip_addr="${CONF_NAMED_IP_ADDR:-$broker_ip_addr}"
   fi
 
+  if ! [ "${CONF_FORWARD_DNS}" ]; then  # decide default for forwarding
+    CONF_FORWARD_DNS=true
+    # if not running a rogue DNS server, don't need to forward
+    is_true "$CONF_KEEP_NAMESERVERS" && CONF_FORWARD_DNS=false
+  fi
   # The nameservers to which named on the broker will forward requests.
   # This should be a list of IP addresses with a semicolon after each.
   nameservers="$(awk '/nameserver/ { printf "%s; ", $2 }' /etc/resolv.conf)"
@@ -2629,8 +2655,7 @@ configure_host()
   # Note: configure_named must run before configure_controller if we are
   # installing both named and broker on the same host.
   named && configure_named
-  update_resolv_conf
-  configure_network
+  is_false "$CONF_KEEP_NAMESERVERS" && configure_dns_resolution
   is_false "$CONF_KEEP_HOSTNAME" && configure_hostname
   echo "OpenShift: Completed configuring host."
 }
