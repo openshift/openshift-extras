@@ -173,7 +173,7 @@
 #       rhn_user / CONF_RHN_USER
 #       rhn_pass / CONF_RHN_PASS
 #       sm_reg_pool / CONF_SM_REG_POOL - pool ID for OpenShift subscription (required)
-#       sm_reg_pool_rhel / CONF_SM_REG_POOL_RHEL - pool ID for non-standard RHEL subscription (optional)
+#                     Subscribe multiple with comma-separated list poolid1,poolid2,...
 #     rhn - use rhn-register
 #       rhn_user / CONF_RHN_USER
 #       rhn_pass / CONF_RHN_PASS
@@ -854,13 +854,10 @@ configure_rhsm_channels()
 {
    echo "Register with RHSM"
    subscription-manager register --force --username=$CONF_RHN_USER --password=$CONF_RHN_PASS || abort_install
-   # add the necessary subscriptions
-   if [ "x$CONF_SM_REG_POOL_RHEL" != x ]; then
-     echo "Registering RHEL subscription from pool id $CONF_SM_REG_POOL_RHEL"
-     subscription-manager attach --pool $CONF_SM_REG_POOL_RHEL || abort_install
-   fi
-   echo "Registering OpenShift subscription from pool id $CONF_SM_REG_POOL"
-   subscription-manager attach --pool $CONF_SM_REG_POOL || abort_install
+   for poolid in ${CONF_SM_REG_POOL//,/ }; do
+     echo "Registering subscription from pool id $poolid"
+     subscription-manager attach --pool $poolid || abort_install
+   done
 
    # have yum sync new list of repos from rhsm before changing settings
    yum $disable_plugin repolist
