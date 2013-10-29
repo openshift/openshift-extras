@@ -301,9 +301,6 @@ configure_rhn_channels()
     rhnreg_ks --force --profilename=${hostname} --username ${CONF_RHN_USER} --password ${CONF_RHN_PASS} || abort_install
   fi
 
-  # RHN method for setting yum priorities and excludes:
-  RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
-
   # OSE packages are first priority
   need_client_tools_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-rhc priority=1
   need_infra_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-infrastructure priority=1
@@ -324,12 +321,20 @@ ycm_setopt() # e.g. ycm_setopt myrepo foo=bar; must have an option to do anythin
 {
   repo=$1; shift
   echo "setting $@ on repo $repo"
+  # Note: yum-config-manager never indicates errors with a return code. We will check the output
+  # to determine when these fail due to subscription problems etc.
+  yum-config-manager $disable_plugin "$repo" --enable | grep -q '^enabled = \(1\|True\)' \
+     || abort_install "Failed to enable $repo."
   for repo_opt in "$@"; do
-     # Note: yum-config-manager never indicates errors with a return code. We will check the output
-     # to determine when these fail due to subscription problems etc.
-     # In the output foo=bar becomes "foo = bar"
-    [[ "$(yum-config-manager $disable_plugin --setopt="${repo}.${repo_opt}" "$repo" --enable)" == *"${repo_opt//=/ = }"* ]] \
-        || abort_install "Failed to set option $repo_opt on $repo."
+    # The obvious way to set options would be yum-config-manager. Sadly, against our 1.2 repos,
+    # this is currently broken. https://bugzilla.redhat.com/show_bug.cgi?id=1024111
+    # For a workaround we edit the repo file directly.
+    # In the repo foo=bar becomes "foo = bar"
+    option_name="${repo_opt//=*/}"
+    repo_opt="${repo_opt//=/ = }"
+    NL=$'\n'
+    # NOTE: this next bit could go haywire with repo names that include special regex chars
+    sed -i "/^\\[$repo\\]/,/^\\[/ { /^$option_name =/d; /^\\[$repo\\]/ a${repo_opt}$NL  }" /etc/yum.repos.d/redhat.repo
   done
 }
 
@@ -352,8 +357,8 @@ configure_rhsm_channels()
    yum_install_or_exit yum-utils
    # We also need the priorities plugin before we start setting priorities, or that fails.
    # We need to ensure the right channel is enabled in order to get the priorities plugin.
-   if need_node_repo; then ycm_setopt rhel-server-ose-1.2-node-rpms enabled=True
-   else ycm_setopt rhel-server-ose-1.2-infra-rpms enabled=True
+   if need_node_repo; then ycm_setopt rhel-server-ose-1.2-node-6-rpms enabled=True
+   else ycm_setopt rhel-server-ose-1.2-infra-6-rpms enabled=True
    fi
    yum_install_or_exit yum-plugin-priorities
 
@@ -362,10 +367,10 @@ configure_rhsm_channels()
    need_optional_repo && ycm_setopt rhel-6-server-optional-rpms enabled=True
 
    # and the OpenShift subscription
-   need_infra_repo && ycm_setopt rhel-server-ose-1.2-infra-rpms priority=1
-   need_client_tools_repo && ycm_setopt rhel-server-ose-1.2-rhc-rpms priority=1
-   need_node_repo && ycm_setopt rhel-server-ose-1.2-node-rpms priority=1
-   need_jbosseap_cartridge_repo && ycm_setopt rhel-server-ose-1.2-jbosseap-rpms priority=1
+   need_infra_repo && ycm_setopt rhel-server-ose-1.2-infra-6-rpms priority=1
+   need_client_tools_repo && ycm_setopt rhel-server-ose-1.2-rhc-6-rpms priority=1
+   need_node_repo && ycm_setopt rhel-server-ose-1.2-node-6-rpms priority=1
+   need_jbosseap_cartridge_repo && ycm_setopt rhel-server-ose-1.2-jbosseap-6-rpms priority=1
 
    # and JBoss subscriptions for the node
    if need_jbosseap_repo; then
