@@ -928,15 +928,19 @@ install_cartridges()
     # haproxy-1.4 support.
     carts="$carts openshift-origin-cartridge-haproxy-1.4"
 
-    # JBossEWS1.0 support.
-    # Note: Be sure to subscribe to the JBossEWS entitlements during the
-    # base install or in configure_jbossews_repo.
-    carts="$carts openshift-origin-cartridge-jbossews-1.0"
+    if is_false "$CONF_NO_JBOSSEWS"; then
+      # JBossEWS1.0 support.
+      # Note: Be sure to subscribe to the JBossEWS entitlements during the
+      # base install or in configure_jbossews_repo.
+      carts="$carts openshift-origin-cartridge-jbossews-1.0"
+    fi
 
-    # JBossEAP6.0 support.
-    # Note: Be sure to subscribe to the JBossEAP entitlements during the
-    # base install or in configure_jbosseap_repo.
-    carts="$carts openshift-origin-cartridge-jbosseap-6.0"
+    if is_false "$CONF_NO_JBOSSEAP"; then
+      # JBossEAP6.0 support.
+      # Note: Be sure to subscribe to the JBossEAP entitlements during the
+      # base install or in configure_jbosseap_repo.
+      carts="$carts openshift-origin-cartridge-jbosseap-6.0"
+    fi
 
     # Jenkins server for continuous integration.
     carts="$carts openshift-origin-cartridge-jenkins-1.4"
