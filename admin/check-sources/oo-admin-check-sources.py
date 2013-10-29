@@ -363,11 +363,11 @@ class OpenShiftAdminCheckSources:
         self.check_missing_repos()
         if not yum_plugin_priorities:
             self.logger.warning('Skipping yum priorities verification')
-            if not self.opts.role:
-                self.logger.warning('Please specify at least one role for this system with the --role command')
-        else:
+        if self.opts.role:
             self.verify_priorities()
             self.find_package_conflicts()
+        else:
+            self.logger.warning('Please specify at least one role for this system with the --role command')
         if not self.opts.fix:
             self.logger.info('Please re-run this tool after making any recommended repairs to this system')
         # oacs.do_report()
