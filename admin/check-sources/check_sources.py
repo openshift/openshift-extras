@@ -35,7 +35,8 @@ class OpenShiftCheckSources:
         self.yb = YumUtilBase(name, ver, usage)
         self.yb.preconf.disableplugin = []
         self.yb.preconf.quiet = True
-        self.yb.preconf.debuglevel = 0
+        self.yb.preconf.debuglevel = -1
+        self.yb.preconf.errorlevel = -1
         self.yb.preconf.plugin_types = (plugins.TYPE_CORE, plugins.TYPE_INTERACTIVE)
         op = OptionParser()
         self.yb.preconf.optparser = op
@@ -50,9 +51,14 @@ class OpenShiftCheckSources:
         npyb = YumUtilBase(NAME, VERSION, USAGE)
         npyb.preconf.disabled_plugins = ['priorities']
         npyb.preconf.quiet = True
-        npyb.preconf.debuglevel = 0
+        npyb.preconf.debuglevel = -1
+        npyb.preconf.errorlevel = -1
+        op = OptionParser()
+        npyb.preconf.optparser = op
         npyb.conf.cache = os.geteuid() != 0
         npyb.conf.disable_excludes = ['all']
+        opts, args = op.parse_args([])
+        npyb.plugins.setCmdLine(opts, args)
         return npyb
 
     def backup_config(self, filepath):
