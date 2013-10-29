@@ -1,31 +1,99 @@
 en:
   title: "OpenShift Installer"
   welcome: "Welcome to OpenShift."
-  intro: "This installer will guide you through a basic system deployment, based on one of the scenarios below."
-  select_workflow: "Select from the following installation scenarios.\nYou can also type '?' for Help or 'q' to Quit."
-  choice_exit_installer: "Exit this installer"
-  info_wait_config_validation: "Please wait while your deployment configuration is validated."
-  exit_incomplete_deployment: "Cannot perform unattended install; your deployment configuration is incomplete.\nRerun the workflow manually and try again."
-  info_force_run_deployment_setup: "Your system deployment configuration is incomplete.\nBefore continuing, you must describe your OpenShift deployment."
+  intro: >
+    This installer will guide you through a basic system deployment,
+    based on one of the scenarios below.
+  select_workflow: |
+    Select from the following installation scenarios.
+    You can also type '?' for Help or 'q' to Quit."
+  info_wait_config_validation: >
+    Please wait while your deployment configuration is validated.
+  exit_incomplete_deployment: |
+    Cannot perform unattended install; your deployment configuration is incomplete.
+    Rerun the workflow manually and try again.
+  info_force_run_deployment_setup: |
+    Your system deployment configuration is incomplete.
+    Before continuing, you must describe your OpenShift deployment.
   info_force_run_subscription_setup: "Your subscription configuration is incomplete."
   info_force_run_dns_setup: "You must set some DNS-specific values."
-  select_subscription: "Choose from the following options to complete your subscription setup.\nYou can also type '?' for Help or 'q' to return to the main menu."
+  select_subscription: |
+    Choose from the following options to complete your subscription setup.
+    You can also type '?' for Help or 'q' to return to the main menu."
   deployment_summary: "Here are the details of your current deployment."
   workflow_summary: "Here are your previous answers to the questions for this workflow."
-  subscription_summary: "Here is subscription configuration that the installer will use for this deployment."
+  subscription_summary: >
+    Here is subscription configuration that the installer will use for this deployment.
   invalid_port_number_response: "Enter a valid port number in the range 1 to 65535"
   info_config_is_valid: "The deployment looks good. Checking workflow responses."
   error_unattended_workflow_cfg: "The workflow configuration is not complete."
   info_unattended_workflow_start: "Everything looks good. Launching workflow."
-  warning_ssh_issues: "Warning: the following host(s) cannot be accessed without a user-specifed password."
+  warning_ssh_issues: >
+    Warning: The following host(s) cannot be accessed without a user-specifed password.
   unattended_not_possible: "This workflow cannot be run unattended."
-  error_unattended_workflow_remote: "The following remote hosts are unreachable or require user-entered passwords."
-  explain_subscriptions: "Subscription information is used to determine how your target host systems will get the necessary RPMs to install OpenShift.\nTODO: EXPAND ON THIS"
-  help_basic_deployment: "These settings cover basic info for the target hosts in your OpenShift system. The specific installation options that you've chosen may require additional settings."
-  help_subscription_cfg: "These are the subscription settings that are stored for future use in your configuration file."
-  help_subscription_tmp: "These are the subscription settings that are only used for this installation and are not stored for future use in your configuration file."
-  help_proceed_attended: "One or more of your target hosts will require user-entered passwords during the install process. If you want the process to run unattended, exit the installer and change the way the remote host authentication is handled."
-  help_workflow_questions: "These values will be used for the specific installation method that you have selected."
-  help_roles_edits: "These settings cover the basic info for the host instance(s) in this OpenShift role."
+  error_unattended_workflow_remote: >
+    The following remote hosts are unreachable or require user-entered passwords.
+  explain_subscriptions: >
+    Subscription information is used to determine how your target host systems will
+    get the necessary RPMs to install OpenShift.
+  explain_none_subscriptions: >
+    The "none" subscription option indicates that your systems already have
+    the proper installation sources configured. It is your responsibility to
+    ensure they are correct before beginning; the installer will not modify them.
+  explain_yum_subscriptions: >
+    The "yum" subscription option enables the installer to create and configure
+    plain yum repositories. Any repositories specified will overwrite existing
+    repositories of the same name in /etc/yum.repos.d
+  explain_rhn_subscriptions: >
+    The "rhn" subscription option re-registers the host from scratch
+    using RHN Classic. Your login and password must be given to enable the necessary
+    channels. You may also apply an activation key at registration.
+  explain_rhsm_subscriptions: >
+    The "rhsm" subscription option re-registers the host from scratch
+    using Red Hat Subscription Manager. Your login and password must be given, as
+    well as at least one pool ID for your OpenShift subscription. Multiple pool IDs
+    may be provided as a comma-separated list.
+  help_basic_deployment: |
+    These settings cover basic info for the target hosts in your OpenShift system. At a minimum, you must specify the host(s) on which the various OpenShift components will be installed and how DNS will be configured.
+
+    The host roles are as follows:
+    Broker: This is where the OpenShift broker, console, and nameserver are installed.
+    MsgServer: This is where the ActiveMQ message server is installed.
+    DBServer: This is where the broker's MongoDB server is installed.
+    Node: This is where OpenShift applications are hosted.
+
+    It is possible to install all of these components on the same host, but we strongly advise installing nodes on hosts separately from all other components.
+
+    In order to install each host, we must have ssh access to it via the installer. You must provide:
+      A host name or IP to ssh to
+      A user on that host that either is root or can sudo without password
+
+    Also provide a host name and IP address (may be internal-only). The nameserver installed with OpenShift will create records for these.
+
+    The specific installation options that you've chosen may require additional settings.
+  help_subscription_cfg: >
+    These are the subscription settings that are stored for future use
+    in your configuration file.
+  help_subscription_tmp: >
+    These are the subscription settings that are only used for this installation
+    and are not stored for future use in your configuration file.
+  help_proceed_attended: >
+    One or more of your target hosts will require user-entered passwords during
+    the install process. If you want the process to run unattended, exit the
+    installer and change the way the remote host authentication is handled, for
+    instance using ssh-agent.
+  help_workflow_questions: >
+    These values will be used for the specific installation method
+    that you have selected.
+  help_roles_edits: |
+    These settings cover the basic info for the host instance(s) in this OpenShift role.
+
+    The host roles are as follows:
+    Broker: This is where the OpenShift broker, console, and nameserver are installed. It should be accessible by app owners.
+    MsgServer: This is where the ActiveMQ message server is installed. It needs to be accessible internally from the broker and nodes.
+    DBServer: This is where the broker's MongoDB server is installed. It only needs to be accessible internally from the broker.
+    Node: This is where OpenShift applications are hosted. It needs to be accessible by app owners and app users.
   menu_prompt: "Type a selection and press <return>:"
-  basic_mode_explanation: "Note: ActiveMQ, MongoDB and named will all be installed on the Broker. For more flexibility, rerun the installer in advanced mode (-a)."
+  basic_mode_explanation: |
+    Note: ActiveMQ, MongoDB and named will all be installed on the Broker.
+    For more flexibility, rerun the installer in advanced mode (-a)."

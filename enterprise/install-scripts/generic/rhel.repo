@@ -1,5 +1,0 @@
-[rhel]
-name=rhel
-baseurl=${rhel_repo}
-enabled=1
-gpgcheck=0
