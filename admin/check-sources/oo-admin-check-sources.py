@@ -13,6 +13,10 @@ OTHER_PRIORITY = 40
 
 UNKNOWN, RHSM, RHN = ('unknown', 'rhsm', 'rhn')
 
+SUBS_NAME = {'unknown': '',
+                     'rhsm': 'Red Hat Subscription Manager',
+                     'rhn': 'RHN Classic or RHN Satellite'}
+
 ATTACH_ENTITLEMENTS_URL = 'https://access.redhat.com/site/articles/522923'
 
 def flatten(llist):
@@ -88,21 +92,41 @@ class OpenShiftAdminCheckSources:
             return [repo for repo in self.required_repos()
                     if not product or repo.product == product]
         return repo_db.find_repos(**kwargs)
-        
+
+    def _sub(self, subscription):
+        self.subscription = subscription
+        self.logger.info('Detected OpenShift Enterprise repository subscription managed by %s.'%SUBS_NAME[self.subscription])
+
+    def _oo_ver(self, version):
+        self.opts.oo_version = version
+        self.logger.info('Detected installed OpenShift Enterprise version %s'%self.opts.oo_version)
+
     def _sub_ver(self, subscription, version = None):
-        if subscription == 'rhsm':
-            self.subscription = RHSM
-        if subscription == 'rhn':
-            self.subscription = RHN
-        if self.opts.oo_version:
-            return True
-        if version:
-            self.logger.info('Detected installed OpenShift Enterprise version %s'%version)
-            self.opts.oo_version = version
-            return True
+        if self.subscription == UNKNOWN and not self.opts.oo_version:
+            self._sub(subscription)
+            if version:
+                self._oo_ver(version)
+                return True
+            # We still haven't gotten a version guess - fail to force
+            # user to specify version
+            return False
+        if self.subscription == UNKNOWN and self.opts.oo_version:
+            if not version or version == self.opts.oo_version:
+                self._sub(subscription)
+                return True
+        if self.subscription != UNKNOWN and not self.opts.oo_version:
+            if subscription == self.subscription and version:
+                self._oo_ver(version)
+                return True
+        if self.subscription != UNKNOWN and self.opts.oo_version:
+            if subscription == self.subscription and (not version or version == self.opts.oo_version):
+                return True
         return False
 
-    def guess_ose_version(self):
+    def guess_ose_version_and_subscription(self):
+        if self.subscription != UNKNOWN and self.opts.oo_version:
+            # Short-circuit guess if user specifies sub and ver
+            return True
         matches = repo_db.find_repos_by_repoid(self.oscs.all_repoids())
         rhsm_ose_2_0 = [xx for xx in matches
                         if xx in repo_db.find_repos(subscription = 'rhsm', product_version = '2.0', product = 'ose')]
@@ -120,35 +144,31 @@ class OpenShiftAdminCheckSources:
         rhn_2_0_pkgs = filter(None, [self.oscs.verify_package(xx.key_pkg, source=xx.repoid) for xx in rhn_2_0_avail])
         rhsm_1_2_pkgs = filter(None, [self.oscs.verify_package(xx.key_pkg, source=xx.repoid) for xx in rhsm_1_2_avail])
         rhn_1_2_pkgs = filter(None, [self.oscs.verify_package(xx.key_pkg, source=xx.repoid) for xx in rhn_1_2_avail])
-        if rhsm_2_0_pkgs:
-            self._sub_ver('rhsm', '2.0')
+        # This if ladder detects the subscription type and version
+        # based on available OSE repos and which repos provide
+        # installed packages. Maybe there's a better way?
+        if (
+                (rhsm_2_0_pkgs and self._sub_ver('rhsm', '2.0'))
+                or (rhn_2_0_pkgs and self._sub_ver('rhn', '2.0'))
+                or (rhsm_1_2_pkgs and self._sub_ver('rhsm', '1.2'))
+                or (rhn_1_2_pkgs and self._sub_ver('rhn', '1.2'))
+                or (rhsm_2_0_avail and self._sub_ver('rhsm', '2.0'))
+                or (rhn_2_0_avail and self._sub_ver('rhn', '2.0'))
+                or (rhsm_1_2_avail and self._sub_ver('rhsm', '1.2'))
+                or (rhn_1_2_avail and self._sub_ver('rhn', '1.2'))
+        ):
             return True
-        if rhn_2_0_pkgs:
-            self._sub_ver('rhn', '2.0')
-            return True
-        if rhsm_1_2_pkgs:
-            self._sub_ver('rhsm', '1.2')
-            return True
-        if rhn_1_2_pkgs:
-            self._sub_ver('rhn', '1.2')
-            return True
-        if rhsm_2_0_avail:
-            self._sub_ver('rhsm', '2.0')
-            return True
-        if rhn_2_0_avail:
-            self._sub_ver('rhn', '2.0')
-            return True
-        if rhsm_1_2_avail:
-            self._sub_ver('rhsm', '1.2')
-            return True
-        if rhn_1_2_avail:
-            self._sub_ver('rhn', '1.2')
-            return True
+        # This section detects just the subscription type if the
+        # version has been specified or couldn't be determined by the
+        # preceding logic.
         for fxn_rcheck, sub in [(self.oscs.repo_is_rhsm, 'rhsm'), (self.oscs.repo_is_rhn, 'rhn')]:
             if self.subscription == UNKNOWN:
                 for repoid in self.oscs.all_repoids():
                     if fxn_rcheck(repoid) and self._sub_ver(sub):
                         return True
+            else:
+                # No need to check for a value the user has provided
+                break
         return False
 
     def verify_yum_plugin_priorities(self):
@@ -205,34 +225,43 @@ class OpenShiftAdminCheckSources:
         return True
 
     def verify_rhel_priorities(self, ose_repos, rhel6_repo):
+        res = True
         ose_pri = self._get_pri(ose_repos)
         rhel_pri = self.oscs.repo_priority(rhel6_repo)
         if rhel_pri <= ose_pri:
             for repoid in ose_repos:
                 self._set_pri(repoid, OSE_PRIORITY)
+                res = False
             ose_pri = OSE_PRIORITY
         if rhel_pri <= ose_pri or rhel_pri >= 99:
             self._set_pri(rhel6_repo, RHEL_PRIORITY)
+            res = False
+        return res
 
     def verify_jboss_priorities(self, ose_repos, jboss_repos, rhel6_repo):
+        res = True
         ose_pri = self._get_pri(ose_repos)
         jboss_pri = self._get_pri(jboss_repos, minpri=True)
         jboss_max_pri = self._get_pri(jboss_repos)
         rhel_pri = self.oscs.repo_priority(rhel6_repo)
         if jboss_pri <= rhel_pri or jboss_max_pri >= 99:
             self._set_pri(rhel6_repo, RHEL_PRIORITY)
+            res = False
             for repoid in jboss_repos:
                 self._set_pri(repoid, JBOSS_PRIORITY)
+                res = False
+        return res
 
     def verify_priorities(self):
+        res = True
         self.logger.info('Checking channel/repository priorities')
         ose = self.blessed_repoids(enabled=True, required=True, product='ose')
         jboss = self.blessed_repoids(enabled=True, required=True, product='jboss')
         rhel = self.blessed_repoids(product='rhel')[0]
-        self.verify_rhel_priorities(ose, rhel)
+        res &= self.verify_rhel_priorities(ose, rhel)
         if jboss:
-            self.verify_jboss_priorities(ose, jboss, rhel)
-        return True
+            res &= self.verify_jboss_priorities(ose, jboss, rhel)
+        return res
 
     def check_disabled_repos(self):
         disabled_repos = list(set(self.blessed_repoids(required = True)).intersection(self.oscs.disabled_repoids()))
@@ -257,6 +286,7 @@ class OpenShiftAdminCheckSources:
                         self.logger.error("# subscription-manager repos --enable=%s"%repoid)
                     else:
                         self.logger.error("# yum-config-manager --enable %s"%repoid)
+            return False
         return True
 
     def check_missing_repos(self):
@@ -267,7 +297,8 @@ class OpenShiftAdminCheckSources:
             for ii in missing_repos:
                 self.logger.error("    %s"%ii)
             self.logger.error('Please verify that an OpenShift Enterprise subscription is attached to this system using either RHN Classic or Red Hat Subscription Manager by following the instructions here: %s'%ATTACH_ENTITLEMENTS_URL)
-        return True             # Needed?
+            return False
+        return True
 
     def verify_repo_priority(self, repoid, required_repos):
         """Checks the given repoid to make sure that the priority for it
@@ -276,14 +307,19 @@ class OpenShiftAdminCheckSources:
         Preconditions: Maximum OpenShift (and blessed) repository
         priority should be below 99
         """
+        res = True
         required_pri = self._get_pri(required_repos)
         new_pri = OTHER_PRIORITY
         if self.oscs.repo_priority(repoid) <= required_pri:
             if required_pri >= new_pri:
                 new_pri = min(99, required_pri+10)
             self._set_pri(repoid, new_pri)
+            res = False
+        return res
+        
 
     def find_package_conflicts(self):
+        res = True
         self.pri_resolve_header = False
         all_blessed_repos = repo_db.find_repoids(product_version = self.opts.oo_version)
         enabled_ose_repos = self.blessed_repoids(enabled = True, required = True, product = 'ose')
@@ -301,10 +337,11 @@ class OpenShiftAdminCheckSources:
                 other_pkg_matches = [xx for xx in self.oscs.all_packages_matching(ose_pkg_names, True) if xx.repoid not in all_blessed_repos]
                 conflicts = sorted(set([xx.repoid for xx in other_pkg_matches]))
                 for ii in conflicts:
-                    self.verify_repo_priority(ii, required_repos)
+                    res &= self.verify_repo_priority(ii, required_repos)
             except KeyError as ke:
                 self.logger.error('Repository %s not enabled'%repoid)
-        return True
+                res = False
+        return res
 
     def guess_role(self):
         self.logger.warning('No roles have been specified. Attempting to guess the roles for this system...')
@@ -355,11 +392,11 @@ class OpenShiftAdminCheckSources:
                 self.problem = True
                 self.logger.warning('If this system will be providing the JBossEAP cartridge, re-run this command with the --role=node-eap argument')
 
-    def main(self):
+    def run_checks(self):
         if not self.validate_roles():
             return False
         self.massage_roles()
-        if not self.guess_ose_version():
+        if not self.guess_ose_version_and_subscription():
             self.problem = True
             if self.subscription == UNKNOWN:
                 self.logger.error('Could not determine subscription type.')
@@ -367,19 +404,29 @@ class OpenShiftAdminCheckSources:
             if not self.opts.oo_version:
                 self.logger.error('Could not determine product version. Please re-run this script with the --oo_version argument.')
             return False
-        yum_plugin_priorities = self.verify_yum_plugin_priorities()
-        self.check_disabled_repos()
-        self.check_missing_repos()
-        if not yum_plugin_priorities:
-            self.logger.warning('Skipping yum priorities verification')
+        if not self.check_disabled_repos():
+            return False
+        if not self.check_missing_repos():
+            return False
         if self.opts.role:
-            self.verify_priorities()
-            self.find_package_conflicts()
+            if not self.verify_yum_plugin_priorities():
+                self.logger.warning('Skipping yum priorities verification')
+                return False
+            if not self.verify_priorities():
+                return False
+            if not self.find_package_conflicts():
+                return False
         else:
             self.logger.warning('Please specify at least one role for this system with the --role command')
             self.problem = True
+            return False
+        return True
+
+    def main(self):
+        self.run_checks()
         if not self.opts.fix and self.problem:
             self.logger.info('Please re-run this tool after making any recommended repairs to this system')
+        return not self.problem
 
 
 if __name__ == "__main__":
@@ -402,4 +449,7 @@ if __name__ == "__main__":
         opt_parser.add_option('-f', '--fix', action='store_true', help='If set, attempt to repair issues as well as warn')
         (opts, args) = opt_parser.parse_args()
     oacs = OpenShiftAdminCheckSources(opts, opt_parser)
-    oacs.main()
+    if not oacs.main():
+        sys.exit(1)
+    sys.exit(0)
+    
