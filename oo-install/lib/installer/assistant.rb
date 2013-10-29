@@ -130,7 +130,6 @@ module Installer
             descriptions << "## #{workflow.summary}\n#{workflow.description}"
           end
           descriptions << horizontal_rule
-          menu.choice(translate(:choice_exit_installer)) { return 0 }
           menu.hidden("?") { say descriptions.join("\n\n") + "\n\n" }
           menu.hidden("q") { return 0 }
         end
