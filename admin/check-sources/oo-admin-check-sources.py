@@ -32,13 +32,13 @@ class OpenShiftAdminCheckSources:
 
     pri_header = False
     pri_resolve_header = False
+    problem = False
 
     def __init__(self, opts, opt_parser):
         self.opts = opts
         self.opt_parser = opt_parser
         self._setup_logger()
         self.oscs = OpenShiftCheckSources()
-        self.report = {}
         self.subscription = UNKNOWN
 
     def _setup_logger(self):
@@ -158,6 +158,7 @@ class OpenShiftAdminCheckSources:
         """
         self.logger.info('Checking if yum-plugin-priorities is installed')
         if not self.oscs.verify_package('yum-plugin-priorities'):
+            self.problem = True
             if self.oscs.package_available('yum-plugin-priorities'):
                 self.logger.error('Required package yum-plugin-priorities is not installed. Install the package with the following command:')
                 self.logger.error('# yum install yum-plugin-priorities')
@@ -172,6 +173,7 @@ class OpenShiftAdminCheckSources:
         return max(chain((self.oscs.repo_priority(xx) for xx in repolist), [0]))
 
     def _set_pri(self, repoid, priority):
+        self.problem = True
         if not self.pri_header:
             self.pri_header = True
             self.logger.info('Resolving repository/channel/subscription priority conflicts')
@@ -194,6 +196,7 @@ class OpenShiftAdminCheckSources:
     def _check_valid_pri(self, repos):
         bad_repos = [(xx, self.oscs.repo_priority(xx)) for xx in repos if self.oscs.repo_priority(xx) >= 99]
         if bad_repos:
+            self.problem = True
             self.logger.error('The calculated priorities for the following repoids are too large (>= 99)')
             for repoid, pri in bad_repos:
                 self.logger.error('    %s'%repoid)
@@ -234,6 +237,7 @@ class OpenShiftAdminCheckSources:
     def check_disabled_repos(self):
         disabled_repos = list(set(self.blessed_repoids(required = True)).intersection(self.oscs.disabled_repoids()))
         if disabled_repos:
+            self.problem = True
             if self.opts.fix:
                 for ii in disabled_repos:
                     if self.oscs.enable_repo(ii):
@@ -258,6 +262,7 @@ class OpenShiftAdminCheckSources:
     def check_missing_repos(self):
         missing_repos = [repo for repo in self.blessed_repoids(required = True) if repo not in self.oscs.all_repoids()]
         if missing_repos:
+            self.problem = True
             self.logger.error("The required OpenShift Enterprise repositories are missing:")
             for ii in missing_repos:
                 self.logger.error("    %s"%ii)
@@ -314,6 +319,7 @@ class OpenShiftAdminCheckSources:
             self.opts.role.append('node-eap')
         if not self.opts.role:
             self.logger.error('No roles could be detected.')
+            self.problem = True
             return False
         self.logger.warning('If the roles listed below are incorrect or incomplete, please re-run this script with the appropriate --role arguments')
         self.logger.warning('\n'.join(('    %s'%role for role in self.opts.role)))
@@ -324,6 +330,7 @@ class OpenShiftAdminCheckSources:
             return True
         for role in self.opts.role:
             if not role in self.valid_roles:
+                self.problem = True
                 self.logger.error('You have specified an invalid role: %s is not one of %s'%(role, self.valid_roles))
                 self.opt_parser.print_help()
                 return False
@@ -345,6 +352,7 @@ class OpenShiftAdminCheckSources:
             if 'node-eap' in self.opts.role and not 'node' in self.opts.role:
                 self.opts.role.append('node')
             if 'node' in self.opts.role and not 'node-eap' in self.opts.role:
+                self.problem = True
                 self.logger.warning('If this system will be providing the JBossEAP cartridge, re-run this command with the --role=node-eap argument')
 
     def main(self):
@@ -352,6 +360,7 @@ class OpenShiftAdminCheckSources:
             return False
         self.massage_roles()
         if not self.guess_ose_version():
+            self.problem = True
             if self.subscription == UNKNOWN:
                 self.logger.error('Could not determine subscription type.')
                 self.logger.error('Please attach an OpenShift Enterprise subscription to this system using either RHN Classic or Red Hat Subscription Manager by following the instructions here: %s'%ATTACH_ENTITLEMENTS_URL)
@@ -368,9 +377,9 @@ class OpenShiftAdminCheckSources:
             self.find_package_conflicts()
         else:
             self.logger.warning('Please specify at least one role for this system with the --role command')
-        if not self.opts.fix:
+            self.problem = True
+        if not self.opts.fix and self.problem:
             self.logger.info('Please re-run this tool after making any recommended repairs to this system')
-        # oacs.do_report()
 
 
 if __name__ == "__main__":
