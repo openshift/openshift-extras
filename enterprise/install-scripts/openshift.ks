@@ -170,20 +170,20 @@
 #       jboss_repo_base / CONF_JBOSS_REPO_BASE -- see below
 #       rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO -- see below
 #     rhsm - use subscription-manager
-#       sm_reg_name / CONF_SM_REG_NAME
-#       sm_reg_pass / CONF_SM_REG_PASS
+#       rhn_user / CONF_RHN_USER
+#       rhn_pass / CONF_RHN_PASS
 #       sm_reg_pool / CONF_SM_REG_POOL - pool ID for OpenShift subscription (required)
-#       sm_reg_pool_rhel / CONF_SM_REG_POOL_RHEL - pool ID for RHEL subscription (optional)
+#                     Subscribe multiple with comma-separated list poolid1,poolid2,...
 #     rhn - use rhn-register
-#       rhn_reg_name / CONF_RHN_REG_NAME
-#       rhn_reg_pass / CONF_RHN_REG_PASS
+#       rhn_user / CONF_RHN_USER
+#       rhn_pass / CONF_RHN_PASS
 #       rhn_reg_actkey / CONF_RHN_REG_ACTKEY - optional activation key
 #   Default: none
 #CONF_INSTALL_METHOD="yum"
 
 # Hint: when running as a cmdline script, to enter your password invisibly:
-#  read -s CONF_SM_REG_PASS
-#  export CONF_SM_REG_PASS
+#  read -s CONF_RHN_PASS
+#  export CONF_RHN_PASS
 
 # optional_repo / CONF_OPTIONAL_REPO
 #   Enable unsupported RHEL "optional" repo.
@@ -330,6 +330,26 @@
 #   to set the hostname, which makes it a little easier to recognize
 #   which host you are looking at when logging in as an administrator.
 #CONF_KEEP_HOSTNAME=true
+
+# keep_nameservers / CONF_KEEP_NAMESERVERS
+#   Default: false (not set)
+#   Enabling this option prevents the installation script from placing
+#   the OpenShift nameserver at the top of /etc/resolv.conf, which is
+#   the default (because rogue DNS is assumed). Set this to true if
+#   OpenShift app DNS is properly delegated/authoritative.
+#CONF_KEEP_NAMESERVERS=true
+
+# forward_dns / CONF_FORWARD_DNS
+#   Default: ! keep_nameservers (so typically, true)
+#   This option determines whether the BIND server being installed will
+#   forward requests for which it is not authoritative to upstream DNS
+#   servers or not. In a rogue DNS install, forwarding will make for
+#   a better client experience, so the default is true; however this
+#   should not be done if the service is open to the internet as it
+#   can be used to magnify DDoS attacks.  If OpenShift DNS is properly
+#   delegated/authoritative then this is not necessary at all and
+#   should be false.
+#CONF_FORWARD_DNS=false
 
 
 # # # # # # # # # # # miscellaneous other settings # # # # # # # # # # #
@@ -552,16 +572,23 @@ configure_repos()
 
   if activemq || broker || datastore || named
   then
+    # The ose-infrastructure channel has the activemq, broker, and mongodb
+    # packages.  The ose-infrastructure and ose-node channels also include
+    # the yum-plugin-priorities package, which is needed for the installation
+    # script itself, so we also enable ose-infrastructure here if we are
+    # installing named.
     need_infra_repo() { :; }
   fi
 
   if broker
   then
+    # We install the rhc client tool on the broker host.
     need_client_tools_repo() { :; }
   fi
 
   if node
   then
+    # The ose-node channel has node packages including all the cartridges.
     need_node_repo() { :; }
 
     if is_false "${CONF_NO_JBOSSEAP}"; then
@@ -595,9 +622,9 @@ configure_repos()
   esac
 
   # Install yum-plugin-priorities
-  yum clean all
+  yum $disable_plugin clean all
   echo "Installing yum-plugin-priorities; if something goes wrong here, check your install source."
-  yum_install_or_exit -y yum-plugin-priorities
+  yum_install_or_exit yum-plugin-priorities
   echo "OpenShift: Completed configuring repos."
 }
 
@@ -759,6 +786,23 @@ YUM
   fi
 }
 
+rhn_setopt() # e.g. rhn_setopt myrepo foo=bar
+{
+  # RHN method for setting yum priorities and excludes:
+  RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
+
+  repo=$1; shift
+  echo "setting $@ on channel $repo"
+  # subscribe to channel if not already
+  [[ "$(rhn-channel -l)" == *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
+  # NOTE: this next bit could go haywire with repo names that include special regex chars
+  sed -i "/^\\[$repo\\]/,/^\\[/{ /^\\[/ !d }" $RHNPLUGINCONF   # remove previous [repo] section if there
+  sed -i "/^\\[$repo\\]/ d" $RHNPLUGINCONF   # remove previous section header if there
+  echo "[$repo]" >> $RHNPLUGINCONF
+  for opt in "$@"; do echo "$opt" >> $RHNPLUGINCONF; done
+  echo >> $RHNPLUGINCONF
+}
+
 configure_rhn_channels()
 {
   if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
@@ -766,131 +810,92 @@ configure_rhn_channels()
     rhnreg_ks --force --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || abort_install
   else
     echo "Register with RHN with username and password"
-    rhnreg_ks --force --profilename=${hostname} --username ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
+    rhnreg_ks --force --profilename=${hostname} --username ${CONF_RHN_USER} --password ${CONF_RHN_PASS} || abort_install
   fi
-
-  # RHN method for setting yum priorities and excludes:
-  RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
 
   # OSE packages are first priority
-  if need_client_tools_repo
-  then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-rhc --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-1.2-rhc]\npriority=1\n" >> $RHNPLUGINCONF
-  fi
-
-  if need_infra_repo
-  then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-infrastructure --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-1.2-infrastructure]\npriority=1\n" >> $RHNPLUGINCONF
-  fi
-
-  if need_node_repo
-  then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-node --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-1.2-node]\npriority=1\n" >> $RHNPLUGINCONF
-  fi
-
-  if need_jbosseap_repo
-  then
-    rhn-channel --add --channel rhel-x86_64-server-6-ose-1.2-jbosseap --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[rhel-x86_64-server-6-ose-1.2-jbosseap]\npriority=1\n" >> $RHNPLUGINCONF
-  fi
+  need_client_tools_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-rhc priority=1
+  need_infra_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-infrastructure priority=1
+  need_node_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-node priority=1
+  need_jbosseap_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-jbosseap priority=1
 
   # RHEL packages are second priority
-  echo -e "[rhel-x86_64-server-6]\npriority=2\nexclude=tomcat6*\n" >> $RHNPLUGINCONF
+  rhn_setopt rhel-x86_64-server-6 priority=2 "exclude=tomcat6*"
 
   # JBoss packages are third priority -- and all else is lower
-  if need_jbosseap_repo
-  then
-    rhn-channel --add --channel jbappplatform-6-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[jbappplatform-6-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
-  fi
+  need_jbosseap_repo && rhn_setopt jbappplatform-6-x86_64-server-6-rpm priority=3
+  need_jbossews_repo && rhn_setopt jb-ews-2-x86_64-server-6-rpm priority=3
 
-  if need_jbossews_repo
-  then
-    rhn-channel --add --channel jb-ews-2-x86_64-server-6-rpm --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-    echo -e "[jb-ews-2-x86_64-server-6-rpm]\npriority=3\n" >> $RHNPLUGINCONF
-  fi
+  need_optional_repo && rhn_setopt rhel-x86_64-server-optional-6
+}
 
-  if need_optional_repo
-  then
-    rhn-channel --add --channel rhel-x86_64-server-optional-6 --user ${CONF_RHN_REG_NAME} --password ${CONF_RHN_REG_PASS} || abort_install
-  fi
+ycm_setopt() # e.g. ycm_setopt myrepo foo=bar; must have an option to do anything
+{
+  repo=$1; shift
+  echo "setting $@ on repo $repo"
+  # Note: yum-config-manager never indicates errors with a return code. We will check the output
+  # to determine when these fail due to subscription problems etc.
+  yum-config-manager $disable_plugin "$repo" --enable | grep -q '^enabled = \(1\|True\)' \
+     || abort_install "Failed to enable $repo."
+  for repo_opt in "$@"; do
+    # The obvious way to set options would be yum-config-manager. Sadly, against our 1.2 repos,
+    # this is currently broken. https://bugzilla.redhat.com/show_bug.cgi?id=1024111
+    # For a workaround we edit the repo file directly.
+    # In the repo foo=bar becomes "foo = bar"
+    option_name="${repo_opt//=*/}"
+    repo_opt="${repo_opt//=/ = }"
+    NL=$'\n'
+    # NOTE: this next bit could go haywire with repo names that include special regex chars
+    sed -i "/^\\[$repo\\]/,/^\\[/ { /^$option_name =/d; /^\\[$repo\\]/ a${repo_opt}$NL  }" /etc/yum.repos.d/redhat.repo
+  done
 }
 
 configure_rhsm_channels()
 {
    echo "Register with RHSM"
-   subscription-manager register --force --username=$CONF_SM_REG_NAME --password=$CONF_SM_REG_PASS || abort_install
-   # add the necessary subscriptions
-   if [ "x$CONF_SM_REG_POOL_RHEL" == x ]; then
-     echo "Registering RHEL with any available subscription"
-     subscription-manager attach --auto || abort_install
-   else
-     echo "Registering RHEL subscription from pool id $CONF_SM_REG_POOL_RHEL"
-     subscription-manager attach --pool $CONF_SM_REG_POOL_RHEL || abort_install
-   fi
-   echo "Registering OpenShift subscription from pool id $CONF_SM_REG_POOL_RHEL"
-   subscription-manager attach --pool $CONF_SM_REG_POOL || abort_install
+   subscription-manager register --force --username=$CONF_RHN_USER --password=$CONF_RHN_PASS || abort_install
+   for poolid in ${CONF_SM_REG_POOL//,/ }; do
+     echo "Registering subscription from pool id $poolid"
+     subscription-manager attach --pool $poolid || abort_install
+   done
 
    # have yum sync new list of repos from rhsm before changing settings
-   yum repolist
+   yum $disable_plugin repolist
 
-   # Note: yum-config-manager never indicates errors in return code, and the output is difficult to parse; so,
-   # it is tricky to determine when these fail due to subscription problems etc.
+   # The yum-config-manager command is provided by the yum-utils package.
+   yum_install_or_exit yum-utils
+   # We also need the priorities plugin before we start setting priorities, or that fails.
+   # We need to ensure the right channel is enabled in order to get the priorities plugin.
+   if need_node_repo; then ycm_setopt rhel-server-ose-1.2-node-6-rpms enabled=True
+   else ycm_setopt rhel-server-ose-1.2-infra-6-rpms enabled=True
+   fi
+   yum_install_or_exit yum-plugin-priorities
 
    # configure the RHEL subscription
-   yum-config-manager --setopt=rhel-6-server-rpms.priority=2 rhel-6-server-rpms --save
-   yum-config-manager --setopt="rhel-6-server-rpms.exclude=tomcat6*" rhel-6-server-rpms --save
-   if need_optional_repo
-   then
-     yum-config-manager --enable rhel-6-server-optional-rpms
-   fi
+   ycm_setopt rhel-6-server-rpms priority=2 "exclude=tomcat6*"
+   need_optional_repo && ycm_setopt rhel-6-server-optional-rpms enabled=True
 
    # and the OpenShift subscription
-   if need_infra_repo
-   then
-     yum-config-manager --enable rhel-server-ose-1.2-infra-6-rpms
-     yum-config-manager --setopt=rhel-server-ose-1.2-infra-6-rpms.priority=1 rhel-server-ose-1.2-infra-6-rpms --save
-   fi
-
-   if need_client_tools_repo
-   then
-     yum-config-manager --enable rhel-server-ose-1.2-rhc-6-rpms
-     yum-config-manager --setopt=rhel-server-ose-1.2-rhc-6-rpms.priority=1 rhel-server-ose-1.2-rhc-6-rpms --save
-   fi
-
-   if need_node_repo
-   then
-     yum-config-manager --enable rhel-server-ose-1.2-node-6-rpms
-     yum-config-manager --setopt=rhel-server-ose-1.2-node-6-rpms.priority=1 rhel-server-ose-1.2-node-6-rpms --save
-   fi
-
-   if need_jbosseap_cartridge_repo
-   then
-     yum-config-manager --enable rhel-server-ose-1.2-jbosseap-6-rpms
-     yum-config-manager --setopt=rhel-server-ose-1.2-jbosseap-6-rpms.priority=1 rhel-server-ose-1.2-jbosseap-6-rpms --save
-   fi
+   need_infra_repo && ycm_setopt rhel-server-ose-1.2-infra-6-rpms priority=1
+   need_client_tools_repo && ycm_setopt rhel-server-ose-1.2-rhc-6-rpms priority=1
+   need_node_repo && ycm_setopt rhel-server-ose-1.2-node-6-rpms priority=1
+   need_jbosseap_cartridge_repo && ycm_setopt rhel-server-ose-1.2-jbosseap-6-rpms priority=1
 
    # and JBoss subscriptions for the node
-   if need_jbosseap_repo
-   then
-     yum-config-manager --enable jb-eap-6-for-rhel-6-server-rpms
-     yum-config-manager --setopt=jb-eap-6-for-rhel-6-server-rpms.priority=3 jb-eap-6-for-rhel-6-server-rpms --save
-     yum-config-manager --disable jb-eap-5-for-rhel-6-server-rpms
+   if need_jbosseap_repo; then
+     ycm_setopt jb-eap-6-for-rhel-6-server-rpms priority=3
+     yum-config-manager $disable_plugin --disable jb-eap-5-for-rhel-6-server-rpms > /dev/null
    fi
 
-   if need_jbossews_repo
-   then
-     yum-config-manager --enable jb-ews-2-for-rhel-6-server-rpms
-     yum-config-manager --setopt=jb-ews-2-for-rhel-6-server-rpms.priority=3 jb-ews-2-for-rhel-6-server-rpms
-     yum-config-manager --disable jb-ews-1-for-rhel-6-server-rpms
+   if need_jbossews_repo; then
+     ycm_setopt jb-ews-2-for-rhel-6-server-rpms priority=3
+     yum-config-manager $disable_plugin --disable jb-ews-1-for-rhel-6-server-rpms > /dev/null
    fi
 }
 
 abort_install()
 {
+  [[ "$@"x == x ]] || echo "$@"
   # don't change this; could be used as an automation cue.
   echo "Aborting OpenShift Installation."
   exit 1
@@ -898,7 +903,7 @@ abort_install()
 
 yum_install_or_exit()
 {
-  yum install $*
+  yum install -y $* $disable_plugin
   if [ $? -ne 0 ]
   then
     echo "Command failed: yum install $*"
@@ -910,7 +915,7 @@ yum_install_or_exit()
 # Install the client tools.
 install_rhc_pkg()
 {
-  yum_install_or_exit -y rhc
+  yum_install_or_exit rhc
 }
 
 # Set up the system express.conf so our broker will be used by default.
@@ -931,7 +936,7 @@ install_broker_pkgs()
   pkgs="$pkgs openshift-origin-console"
 
 
-  yum_install_or_exit -y $pkgs
+  yum_install_or_exit $pkgs
 }
 
 # Install node-specific packages.
@@ -955,7 +960,7 @@ install_node_pkgs()
 remove_abrt_addon_python()
 {
   if grep 'Enterprise Linux Server release 6.4' /etc/redhat-release && rpm -q abrt-addon-python && rpm -q openshift-origin-cartridge-python; then
-    yum remove -y abrt-addon-python || abort_install
+    yum $disable_plugin remove -y abrt-addon-python || abort_install
   fi
 }
 
@@ -974,15 +979,19 @@ install_cartridges()
     # haproxy-1.4 support.
     carts="$carts openshift-origin-cartridge-haproxy-1.4"
 
-    # JBossEWS1.0 support.
-    # Note: Be sure to subscribe to the JBossEWS entitlements during the
-    # base install or in configure_jbossews_repo.
-    carts="$carts openshift-origin-cartridge-jbossews-1.0"
+    if is_false "$CONF_NO_JBOSSEWS"; then
+      # JBossEWS1.0 support.
+      # Note: Be sure to subscribe to the JBossEWS entitlements during the
+      # base install or in configure_jbossews_repo.
+      carts="$carts openshift-origin-cartridge-jbossews-1.0"
+    fi
 
-    # JBossEAP6.0 support.
-    # Note: Be sure to subscribe to the JBossEAP entitlements during the
-    # base install or in configure_jbosseap_repo.
-    carts="$carts openshift-origin-cartridge-jbosseap-6.0"
+    if is_false "$CONF_NO_JBOSSEAP"; then
+      # JBossEAP6.0 support.
+      # Note: Be sure to subscribe to the JBossEAP entitlements during the
+      # base install or in configure_jbosseap_repo.
+      carts="$carts openshift-origin-cartridge-jbosseap-6.0"
+    fi
 
     # Jenkins server for continuous integration.
     carts="$carts openshift-origin-cartridge-jenkins-1.4"
@@ -1068,7 +1077,7 @@ install_cartridges()
   # still install as much as possible.
   #carts="$carts --skip-broken"
 
-  yum_install_or_exit -y $carts
+  yum_install_or_exit $carts
 }
 
 # Fix up SELinux policy on the broker.
@@ -1248,7 +1257,7 @@ configure_sshd_on_node()
 
 install_datastore_pkgs()
 {
-  yum_install_or_exit -y mongodb-server
+  yum_install_or_exit mongodb-server
 }
 
 # The init script lies to us as of version 2.0.2-1.el6_3: The start 
@@ -1547,7 +1556,7 @@ EOF
 
 install_activemq_pkgs()
 {
-  yum_install_or_exit -y activemq
+  yum_install_or_exit activemq
 }
 
 configure_activemq()
@@ -1793,7 +1802,7 @@ EOF
 
 install_named_pkgs()
 {
-  yum_install_or_exit -y bind bind-utils
+  yum_install_or_exit bind bind-utils
 }
 
 configure_named()
@@ -1805,12 +1814,18 @@ configure_named()
   chown root:named /etc/rndc.key
   chmod 640 /etc/rndc.key
 
-  # Set up DNS forwarding.
-  cat <<EOF > /var/named/forwarders.conf
-forwarders { ${nameservers} } ;
-EOF
-  restorecon /var/named/forwarders.conf
-  chmod 644 /var/named/forwarders.conf
+  # Set up DNS forwarding if so directed.
+  forwarders="recursion no;"
+  if is_true "$CONF_FORWARD_DNS"; then
+    echo "forwarders { ${nameservers} } ;" > /var/named/forwarders.conf
+    restorecon /var/named/forwarders.conf
+    chmod 644 /var/named/forwarders.conf
+    forwarders='// set forwarding to the next nearest server (from DHCP response)
+	forward only;
+        include "forwarders.conf";
+	recursion yes;
+'
+  fi
 
   # Install the configuration file for the OpenShift Enterprise domain
   # name.
@@ -1838,14 +1853,11 @@ options {
         statistics-file "/var/named/data/named_stats.txt";
         memstatistics-file "/var/named/data/named_mem_stats.txt";
 	allow-query     { any; };
-	recursion yes;
 
 	/* Path to ISC DLV key */
 	bindkeys-file "/etc/named.iscdlv.key";
 
-	// set forwarding to the next nearest server (from DHCP response
-	forward only;
-        include "forwarders.conf";
+	$forwarders
 };
 
 logging {
@@ -1893,6 +1905,7 @@ configure_named_zone()
     rm -f /var/named/K${zone}*
     dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named ${zone}
     bind_key="$(grep Key: /var/named/K${zone}*.private | cut -d ' ' -f 2)"
+    rm -f /var/named/K${zone}*
   fi
 
   # Install the key where BIND and oo-register-dns expect it.
@@ -1943,9 +1956,9 @@ configure_hosts_dns()
   if [ -z $CONF_NAMED_ENTRIES ]; then
     # Add A records any other components that are being installed locally.
     broker && echo "${broker_hostname%.${zone}}			A	${broker_ip_addr}" >> $nsdb
-    node && echo "${node_hostname%.${zone}}			A	${node_ip_addr}${nl}" >> $nsdb
-    activemq && echo "${activemq_hostname%.${zone}}			A	${cur_ip_addr}${nl}" >> $nsdb
-    datastore && echo "${datastore_hostname%.${zone}}			A	${cur_ip_addr}${nl}" >> $nsdb
+    node && echo "${node_hostname%.${zone}}			A	${node_ip_addr}" >> $nsdb
+    activemq && echo "${activemq_hostname%.${zone}}			A	${cur_ip_addr}" >> $nsdb
+    datastore && echo "${datastore_hostname%.${zone}}			A	${cur_ip_addr}" >> $nsdb
   elif [[ "$CONF_NAMED_ENTRIES" =~ : ]]; then
     # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
     pairs=(${CONF_NAMED_ENTRIES//,/ })
@@ -1963,7 +1976,7 @@ configure_hosts_dns()
 # Make resolv.conf point to our named service, which will resolve the
 # host names used in this installation of OpenShift.  Our named service
 # will forward other requests to some other DNS servers.
-update_resolv_conf()
+configure_dns_resolution()
 {
   # Update resolv.conf to use our named.
   #
@@ -1972,6 +1985,14 @@ update_resolv_conf()
   # nonfunctional.  However, our private named must appear first in
   # order for hostnames private to our OpenShift PaaS to resolve.
   sed -i -e "1i# The named we install for our OpenShift PaaS must appear first.\\nnameserver ${named_ip_addr}\\n" /etc/resolv.conf
+
+  # Append resolution conf to the DHCP configuration.
+  cat <<EOF >> /etc/dhcp/dhclient-eth0.conf
+
+prepend domain-name-servers ${named_ip_addr};
+prepend domain-search "${domain}";
+EOF
+
 }
 
 
@@ -2077,7 +2098,7 @@ configure_httpd_auth()
   # and CONF_BROKER_KRB_AUTH_REALMS are specified
   if [ -n "$CONF_BROKER_KRB_SERVICE_NAME" ] && [ -n "$CONF_BROKER_KRB_AUTH_REALMS" ]
   then
-    yum_install_or_exit -y mod_auth_kerb
+    yum_install_or_exit mod_auth_kerb
     for d in /var/www/openshift/broker/httpd/conf.d /var/www/openshift/console/httpd/conf.d
     do
       sed -e "s#KrbServiceName.*#KrbServiceName ${CONF_BROKER_KRB_SERVICE_NAME}#" \
@@ -2182,17 +2203,6 @@ SomeOrganization
 SomeOrganizationalUnit
 ${broker_hostname}
 root@${domain}
-EOF
-}
-
-# Configure IP address and hostname.
-configure_network()
-{
-  # Append some stuff to the DHCP configuration.
-  cat <<EOF >> /etc/dhcp/dhclient-eth0.conf
-
-prepend domain-name-servers ${named_ip_addr};
-prepend domain-search "${domain}";
 EOF
 }
 
@@ -2459,6 +2469,16 @@ set_defaults()
   elif [ "${rhel_repo%/}" == "${ose_repo_base%/}/os" ]; then # OSE same repo base as RHEL?
     CONF_CDN_LAYOUT=1  # use the CDN layout for OpenShift yum repos
   fi
+  # no need to waste time checking both subscription plugins if using one
+  disable_plugin=""
+  [[ "$CONF_INSTALL_METHOD" == "rhsm" ]] && disable_plugin='--disableplugin=rhnplugin'
+  [[ "$CONF_INSTALL_METHOD" == "rhn" ]] && disable_plugin='--disableplugin=subscription-manager'
+  # could do the same for "yum" method but it's more likely to surprise someone
+  #[[ "$CONF_INSTALL_METHOD" == "yum" ]] && disable_plugin='--disableplugin=subscription-manager --disableplugin=rhnplugin'
+
+  # remap subscription parameters used previously
+  CONF_RHN_USER=${CONF_RHN_USER:-${CONF_SM_REG_NAME:-$CONF_RHN_REG_NAME}}
+  CONF_RHN_PASS=${CONF_RHN_PASS:-${CONF_SM_REG_PASS:-$CONF_RHN_REG_PASS}}
 
   # The domain name for the OpenShift Enterprise installation.
   domain="${CONF_DOMAIN:-example.com}"
@@ -2509,6 +2529,11 @@ set_defaults()
     named_ip_addr="${CONF_NAMED_IP_ADDR:-$broker_ip_addr}"
   fi
 
+  if ! [ "${CONF_FORWARD_DNS}" ]; then  # decide default for forwarding
+    CONF_FORWARD_DNS=true
+    # if not running a rogue DNS server, don't need to forward
+    is_true "$CONF_KEEP_NAMESERVERS" && CONF_FORWARD_DNS=false
+  fi
   # The nameservers to which named on the broker will forward requests.
   # This should be a list of IP addresses with a semicolon after each.
   nameservers="$(awk '/nameserver/ { printf "%s; ", $2 }' /etc/resolv.conf)"
@@ -2632,8 +2657,23 @@ validate_preflight()
     echo "rpm and yum must be installed."
     preflight_failure=1
   fi
-  if ! rpm -V rpm yum; then
+  if ! rpm -q rpm yum; then
     echo "rpm command failed; there may be a problem with the RPM DB."
+    preflight_failure=1
+  fi
+  # test that subscription parameters are available if needed
+  if [[ "$CONF_INSTALL_METHOD" =~ rhn|rhsm ]]; then
+    if [ ! "$CONF_RHN_USER" -o ! "$CONF_RHN_PASS" ]; then
+      echo "Install method $CONF_INSTALL_METHOD requires an RHN user and password."
+      preflight_failure=1
+    fi
+  fi
+  if [ "$CONF_INSTALL_METHOD" = rhsm -a ! "$CONF_SM_REG_POOL" ]; then
+    echo "Install method rhsm requires a poolid."
+    preflight_failure=1
+  fi
+  if [ "$CONF_INSTALL_METHOD" = yum -a ! "$ose_repo_base" ]; then
+    echo "Install method yum requires providing URLs for at least OpenShift repos."
     preflight_failure=1
   fi
   # Test that known problematic RPMs aren't present
@@ -2646,10 +2686,10 @@ install_rpms()
 {
   echo "OpenShift: Begin installing RPMs."
   # we often rely on latest selinux policy and other updates
-  yum update -y || abort_install
+  yum $disable_plugin update -y || abort_install
   # Install ntp and ntpdate because they may not be present in a RHEL
   # minimal install.
-  yum_install_or_exit -y ntp ntpdate
+  yum_install_or_exit ntp ntpdate
 
   # install what we need for various components
   named && install_named_pkgs
@@ -2670,8 +2710,7 @@ configure_host()
   # Note: configure_named must run before configure_controller if we are
   # installing both named and broker on the same host.
   named && configure_named
-  update_resolv_conf
-  configure_network
+  is_false "$CONF_KEEP_NAMESERVERS" && configure_dns_resolution
   is_false "$CONF_KEEP_HOSTNAME" && configure_hostname
   echo "OpenShift: Completed configuring host."
 }
@@ -2749,11 +2788,7 @@ set_defaults
 
 for action in ${actions//,/ }
 do
-  if ! [ "$(type -t "$action")" = function ]
-  then
-    echo "Invalid action: ${action}"
-    abort_install
-  fi
+  [ "$(type -t "$action")" = function ] || abort_install "Invalid action: ${action}"
   "$action"
 done
 
