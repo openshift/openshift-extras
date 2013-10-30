@@ -28,6 +28,20 @@ def find_good_ip_addrs list
   good_addrs
 end
 
+def env_backup
+  @env_backup ||= ENV.to_hash
+end
+
+def clear_env
+  env_backup
+  ENV.delete_if{ |name,value| not name.nil? }
+end
+
+def restore_env
+  env_backup.each_pair do |name,value|
+    ENV[name] = value
+  end
+end
 
 # SOURCE for which:
 # http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
@@ -282,6 +296,8 @@ host_order.each do |ssh_host|
     end
     if not ssh_host == 'localhost'
       commands[action] = "ssh #{user}@#{ssh_host} '#{commands[action]}'"
+    else
+      commands[action] = "bash -l -c '#{commands[action]}'"
     end
   end
 
@@ -376,15 +392,22 @@ host_order.each do |ssh_host|
 
   # Good to go; step through the puppet setup now.
   has_openshift_module = false
-  [:check,:install,:apply,:clear].each do |action|
+  [:check,:install,:apply,:clear,:reboot].each do |action|
     if action == :install and has_openshift_module
       puts "Skipping module installation."
       next
     end
     command = commands[action]
+    puts "Running \"#{command}\"...\n"
+    if ssh_host == 'localhost'
+      clear_env
+    end
     output = `#{command}`
+    if ssh_host == 'localhost'
+      restore_env
+    end
     if $?.exitstatus == 0
-      puts "Command \"#{command}\" on target #{ssh_host} completed.\n"
+      puts "Command completed.\n"
     else
       saw_deployment_error = true
       break

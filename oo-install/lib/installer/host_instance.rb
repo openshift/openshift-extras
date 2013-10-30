@@ -5,10 +5,10 @@ module Installer
     include Installer::Helpers
 
     attr_reader :role
-    attr_accessor :host, :ip_addr, :ssh_host, :user
+    attr_accessor :host, :ip_addr, :ip_interface, :ssh_host, :user
 
     def self.attrs
-      %w{host ssh_host user ip_addr}.map{ |a| a.to_sym }
+      %w{host ssh_host user ip_addr ip_interface}.map{ |a| a.to_sym }
     end
 
     def initialize role, item={}
@@ -19,12 +19,16 @@ module Installer
     end
 
     def has_valid_access?
-      result = ssh_exec!("command -v ip")
-      if result[:exit_code] == 0
-        @ip_exec_path = result[:stdout].chomp
-        return true
+      begin
+        result = ssh_exec!("command -v ip")
+        if result[:exit_code] == 0
+          @ip_exec_path = result[:stdout].chomp
+          return true
+        end
+        return false
+      rescue Net::SSH::AuthenticationFailed => e
+        return false
       end
-      false
     end
 
     def root_user?
@@ -36,17 +40,25 @@ module Installer
     end
 
     def is_valid?(check=:basic)
-      if not is_valid_hostname_or_ip_addr?(host)
+      if not is_valid_hostname?(host)
         return false if check == :basic
         raise Installer::HostInstanceHostNameException.new("Host instance host name / IP address '#{host}' in the #{role.to_s} list is invalid.")
       end
-      if not is_valid_hostname_or_ip_addr?(ssh_host)
+      if not is_valid_hostname?(ssh_host)
         return false if check == :basic
         raise Installer::HostInstanceHostNameException.new("Host instance host name / IP address '#{host}' in the #{role.to_s} list is invalid.")
       end
-      if not is_valid_username?(user)
+      if not is_valid_username?(user) or (localhost? and not user == `whoami`.chomp)
         return false if check == :basic
-        raise Installer::HostInstanceUserNameException.new("Host instance '#{host}' in the #{group.to_s} list has an invalid user name '#{user}'.")
+        raise Installer::HostInstanceUserNameException.new("Host instance '#{host}' in the #{role.to_s} list has an invalid user name '#{user}'.")
+      end
+      if not is_valid_ip_addr?(ip_addr)
+        return false if check == :basic
+        raise Installer::HostInstanceIPAddressException.new("Host instance '#{host}' in the #{role.to_s} list has an invalid ip address '#{ip_addr}'.")
+      end
+      if not is_valid_string?(ip_interface)
+        return false if check == :basic
+        raise Installer::HostInstanceIPInterfaceException.new("Host instance '#{host}' in the #{role.to_s} list has a blank or missing ip interface setting.")
       end
       true
     end
@@ -148,23 +160,26 @@ module Installer
     def get_ip_addr_choices
       # Grab all IPv4 addresses
       command = "#{ip_exec_path} addr list | grep inet | egrep -v inet6"
-      output = ''
-      if not ssh_host == 'localhost'
-        result = ssh_exec!(command)
-        if not result[:exit_code] == 0
-          puts "Could not connect to #{user}@#{ssh_host} to determine IP address options."
-          return []
-        end
-        output = result[:stdout]
-      else
-        output = `#{command}`
-        if not $?.exitstatus == 0
-          puts "Could not determine IP address options for localhost."
-          return []
-        end
+      result = exec_on_host!(command)
+      if not result[:exit_code] == 0
+        puts "Could not determine IP address options for #{host}."
+        return []
       end
-      # Make a list of valid, non-loopback, non netmask addresses.
-      output.split(/[\n\s\:\/]/).select{ |v| v.match(VALID_IP_ADDR_RE) and not v == "127.0.0.1" and not v.split('.')[0].to_i == 255 and not v.split('.')[-1].to_i == 255 }
+
+      # Search each line of the output for the IP addr and interface ID
+      ip_map = []
+      result[:stdout].split(/\n/).each do |line|
+        # Get the first valid, non-loopback, non netmask address.
+        ip_addr = line.split(/[\s\:\/]/).select{ |v| v.match(VALID_IP_ADDR_RE) and not v == "127.0.0.1" and not v.split('.')[0].to_i == 255 and not v.split('.')[-1].to_i == 255 }[0]
+        next if ip_addr.nil?
+        interface = line.split(/\s/)[-1]
+        ip_map << [interface, ip_addr]
+      end
+      ip_map
+    end
+
+    def set_ip_exec_path(path)
+      @ip_exec_path = path
     end
 
     private

@@ -81,6 +81,21 @@ def find_good_ip_addrs list
   good_addrs
 end
 
+def env_backup
+  @env_backup ||= ENV.to_hash
+end
+
+def clear_env
+  env_backup
+  ENV.delete_if{ |name,value| not name.nil? }
+end
+
+def restore_env
+  env_backup.each_pair do |name,value|
+    ENV[name] = value
+  end
+end
+
 # SOURCE for which:
 # http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
 def which(cmd)
@@ -249,11 +264,17 @@ host_order.each do |ssh_host|
   if not ssh_host == 'localhost'
     system "ssh #{user}@#{ssh_host} 'chmod u+x ~/openshift.sh \&\& #{env_setup} ~/openshift.sh \&\& reboot'"
   else
+    # Clean out the ENV
+    clear_env
+
     # Ruby 1.8-ism; we have to jam the env settings into our own ENV
     @env_map.each_pair do |env,val|
       ENV[env] = val
     end
-    system "#{File.dirname(__FILE__)}/openshift.sh \&\& reboot"
+    system "bash -l -c '#{File.dirname(__FILE__)}/openshift.sh \&\& reboot'"
+
+    # Now restore the original env
+    restore_env
   end
 
   puts "Installation on target #{ssh_host} completed.\n"
