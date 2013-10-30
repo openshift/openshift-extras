@@ -66,26 +66,27 @@ module Installer
     end
 
     def is_valid_ip_addr? text
-      text.match VALID_IP_ADDR_RE
+      not text.nil? and text.match VALID_IP_ADDR_RE
     end
 
     def is_valid_hostname? text
-      text.match VALID_HOSTNAME_RE
+      not text.nil? and text.match VALID_HOSTNAME_RE
     end
 
     def is_valid_hostname_or_ip_addr? text
-      is_valid_ip_addr?(text) or is_valid_hostname?(text)
+      not text.nil? and (is_valid_ip_addr?(text) or is_valid_hostname?(text))
     end
 
     def is_valid_domain? text
-      text.match VALID_DOMAIN_RE
+      not text.nil? and text.match VALID_DOMAIN_RE
     end
 
     def is_valid_url? text
-      text.match VALID_URL_RE
+      not text.nil? and text.match VALID_URL_RE
     end
 
     def is_valid_remotehost? text
+      return false if text.nil?
       user = text.split('@')[0]
       hostport = text.split('@')[1]
       host = hostport.split(':')[0]
@@ -93,43 +94,21 @@ module Installer
       is_valid_username?(user) and is_valid_hostname_or_ip_addr?(host) and (port.nil? or is_valid_port_number?(port))
     end
 
-    def is_valid_mongodbhost? text
-      hostportlist = []
-      if text.include?('@')
-        user = text.split('@')[0].split(':')[0]
-        return false if not is_valid_username?(user)
-        pass = text.split('@')[0].split(':')[1]
-        hostportlist = text.split('@')[1].split(',')
-      else
-        hostportlist = text.split(',')
-      end
-      hostportlist.each do |hostport|
-        host = hostport.split(':')[0]
-        return false if not is_valid_hostname_or_ip_addr?(host)
-        port = hostport.split(':')[1]
-        return false if not port.nil? and not is_valid_port_number?(port)
-      end
-      true
-    end
-
-    def is_valid_port_number? text
-      text.to_i > 0 and text.to_i <= 65535
-    end
-
     def is_valid_username? text
-      text.match VALID_USERNAME_RE
+      not text.nil? and text.match VALID_USERNAME_RE
     end
 
     def is_valid_email_addr? text
-      text.match VALID_EMAIL_RE
+      not text.nil? and text.match VALID_EMAIL_RE
     end
 
     def is_valid_string? text
-      return false if text.empty? or text.match BLANK_STRING_RE
+      return false if text.nil? or text.empty? or text.match BLANK_STRING_RE
       true
     end
 
     def is_valid_role_list? text
+      return false if text.nil?
       text.split(',').each do |item|
         if not item.strip == 'all' and not Installer::Deployment.roles.include?(item.strip)
           return false

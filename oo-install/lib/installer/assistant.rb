@@ -145,8 +145,6 @@ module Installer
       end
       ui_newpage
 
-      puts "W: #{workflow.versions.inspect}"
-
       # Deployment check
       if workflow.check_deployment?
         if not deployment.is_complete?
@@ -253,6 +251,15 @@ module Installer
     end
 
     def ui_edit_deployment
+      unless deployment.dns.keys.length > 0
+        say "\n#{translate(:info_force_run_dns_setup)}"
+        ui_modify_dns
+      else
+        list_dns
+      end
+      while concur("\nDo you want to change the DNS settings?", translate(:help_dns_settings))
+        ui_modify_dns
+      end
       Installer::Deployment.display_order.each do |role|
         if not advanced_mode? and [:mqserver, :dbserver].include?(role)
           next
@@ -269,14 +276,9 @@ module Installer
           ui_modify_role_list role
         end
       end
-      unless deployment.dns.keys.length > 0
-        say "\n#{translate(:info_force_run_dns_setup)}"
-        ui_modify_dns
-      else
-        list_dns
-      end
-      while concur("\nDo you want to change the DNS settings?", translate(:help_dns_settings))
-        ui_modify_dns
+      # In basic mode, the mqserver and dbserver host lists are cloned from the broker list
+      if not advanced_mode?
+        deployment.clone_broker_instances!
       end
     end
 
@@ -452,11 +454,6 @@ module Installer
         else
           deployment.update_host_instance! host_instance, index
         end
-        # In basic mode, just clone the broker instance(s) for the
-        # messaging server and mongodb server
-        if not advanced_mode? and host_instance.role == :broker
-          deployment.clone_broker_instances!
-        end
       end
       puts "\n"
       list_role host_instance.role
@@ -465,62 +462,70 @@ module Installer
     def edit_host_instance host_instance
       host_instance_is_valid = false
       while not host_instance_is_valid
-        loop do
-          host_instance.ssh_host = ask("Hostname / IP address for SSH access: ") { |q|
-            if not host_instance.ssh_host.nil?
-              q.default = host_instance.ssh_host
-            end
-            q.validate = lambda { |p| is_valid_hostname_or_ip_addr?(p) }
-            q.responses[:not_valid] = "Enter a valid hostname or IP address"
-          }.to_s
-          host_instance.user = ask("Username for SSH access and installation: ") { |q|
-            if not host_instance.user.nil?
-              q.default = host_instance.user
-            else context == :ose
-              q.default = 'root'
-            end
-            q.validate = lambda { |p| is_valid_username?(p) }
-            q.responses[:not_valid] = "Enter a valid linux username"
-          }.to_s
-          say "Validating #{host_instance.user}@#{host_instance.ssh_host}... "
-          if host_instance.has_valid_access?
-            say "looks good."
-            break
-          else
-            say "\nCould not connect to #{host_instance.ssh_host} with user #{host_instance.user}."
-          end
-        end
-        host_instance.host = ask("Hostname (for other OpenShift components in the subnet): ") { |q|
+        # Get the FQDN
+        host_instance.host = ask("Hostname (for other OpenShift components in the same subnet): ") { |q|
           if not host_instance.host.nil?
             q.default = host_instance.host
-          elsif not host_instance.ssh_host.nil?
-            q.default = host_instance.ssh_host
           end
-          q.validate = lambda { |p| is_valid_hostname_or_ip_addr?(p) }
-          q.responses[:not_valid] = "Enter a valid hostname or IP address"
+          q.validate = lambda { |p| is_valid_hostname?(p) }
+          q.responses[:not_valid] = "Enter a valid hostname (FQDN or 'localhost')"
         }.to_s
-        if host_instance.role == :broker
-          ip_addrs = host_instance.get_ip_addr_choices
-          case ip_addrs.length
-          when 0
-            say "Could not detect an IP address for this host."
-          when 1
-            say "Detected IP address #{ip_addrs[0]} for this host."
-          else
-            ip_addrs_list = ip_addrs.map{ |a| "* #{a}" }.join("\n")
-            say "Detected the following IP addresses for this host:\n#{ip_addrs_list}"
-          end
-          host_instance.ip_addr = ask("IP address (for Broker named configuration): ") { |q|
-            if not host_instance.ip_addr.nil?
-              q.default = host_instance.ip_addr
-            elsif is_valid_ip_addr?(host_instance.host)
-              q.default = host_instance.host
-            elsif ip_addrs.length > 0
-              q.default = ip_addrs[0]
+        # Get login info if necessary
+        if not host_instance.localhost?
+          loop do
+            host_instance.ssh_host = ask("Hostname / IP address for SSH access: ") { |q|
+              if not host_instance.ssh_host.nil?
+                q.default = host_instance.ssh_host
+              elsif not host_instance.host.nil?
+                q.default = host_instance.host
+              end
+              q.validate = lambda { |p| is_valid_hostname?(p) }
+              q.responses[:not_valid] = "Enter a valid hostname"
+            }.to_s
+            host_instance.user = ask("Username for SSH access and installation: ") { |q|
+              if not host_instance.user.nil?
+                q.default = host_instance.user
+              else context == :ose
+                q.default = 'root'
+              end
+              q.validate = lambda { |p| is_valid_username?(p) }
+              q.responses[:not_valid] = "Enter a valid linux username"
+            }.to_s
+            say "Validating #{host_instance.user}@#{host_instance.ssh_host}... "
+            if host_instance.has_valid_access?
+              say "looks good."
+              break
+            else
+              say "\nCould not connect to #{host_instance.ssh_host} with user #{host_instance.user}. You must set up an SSH key pair and using ssh-agent is strongly recommended."
             end
-            q.validate = lambda { |p| is_valid_ip_addr?(p) }
-            q.responses[:not_valid] = "Enter a valid IP address."
-          }.to_s
+          end
+        else
+          # For localhost, run with what we already have
+          host_instance.ssh_host = host_instance.host
+          host_instance.user = `whoami`.chomp
+          host_instance.set_ip_exec_path(which('ip'))
+          say "Using current user (#{host_instance.user}) for local installation."
+        end
+        # Finally, set up the IP info
+        ip_addrs = host_instance.get_ip_addr_choices
+        case ip_addrs.length
+        when 0
+          say "Could not detect an IP address for this host."
+        when 1
+          say "Detected IP address #{ip_addrs[0][1]} at interface #{ip_addrs[0][0]} for this host."
+          host_instance.ip_interface = ip_addrs[0][0]
+          host_instance.ip_addr = ip_addrs[0][1]
+        else
+          choose do |menu|
+            menu.header = "The following network interfaces were found on this host. Choose the one that it uses for communication on the local subnet."
+            menu.prompt = "#{translate(:menu_prompt)} "
+            ip_addrs.each do |info|
+              ip_interface = info[0]
+              ip_addr = info[1]
+              menu.choice("#{ip_addr} on interface #{ip_interface}") { host_instance.ip_addr = ip_addr; host_instance.ip_interface = ip_interface }
+            end
+            menu.hidden("?") { say "The current host instance has mutliple network interfaces. Select the one that it will use to connect to other OpenShift components." }
+          end
         end
         host_instance_is_valid = true
       end
@@ -553,9 +558,10 @@ module Installer
       table = Terminal::Table.new do |t|
         Installer::HostInstance.attrs.each do |attr|
           value = host_instance.send(attr)
-          if not value.nil?
-            t.add_row [attr.to_s.split('_').map{ |word| ['db','ssh'].include?(word) ? word.upcase : word.capitalize}.join(' '), value]
+          if value.nil? and [:ip_addr, :ip_interface].include?(attr)
+            value = "Not currently set. This must be configured."
           end
+          t.add_row [attr.to_s.split('_').map{ |word| ['db','ssh','ip'].include?(word) ? word.upcase : word.capitalize}.join(' '), value]
         end
       end
       puts table

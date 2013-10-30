@@ -65,7 +65,7 @@ module Installer
     def clone_broker_instances!
       broker_list = get_role_list :broker
       [:mqserver, :dbserver].each do |clone_role|
-        set_role_list clone_role, broker_list.map{ |i| Installer::HostInstance.new(clone_role, { 'host' => i.host, 'ssh_host' => i.ssh_host, 'user' => i.user })}
+        set_role_list clone_role, broker_list.map{ |i| Installer::HostInstance.new(clone_role, { 'host' => i.host, 'ssh_host' => i.ssh_host, 'user' => i.user, 'ip_addr' => i.ip_addr, 'ip_interface' => i.ip_interface })}
       end
       save_to_disk!
     end
@@ -129,6 +129,9 @@ module Installer
         list = self.send(group)
         if list.length == 0
           return false
+        end
+        list.each do |host_instance|
+          return false if not host_instance.is_valid?
         end
       end
       if not dns.has_key?('app_domain')
