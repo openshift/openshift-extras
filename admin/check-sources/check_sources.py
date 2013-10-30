@@ -196,6 +196,20 @@ class OpenShiftCheckSources:
         except RepoError:
             return False
 
+    def disable_repo(self, repoid):
+        """Disable the repository for the given repoid
+
+        Return false if the repoid doesn't identify a subscribed repository.
+        """
+        try:
+            repo = self._resolve_repoid(repoid)
+            if repo.isEnabled():
+                repo.disable()
+            self._set_save_repo_attr(repo, 'enabled', False)
+            return True
+        except RepoError:
+            return False
+
     def order_repos_by_priority(self, enabled=True):
         """Returns a list of repos ordered by priority
 

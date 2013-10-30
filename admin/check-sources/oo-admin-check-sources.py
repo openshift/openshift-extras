@@ -171,6 +171,36 @@ class OpenShiftAdminCheckSources:
                 break
         return False
 
+    def check_version_conflict(self):
+        matches = repo_db.find_repos_by_repoid(self.oscs.enabled_repoids())
+        conflicts = filter(lambda xx: 
+                           (not hasattr(xx.product_version, '__iter__')
+                            and xx.product_version != self.opts.oo_version), matches)
+        if conflicts:
+            self.problem = True
+            if self.opts.fix:
+                for ii in conflicts:
+                    if self.oscs.disable_repo(ii.repoid):
+                        self.logger.warning('Disabled repository %s'%ii.repoid)
+            else:
+                self.logger.error("The following OpenShift Enterprise repositories conflict with the detected or specified product version and should be disabled to prevent package conflicts:")
+                for ii in conflicts:
+                    self.logger.error("    %s"%ii.repoid)
+                if self.subscription == RHN:
+                    self.logger.error('Make the following modifications to /etc/yum/pluginconf.d/rhnplugin.conf')
+                else:
+                    self.logger.error("Disable these repositories with the following commands:")
+                for repo in conflicts:
+                    if self.subscription == RHN:
+                        self.logger.error("    Set enabled=0 in the [%s] section"%repo.repoid)
+                    elif self.subscription == RHSM:
+                        self.logger.error("# subscription-manager repos --disable=%s"%repo.repoid)
+                    else:
+                        self.logger.error("# yum-config-manager --disable %s"%repo.repoid)
+            return False
+        return True
+
+
     def verify_yum_plugin_priorities(self):
         """Make sure the required yum plugin package yum-plugin-priorities is installed
 
@@ -389,7 +419,7 @@ class OpenShiftAdminCheckSources:
             if 'node-eap' in self.opts.role and not 'node' in self.opts.role:
                 self.opts.role.append('node')
             if 'node' in self.opts.role and not 'node-eap' in self.opts.role:
-                self.problem = True
+                # self.problem = True
                 self.logger.warning('If this system will be providing the JBossEAP cartridge, re-run this command with the --role=node-eap argument')
 
     def run_checks(self):
@@ -403,6 +433,8 @@ class OpenShiftAdminCheckSources:
                 self.logger.error('Please attach an OpenShift Enterprise subscription to this system using either RHN Classic or Red Hat Subscription Manager by following the instructions here: %s'%ATTACH_ENTITLEMENTS_URL)
             if not self.opts.oo_version:
                 self.logger.error('Could not determine product version. Please re-run this script with the --oo_version argument.')
+            return False
+        if not self.check_version_conflict():
             return False
         if not self.check_disabled_repos():
             return False
@@ -420,6 +452,7 @@ class OpenShiftAdminCheckSources:
             self.logger.warning('Please specify at least one role for this system with the --role command')
             self.problem = True
             return False
+        self.logger.info('No problems could be detected!')
         return True
 
     def main(self):
