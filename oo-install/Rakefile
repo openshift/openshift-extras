@@ -19,10 +19,6 @@ task :package do
   system "cp -r #{gem_root_dir} #{@tmpdir}"
   system "mv #{@tmpdir}/oo-install #{@tmpdir}/#{pkgname}"
 
-  # Replace the openshift.sh symlink with the actual file
-  system 'rm', "#{@tmpdir}/#{pkgname}/workflows/enterprise_deploy/openshift.sh"
-  system 'cp', "#{gem_root_dir}/../enterprise/install-scripts/generic/openshift.sh", "#{@tmpdir}/#{pkgname}/workflows/enterprise_deploy/"
-
   # Recreate the package dir
   Dir.mkdir(@package_dir)
 
