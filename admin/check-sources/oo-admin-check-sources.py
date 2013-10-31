@@ -16,8 +16,13 @@ UNKNOWN, RHSM, RHN = ('unknown', 'rhsm', 'rhn')
 SUBS_NAME = {'unknown': '',
                      'rhsm': 'Red Hat Subscription Manager',
                      'rhn': 'RHN Classic or RHN Satellite'}
+VALID_SUBS = SUBS_NAME.keys()[1:]
 
 ATTACH_ENTITLEMENTS_URL = 'https://access.redhat.com/site/articles/522923'
+
+VALID_OO_VERSIONS = ['1.2', '2.0']
+
+VALID_ROLES = ['node', 'broker', 'client', 'node-eap']
 
 def flatten(llist):
     """Cheap and easy flatten - only works up to two degrees of nesting.
@@ -31,8 +36,6 @@ def flatten(llist):
         return newlist + filter(lambda xx: not hasattr(xx, '__iter__'), llist)
 
 class OpenShiftAdminCheckSources:
-    valid_roles = ['node', 'broker', 'client', 'node-eap']
-    valid_oo_versions = ['1.2', '2.0']
 
     pri_header = False
     pri_resolve_header = False
@@ -44,7 +47,10 @@ class OpenShiftAdminCheckSources:
         self.opt_parser = opt_parser
         self._setup_logger()
         self.oscs = OpenShiftCheckSources()
-        self.subscription = UNKNOWN
+        if not self.opts.subscription:
+            self.opts.subscription = UNKNOWN
+        else:
+            self.opts.subscription = self.opts.subscription.lower()
 
     def _setup_logger(self):
         self.opts.loglevel = logging.INFO
@@ -60,7 +66,7 @@ class OpenShiftAdminCheckSources:
     def required_repos(self):
         # Include the base RHEL repo in the required repos
         roles = self.opts.role + ['base']
-        return flatten([repo_db.find_repos(subscription = self.subscription,
+        return flatten([repo_db.find_repos(subscription = self.opts.subscription,
                                            role = rr,
                                            product_version = self.opts.oo_version)
                         for rr in roles])
@@ -71,14 +77,14 @@ class OpenShiftAdminCheckSources:
     def enabled_blessed_repos(self):
         enabled = self.oscs.enabled_repoids()
         return [repo for repo in repo_db.find_repos_by_repoid(enabled)
-                if repo.subscription == self.subscription
+                if repo.subscription == self.opts.subscription
                 and repo.product_version == self.opts.oo_version]
 
     def blessed_repoids(self, **kwargs):
         return [repo.repoid for repo in self.blessed_repos(**kwargs)]
 
     def blessed_repos(self, enabled = False, required = False, product = None):
-        kwargs = {'subscription': self.subscription, 'product_version': self.opts.oo_version}
+        kwargs = {'subscription': self.opts.subscription, 'product_version': self.opts.oo_version}
         if product:
             kwargs['product'] = product
         req_repos = self.required_repos()
@@ -87,7 +93,7 @@ class OpenShiftAdminCheckSources:
                 return [repo for repo in self.required_repos() 
                         if repo.repoid in self.oscs.enabled_repoids()
                         and (not product or repo.product == product)]
-            return [repo for repo in repo_db.find_repoids(**kwargs)
+            return [repo for repo in repo_db.find_repos(**kwargs)
                     if repo.repoid in self.oscs.enabled_repoids()]
         if required:
             return [repo for repo in self.required_repos()
@@ -95,15 +101,15 @@ class OpenShiftAdminCheckSources:
         return repo_db.find_repos(**kwargs)
 
     def _sub(self, subscription):
-        self.subscription = subscription
-        self.logger.info('Detected OpenShift Enterprise repository subscription managed by %s.'%SUBS_NAME[self.subscription])
+        self.opts.subscription = subscription
+        self.logger.info('Detected OpenShift Enterprise repository subscription managed by %s.'%SUBS_NAME[self.opts.subscription])
 
     def _oo_ver(self, version):
         self.opts.oo_version = version
         self.logger.info('Detected installed OpenShift Enterprise version %s'%self.opts.oo_version)
 
     def _sub_ver(self, subscription, version = None):
-        if self.subscription == UNKNOWN and not self.opts.oo_version:
+        if self.opts.subscription == UNKNOWN and not self.opts.oo_version:
             self._sub(subscription)
             if version:
                 self._oo_ver(version)
@@ -111,21 +117,21 @@ class OpenShiftAdminCheckSources:
             # We still haven't gotten a version guess - fail to force
             # user to specify version
             return False
-        if self.subscription == UNKNOWN and self.opts.oo_version:
+        if self.opts.subscription == UNKNOWN and self.opts.oo_version:
             if not version or version == self.opts.oo_version:
                 self._sub(subscription)
                 return True
-        if self.subscription != UNKNOWN and not self.opts.oo_version:
-            if subscription == self.subscription and version:
+        if self.opts.subscription != UNKNOWN and not self.opts.oo_version:
+            if subscription == self.opts.subscription and version:
                 self._oo_ver(version)
                 return True
-        if self.subscription != UNKNOWN and self.opts.oo_version:
-            if subscription == self.subscription and (not version or version == self.opts.oo_version):
+        if self.opts.subscription != UNKNOWN and self.opts.oo_version:
+            if subscription == self.opts.subscription and (not version or version == self.opts.oo_version):
                 return True
         return False
 
     def guess_ose_version_and_subscription(self):
-        if self.subscription != UNKNOWN and self.opts.oo_version:
+        if self.opts.subscription != UNKNOWN and self.opts.oo_version:
             # Short-circuit guess if user specifies sub and ver
             return True
         matches = repo_db.find_repos_by_repoid(self.oscs.all_repoids())
@@ -163,7 +169,7 @@ class OpenShiftAdminCheckSources:
         # version has been specified or couldn't be determined by the
         # preceding logic.
         for fxn_rcheck, sub in [(self.oscs.repo_is_rhsm, 'rhsm'), (self.oscs.repo_is_rhn, 'rhn')]:
-            if self.subscription == UNKNOWN:
+            if self.opts.subscription == UNKNOWN:
                 for repoid in self.oscs.all_repoids():
                     if fxn_rcheck(repoid) and self._sub_ver(sub):
                         return True
@@ -293,8 +299,9 @@ class OpenShiftAdminCheckSources:
         self.logger.info('Checking channel/repository priorities')
         ose = self.blessed_repoids(enabled=True, required=True, product='ose')
         jboss = self.blessed_repoids(enabled=True, required=True, product='jboss')
-        rhel = self.blessed_repoids(product='rhel')[0]
-        res &= self.verify_rhel_priorities(ose, rhel)
+        rhel = self.blessed_repoids(enabled=True, product='rhel')
+        if rhel:
+            res &= self.verify_rhel_priorities(ose, rhel[0])
         if jboss:
             res &= self.verify_jboss_priorities(ose, jboss, rhel)
         return res
@@ -311,14 +318,14 @@ class OpenShiftAdminCheckSources:
                 self.logger.error("The required OpenShift Enterprise repositories are disabled:")
                 for ii in disabled_repos:
                     self.logger.error("    %s"%ii)
-                if self.subscription == RHN:
+                if self.opts.subscription == RHN:
                     self.logger.error('Make the following modifications to /etc/yum/pluginconf.d/rhnplugin.conf')
                 else:
                     self.logger.error("Enable these repositories by running these commands:")
                 for repoid in disabled_repos:
-                    if self.subscription == RHN:
+                    if self.opts.subscription == RHN:
                         self.logger.error("    Set enabled=1 in the [%s] section"%repoid)
-                    elif self.subscription == RHSM:
+                    elif self.opts.subscription == RHSM:
                         self.logger.error("# subscription-manager repos --enable=%s"%repoid)
                     else:
                         self.logger.error("# yum-config-manager --enable %s"%repoid)
@@ -407,16 +414,16 @@ class OpenShiftAdminCheckSources:
         if not self.opts.role:
             return True
         for role in self.opts.role:
-            if not role in self.valid_roles:
+            if not role in VALID_ROLES:
                 self.problem = True
-                self.logger.error('You have specified an invalid role: %s is not one of %s'%(role, self.valid_roles))
+                self.logger.error('You have specified an invalid role: %s is not one of %s'%(role, VALID_ROLES))
                 self.opt_parser.print_help()
                 return False
         return True
 
     def validate_version(self):
         if self.opts.oo_version:
-            if not self.opts.oo_version in self.valid_oo_versions:
+            if not self.opts.oo_version in VALID_OO_VERSIONS:
                 self.logger.error('You have specified an invalid version: %s is not one of %s'%(self.opts.oo_version, self.valid_oo_versions))
                 self.opt_parser.print_help()
                 return False
@@ -439,35 +446,44 @@ class OpenShiftAdminCheckSources:
         self.massage_roles()
         if not self.guess_ose_version_and_subscription():
             self.problem = True
-            if self.subscription == UNKNOWN:
+            if self.opts.subscription == UNKNOWN:
                 self.logger.error('Could not determine subscription type.')
                 self.logger.error('Please attach an OpenShift Enterprise subscription to this system using either RHN Classic or Red Hat Subscription Manager by following the instructions here: %s'%ATTACH_ENTITLEMENTS_URL)
             if not self.opts.oo_version:
-                self.logger.error('Could not determine product version. Please re-run this script with the --oo_version argument.')
+                self.logger.error('Could not determine product version. Please re-run this script with the --oo-version argument.')
             return False
         print ""
-        if not self.check_version_conflict():
+        if not (self.check_version_conflict() or self.opts.report_all):
             return False
-        if not self.check_disabled_repos():
+        if not (self.check_disabled_repos() or self.opts.report_all):
             return False
-        if not self.check_missing_repos():
+        if not (self.check_missing_repos() or self.opts.report_all):
             return False
         if self.opts.role:
-            if not self.verify_yum_plugin_priorities():
+            if not (self.verify_yum_plugin_priorities() or self.opts.report_all):
                 self.logger.warning('Skipping yum priorities verification')
                 return False
-            if not self.verify_priorities():
+            if not (self.verify_priorities() or self.opts.report_all):
                 return False
-            if not self.find_package_conflicts():
+            if not (self.find_package_conflicts() or self.opts.report_all):
                 return False
         else:
             self.logger.warning('Please specify at least one role for this system with the --role command')
             self.problem = True
             return False
-        self.logger.info('No problems could be detected!')
-        return True
+        if not self.problem:
+            self.logger.info('No problems could be detected!')
+            return True
+        return False
 
     def main(self):
+        if self.opts.report_all:
+            # report_all + fix == fix_all, we don't want someone to
+            # accidentally set that up by hand
+            self.opts.fix = False
+        if self.opts.fix_all:
+            self.opts.report_all = True
+            self.opts.fix = True
         self.run_checks()
         if not self.opts.fix and self.problem:
             self.logger.info('Please re-run this tool after making any recommended repairs to this system')
@@ -475,23 +491,36 @@ class OpenShiftAdminCheckSources:
 
 
 if __name__ == "__main__":
-    ROLE_HELP='Role of this server (broker, node, node-eap, client)'
-    OO_VERSION_HELP='Version of OpenShift Enterprise in use on this system (1.2, 2.0, etc.)'
+    ROLE_HELP = 'OpenShift component role(s) this system will fulfill.'
+    OO_VERSION_HELP = 'Version of OpenShift Enterprise in use on this system.'
+    SUBSCRIPTION_HELP = 'Subscription management system which provides the OpenShift Enterprise repositories/channels.'
+    FIX_HELP = 'Attempt to repair the first problem found.'
+    FIX_ALL_HELP = 'Attempt to repair all problems found.'
+    REPORT_ALL_HELP = 'Report all problems (default is to halt after first problem report.)'
 
-
+    # TODO: This is getting unwieldy - time for a wrapper?
     try:
         import argparse
         opt_parser = argparse.ArgumentParser()
         opt_parser.add_argument('-r', '--role', default=None, type=str, action='append', help=ROLE_HELP)
-        opt_parser.add_argument('-o', '--oo_version', default=None, type=str, help=OO_VERSION_HELP)
-        opt_parser.add_argument('-f', '--fix', action='store_true', help='If set, attempt to repair issues as well as warn')
+        opt_parser.add_argument('-o', '--oo_version', '--oo-version', default=None, choices=VALID_OO_VERSIONS, dest='oo_version', help=OO_VERSION_HELP)
+        opt_parser.add_argument('-s', '--subscription-type', default=None, choices=VALID_SUBS, dest='subscription', help=SUBSCRIPTION_HELP)
+        opt_parser.add_argument('-f', '--fix', action='store_true', default=False, help=FIX_HELP)
+        opt_parser.add_argument('-a', '--fix-all', action='store_true', default=False, dest='fix_all', help=FIX_ALL_HELP)
+        opt_parser.add_argument('-p', '--report-all', action='store_true', default=False, dest='report_all', help=REPORT_ALL_HELP)
         opts = opt_parser.parse_args()
     except ImportError:
         import optparse
+        ROLE_HELP += ' One or more of: %s'%VALID_ROLES
+        OO_VERSION_HELP += ' One of: %s'%VALID_OO_VERSIONS
+        SUBSCRIPTION_HELP += ' One of: %s'%VALID_SUBS
         opt_parser = optparse.OptionParser()
-        opt_parser.add_option('-r', '--role', default=None, type='string', action='append', help=ROLE_HELP)
-        opt_parser.add_option('-o', '--oo_version', default=None, type='string', help=OO_VERSION_HELP)
-        opt_parser.add_option('-f', '--fix', action='store_true', help='If set, attempt to repair issues as well as warn')
+        opt_parser.add_option('-r', '--role', default=None, choices=VALID_ROLES, action='append', help=ROLE_HELP)
+        opt_parser.add_option('-o', '--oo_version', '--oo-version', default=None, choices=VALID_OO_VERSIONS, dest='oo_version', help=OO_VERSION_HELP)
+        opt_parser.add_option('-s', '--subscription-type', default=None, choices=VALID_SUBS, dest='subscription', help=SUBSCRIPTION_HELP)
+        opt_parser.add_option('-f', '--fix', action='store_true', default=False, help=FIX_HELP)
+        opt_parser.add_option('-a', '--fix-all', action='store_true', default=False, dest='fix_all', help=FIX_ALL_HELP)
+        opt_parser.add_option('-p', '--report-all', action='store_true', default=False, dest='report_all', help=REPORT_ALL_HELP)
         (opts, args) = opt_parser.parse_args()
     oacs = OpenShiftAdminCheckSources(opts, opt_parser)
     if not oacs.main():
