@@ -39,6 +39,14 @@ module Installer
       host == 'localhost'
     end
 
+    def is_broker?
+      role == :broker
+    end
+
+    def is_node?
+      role == :node
+    end
+
     def is_valid?(check=:basic)
       if not is_valid_hostname?(host)
         return false if check == :basic
@@ -52,11 +60,11 @@ module Installer
         return false if check == :basic
         raise Installer::HostInstanceUserNameException.new("Host instance '#{host}' in the #{role.to_s} list has an invalid user name '#{user}'.")
       end
-      if not is_valid_ip_addr?(ip_addr)
+      if (is_broker? or is_node?) and not is_valid_ip_addr?(ip_addr)
         return false if check == :basic
         raise Installer::HostInstanceIPAddressException.new("Host instance '#{host}' in the #{role.to_s} list has an invalid ip address '#{ip_addr}'.")
       end
-      if not is_valid_string?(ip_interface)
+      if [:origin, :origin_vm].include?(get_context) and is_node? and not is_valid_string?(ip_interface)
         return false if check == :basic
         raise Installer::HostInstanceIPInterfaceException.new("Host instance '#{host}' in the #{role.to_s} list has a blank or missing ip interface setting.")
       end

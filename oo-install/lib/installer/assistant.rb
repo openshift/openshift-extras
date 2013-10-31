@@ -10,16 +10,12 @@ module Installer
   class Assistant
     include Installer::Helpers
 
-    attr_reader :context, :workflow_id, :target_version
+    attr_reader :workflow_id, :target_version
     attr_accessor :config, :deployment, :cli_subscription, :cfg_subscription, :workflow, :workflow_cfg
 
-    def initialize config, workflow_id=nil, assistant_context=:origin, advanced_mode=false, cli_subscription=nil, target_version=nil
+    def initialize config, workflow_id=nil, advanced_mode=false, cli_subscription=nil, target_version=nil
       @config = config
-      if not self.class.supported_contexts.include?(assistant_context)
-        raise UnrecognizedContextException.new("Installer context #{assistant_context} not recognized.\nLegal values are #{self.class.supported_contexts.join(', ')}.")
-      end
       @target_version = target_version
-      @context = assistant_context
       @advanced_mode = advanced_mode
       @deployment = config.get_deployment
       @cfg_subscription = config.get_subscription
@@ -125,7 +121,7 @@ module Installer
           menu.header = translate :select_workflow
           menu.prompt = "#{translate(:menu_prompt)} "
           descriptions = ["\nInstallation Options:\n#{horizontal_rule}"]
-          Installer::Workflow.list(context).each do |workflow|
+          Installer::Workflow.list(get_context).each do |workflow|
             menu.choice(workflow.summary) { ui_workflow(workflow.id) }
             descriptions << "## #{workflow.summary}\n#{workflow.description}"
           end
@@ -147,16 +143,20 @@ module Installer
 
       # Deployment check
       if workflow.check_deployment?
+        deployment_question = "\nDo you want to change the basic deployment info?"
+        deployment_followup = "\nDo you want to go back and modify your basic deployment info settings?"
         if not deployment.is_complete?
           say translate :info_force_run_deployment_setup
           ui_edit_deployment
           ui_show_deployment
+          deployment_question = deployment_followup
         else
           ui_show_deployment
         end
-        while concur("\nDo you want to change the basic deployment info?", translate(:help_basic_deployment))
+        while concur(deployment_question, translate(:help_basic_deployment))
           ui_edit_deployment
           ui_show_deployment
+          deployment_question = deployment_followup
         end
       end
 
@@ -164,7 +164,9 @@ module Installer
       ui_newpage
       if workflow.check_subscription?
         msub = merged_subscription
-        if not msub.is_complete? or not Installer::Subscription.valid_types_for_context(@context).include?(msub.subscription_type.to_sym)
+        sub_question = "\nDo you want to make any changes to the subscription info in the configuration file?"
+        sub_followup = "\nDo you want to go back and modify your subscription info settings in the configuration file?"
+        if not msub.is_complete? or not Installer::Subscription.valid_types_for_context.include?(msub.subscription_type.to_sym)
           ui_show_subscription(translate(:info_force_run_subscription_setup))
           puts "\n"
           @show_menu = true
@@ -184,17 +186,22 @@ module Installer
             end
           end
           ui_edit_subscription
+          sub_question = sub_followup
         end
         ui_show_subscription
-        while concur("\nDo you want to make any changes to the subscription info in the configuration file?", translate(:help_subscription_cfg))
+        while concur(sub_question, translate(:help_subscription_cfg))
           @save_subscription = true
           ui_edit_subscription
           ui_show_subscription
+          sub_question = sub_followup
         end
-        while concur("\nDo you want to set any temporary subscription settings for this installation only?", translate(:help_subscription_tmp))
+        subtemp_question = "\nDo you want to set any temporary subscription settings for this installation only?"
+        subtemp_followup = "\nDo you want to go back and change any of the temporary subscription settings that you've set?"
+        while concur(subtemp_question, translate(:help_subscription_tmp))
           @save_subscription = false
           ui_edit_subscription
           ui_show_subscription
+          subtemp_question = subtemp_followup
         end
       end
 
@@ -355,7 +362,7 @@ module Installer
       type = '-'
       settings = nil
       show_settings = false
-      if not values.empty? and Installer::Subscription.valid_types_for_context(@context).include?(values['type'].to_sym)
+      if not values.empty? and Installer::Subscription.valid_types_for_context.include?(values['type'].to_sym)
         type = values['type']
         settings = mrg_subscription.subscription_types[type.to_sym]
         show_settings = true
@@ -422,7 +429,6 @@ module Installer
       deployment.save_to_disk!
     end
 
-
     def ui_edit_host_instance host_instance, role_count=0, index=nil
       rolename = Installer::Deployment.role_map[host_instance.role].chop
       puts "\n"
@@ -486,7 +492,7 @@ module Installer
             host_instance.user = ask("Username for SSH access and installation: ") { |q|
               if not host_instance.user.nil?
                 q.default = host_instance.user
-              else context == :ose
+              elsif get_context == :ose
                 q.default = 'root'
               end
               q.validate = lambda { |p| is_valid_username?(p) }
@@ -511,28 +517,86 @@ module Installer
           host_instance.set_ip_exec_path(ip_path)
           say "Using current user (#{host_instance.user}) for local installation."
         end
-        # Finally, set up the IP info
-        ip_addrs = host_instance.get_ip_addr_choices
-        case ip_addrs.length
-        when 0
-          say "Could not detect an IP address for this host."
-        when 1
-          say "Detected IP address #{ip_addrs[0][1]} at interface #{ip_addrs[0][0]} for this host."
-          host_instance.ip_interface = ip_addrs[0][0]
-          host_instance.ip_addr = ip_addrs[0][1]
-        else
-          choose do |menu|
-            menu.header = "The following network interfaces were found on this host. Choose the one that it uses for communication on the local subnet."
-            menu.prompt = "#{translate(:menu_prompt)} "
-            ip_addrs.each do |info|
-              ip_interface = info[0]
-              ip_addr = info[1]
-              menu.choice("#{ip_addr} on interface #{ip_interface}") { host_instance.ip_addr = ip_addr; host_instance.ip_interface = ip_interface }
+        # Finally, set up the IP info for brokers and nodes.
+        if host_instance.is_broker? or host_instance.is_node?
+          ip_addrs = host_instance.get_ip_addr_choices
+          case ip_addrs.length
+          when 0
+            say "Could not detect an IP address for this host."
+            manual_ip_info_for_host_instance(host_instance, ip_addrs)
+          when 1
+            say "Detected IP address #{ip_addrs[0][1]} at interface #{ip_addrs[0][0]} for this host."
+            question = "Do you want Nodes to use this IP information to reach this Broker?"
+            if host_instance.is_node?
+              question = "Do you want to use this as the public IP information for this Node?"
             end
-            menu.hidden("?") { say "The current host instance has mutliple network interfaces. Select the one that it will use to connect to other OpenShift components." }
+            if concur(question, translate(:ip_config_help_text))
+              host_instance.ip_addr = ip_addrs[0][1]
+              if host_instance.is_node?
+                host_instance.ip_interface = ip_addrs[0][0]
+              end
+            else
+              manual_ip_info_for_host_instance(host_instance, ip_addrs)
+            end
+          else
+            say "Detected multiple network interfaces for this host:"
+            ip_addrs.each do |info|
+              say "* #{info[1]} on interface #{info[0]}"
+            end
+            question = "Do you want Nodes to use one of these IP addresses to reach this Broker?"
+            if host_instance.is_node?
+              question = "Do you want to use one of these as the public IP information for this Node?"
+            end
+            if concur(question, translate(:ip_config_help_text))
+              choose do |menu|
+                menu.header = "The following network interfaces were found on this host. Choose the one that it uses for communication on the local subnet."
+                menu.prompt = "#{translate(:menu_prompt)} "
+                ip_addrs.each do |info|
+                  ip_interface = info[0]
+                  ip_addr = info[1]
+                end
+                menu.choice("#{ip_addr} on interface #{ip_interface}") { host_instance.ip_addr = ip_addr; host_instance.ip_interface = ip_interface if host_instance.is_node? }
+              end
+              menu.hidden("?") { say "The current host instance has mutliple IP options. Select the one that it will use to connect to other OpenShift components." }
+              menu.hidden("q") { return_to_main_menu }
+            else
+              manual_ip_info_for_host_instance(host_instance, ip_addrs)
+            end
           end
         end
         host_instance_is_valid = true
+      end
+    end
+
+    def manual_ip_info_for_host_instance(host_instance, ip_addrs)
+      addr_question = "\nSpecify the IP address that Nodes will use to connect to this Broker"
+      if host_instance.is_node?
+        addr_question = "\nSpecify the public IP address for this Node"
+      end
+      if ip_addrs.length > 0
+        addr_question << " (Detected #{ip_addrs.map{ |i| i[1] }.join(', ')})"
+      end
+      addr_question << ": "
+      host_instance.ip_addr = ask(addr_question) { |q|
+        if not host_instance.ip_addr.nil?
+          q.default = host_instance.ip_addr
+        end
+        q.validate = lambda { |p| is_valid_ip_addr?(p) }
+        q.responses[:not_valid] = "Enter a valid IP address"
+      }.to_s
+      if [:origin,:origin_vm].include?(get_context) and host_instance.is_node?
+        int_question = "Specify the network interface that this Node will use to route Application traffic"
+        if ip_addrs.length > 0
+          int_question << " (Detected #{ip_addrs.map{ |i| "'#{i[0]}'" }.join(', ')})"
+        end
+        int_question << ": "
+        host_instance.ip_interface = ask(int_question) { |q|
+          if not host_instance.ip_interface.nil?
+            q.default = host_instance.ip_interface
+          end
+          q.validate = lambda { |p| is_valid_string?(p) }
+          q.responses[:not_valid] = "Enter a valid IP interface ID"
+        }.to_s
       end
     end
 
@@ -563,8 +627,14 @@ module Installer
       table = Terminal::Table.new do |t|
         Installer::HostInstance.attrs.each do |attr|
           value = host_instance.send(attr)
-          if value.nil? and [:ip_addr, :ip_interface].include?(attr)
-            value = "[unset; required]"
+          if value.nil?
+            if attr == :ip_addr and host_instance.is_broker? or host_instance.is_node?
+              value = "[unset - required]"
+            elsif [:origin_vm,:origin].include?(get_context) and attr == :ip_interface and host_instance.is_node?
+              value = "[unset - required]"
+            else
+              next
+            end
           end
           t.add_row [attr.to_s.split('_').map{ |word| ['db','ssh','ip'].include?(word) ? word.upcase : word.capitalize}.join(' '), value]
         end
@@ -573,7 +643,7 @@ module Installer
     end
 
     def merged_subscription
-      @merged_subscription = Installer::Subscription.new(config, context)
+      @merged_subscription = Installer::Subscription.new(config)
       Installer::Subscription.object_attrs.each do |attr|
         value = cli_subscription.send(attr)
         if value.nil?

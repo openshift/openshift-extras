@@ -36,6 +36,17 @@ module Installer
       }
     end
 
+    def set_context(context)
+      if not supported_contexts.include?(context)
+        raise UnrecognizedContextException.new("Installer context #{context} not recognized.\nLegal values are #{supported_contexts.join(', ')}.")
+      end
+      Installer.const_set("CONTEXT", context)
+    end
+
+    def get_context
+      Installer::CONTEXT
+    end
+
     # SOURCE for #which:
     # http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
     def which(cmd)
