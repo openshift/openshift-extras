@@ -51,11 +51,11 @@ end
 
 # Maps openshift.sh roles to oo-install deployment components
 @role_map =
-{ 'named' => { 'deploy_list' => 'Brokers', 'role' => 'broker', 'env_var' => 'CONF_NAMED_HOSTNAME' },
-  'broker' => { 'deploy_list' => 'Brokers', 'role' => 'broker', 'env_var' => 'CONF_BROKER_HOSTNAME' },
-  'node' => { 'deploy_list' => 'Nodes', 'role' => 'node', 'env_var' => 'CONF_NODE_HOSTNAME' },
-  'activemq' => { 'deploy_list' => 'MsgServers', 'role' => 'mqserver', 'env_var' => 'CONF_ACTIVEMQ_HOSTNAME' },
-  'datastore' => { 'deploy_list' => 'DBServers', 'role' => 'dbserver', 'env_var' => 'CONF_DATASTORE_HOSTNAME' },
+{ 'named' => { 'deploy_list' => 'Brokers', 'role' => 'broker', 'env_hostname' => 'CONF_NAMED_HOSTNAME', 'env_ip_addr' => 'CONF_NAMED_IP_ADDR' },
+  'broker' => { 'deploy_list' => 'Brokers', 'role' => 'broker', 'env_hostname' => 'CONF_BROKER_HOSTNAME', 'env_ip_addr' => 'CONF_BROKER_IP_ADDR' },
+  'node' => { 'deploy_list' => 'Nodes', 'role' => 'node', 'env_hostname' => 'CONF_NODE_HOSTNAME', 'env_ip_addr' => 'CONF_NODE_IP_ADDR' },
+  'activemq' => { 'deploy_list' => 'MsgServers', 'role' => 'mqserver', 'env_hostname' => 'CONF_ACTIVEMQ_HOSTNAME' },
+  'datastore' => { 'deploy_list' => 'DBServers', 'role' => 'dbserver', 'env_hostname' => 'CONF_DATASTORE_HOSTNAME' },
 }
 
 # Will map hosts to roles
@@ -64,21 +64,6 @@ end
 # This converts an ENV hash into a string of ENV settings
 def env_setup
   @env_map.each_pair.map{ |k,v| "#{k}=#{v}" }.join(' ')
-end
-
-# This is a -very- simple way of making sure we don't inadvertently
-# use a multicast IP addr or subnet mask. There's room for
-# improvement here.
-def find_good_ip_addrs list
-  good_addrs = []
-  list.each do |addr|
-    next if addr == '127.0.0.1'
-    triplets = addr.split('.')
-    if not triplets[0].to_i == 255 and not triplets[-1].to_i == 255
-      good_addrs << addr
-    end
-  end
-  good_addrs
 end
 
 def env_backup
@@ -135,55 +120,13 @@ if config.has_key?('Deployment')
 
       # The env map is passed to each job, but nodes are handled individually
       if not role == 'node'
-        @env_map[@role_map[role]['env_var']] = host_instance['host']
-        if role == 'named' and @env_map['CONF_NAMED_IP_ADDR'].nil?
+        @env_map[@role_map[role]['env_hostname']] = host_instance['host']
+        if @role_map[role].has_key?('env_ip_addr')
           if host_instance.has_key?('ip_addr')
-            @env_map['CONF_NAMED_IP_ADDR'] = host_instance['ip_addr']
+            @env_map[@role_map[role]['env_ip_addr']] = host_instance['ip_addr']
           else
-            # Try to look up the IP address of the Broker host to set the named IP address
-            # 1. Find the path to the 'ip' utility
-            ip_path = nil
-            if not host_instance['ssh_host'] == 'localhost'
-              ip_path = %x[ ssh #{host_instance['user']}@#{host_instance['ssh_host']} 'command -v ip' ].chomp
-            else
-              ip_path = which("ip")
-            end
-            if ip_path.nil?
-              put "Could not find executable 'ip' on target system."
-              exit 1
-            end
-
-            # 2. Get all of the non-loopback, non-netmask IPv4 addresses from the target system
-            ip_lookup_command = "#{ip_path} addr show | grep inet | egrep -v inet6"
-            if not host_instance['ssh_host'] == 'localhost'
-              ip_lookup_command = "ssh #{host_instance['user']}@#{host_instance['ssh_host']} \"#{ip_lookup_command}\""
-            end
-            ip_text = %x[ #{ip_lookup_command} ].chomp
-            ip_addrs = ip_text.split(/[\n\s\:\/]/).select{ |v| v.match(VALID_IP_ADDR_RE) }
-            good_addrs = find_good_ip_addrs ip_addrs
-
-            # 3. Pick the address or tell the user what to change
-            if good_addrs.empty?
-              puts "Could not determine a broker IP address for named. Trying socket lookup from this machine."
-              socket_info = nil
-              begin
-                socket_info = Socket.getaddrinfo(host_instance['host'], 'ssh')
-              rescue SocketError => e
-                puts "Socket lookup of broker IP address failed. The installation cannot continue."
-                exit
-              end
-              @env_map['CONF_NAMED_IP_ADDR'] = socket_info[0][SOCKET_IP_ADDR]
-              puts "Found IP address #{@env_map['CONF_NAMED_IP_ADDR']}.\nThis may fail if the target host is in a different subnet than this local system.\nConsider re-running the installer and manually entering a valid IP address for this target system."
-            elsif good_addrs.length == 1
-              @env_map['CONF_NAMED_IP_ADDR'] = good_addrs[0]
-            else
-              puts "Found multiple possible IP addresses for target host #{host_instance['host']}:"
-              good_addrs.each do |addr|
-                puts "* #{addr}"
-              end
-              puts "The installer will attempt to continue with address #{good_addrs[0]}.\nConsider re-running the installer and manually entering a valid IP address for this target system."
-              @env_map['CONF_NAMED_IP_ADDR'] = good_addrs[0]
-            end
+            puts "Configuration incomplete; config file is missing IP address for host instance #{host_instance['host']}"
+            exit 1
           end
         end
       end
@@ -251,9 +194,11 @@ host_order.each do |ssh_host|
 
   # Only include the node config setting for hosts that will have a node installation
   if @hosts[ssh_host]['roles'].include?('node')
-    @env_map[@role_map['node']['env_var']] = @hosts[ssh_host]['host']
+    @env_map[@role_map['node']['env_hostname']] = @hosts[ssh_host]['host']
+    @env_map[@role_map['node']['env_ip_addr']] = @hosts[ssh_host]['ip_addr']
   else
-    @env_map.delete(@role_map['node']['env_var'])
+    @env_map.delete(@role_map['node']['env_hostname'])
+    @env_map.delete(@role_map['node']['env_ip_addr'])
   end
 
   if not ssh_host == 'localhost'

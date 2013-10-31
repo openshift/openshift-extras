@@ -142,27 +142,33 @@ module Installer
 
     def is_valid?(check=:basic)
       # Check the host lists
-      [:brokers, :nodes, :mqservers, :dbservers].each do |group|
-        list = self.send(group)
-        role = group.to_s.chop.to_sym
-        seen_hosts = []
-        list.each do |host_instance|
-          if host_instance.role != role
-            return false if check == :basic
-            raise Installer::HostInstanceRoleIncompatibleException.new("Found a host instance of type '#{host_instance.role.to_s}' in the #{group.to_s} list.")
-          end
-          if seen_hosts.include?(host_instance.host)
-            return false if check == :basic
-            raise Installer::HostInstanceDuplicateTargetHostException.new("Multiple host instances in the #{group.to_s} list have the same target host or IP address")
-          else
-            seen_hosts << host_instance.host
-          end
-          host_instance.is_valid?(check)
-        end
+      [:broker, :node, :mqserver, :dbserver].each do |role|
+        return false if not is_valid_role_list?(role, check)
       end
       # Check the DNS setup
       if not dns.has_key?('app_domain') or not is_valid_domain?(dns['app_domain'])
         return false if check == :basic
+      end
+      true
+    end
+
+    def is_valid_role_list?(role, check=:basic)
+      list = self.send(self.class.list_map[role])
+      seen_hosts = []
+      list.each do |host_instance|
+        if host_instance.role != role
+          return false if check == :basic
+          raise Installer::HostInstanceRoleIncompatibleException.new("Found a host instance of type '#{host_instance.role.to_s}' in the #{group.to_s} list.")
+        end
+        if seen_hosts.include?(host_instance.host)
+          return false if check == :basic
+          raise Installer::HostInstanceDuplicateTargetHostException.new("Multiple host instances in the #{group.to_s} list have the same target host or IP address")
+        else
+          seen_hosts << host_instance.host
+        end
+        if not host_instance.is_valid?(check)
+          return false
+        end
       end
       true
     end
