@@ -4,17 +4,28 @@ module Installer
   class HostInstance
     include Installer::Helpers
 
-    attr_reader :role
-    attr_accessor :host, :ip_addr, :ip_interface, :ssh_host, :user
+    attr_accessor :id, :host, :ip_addr, :ip_interface, :ssh_host, :user, :roles
 
     def self.attrs
-      %w{host ssh_host user ip_addr ip_interface}.map{ |a| a.to_sym }
+      %w{host ssh_host user ip_addr ip_interface roles}.map{ |a| a.to_sym }
     end
 
-    def initialize role, item={}
-      @role = role
+    def initialize(item={}, init_role=nil)
+      @id = self.__id__
+      @roles = []
       self.class.attrs.each do |attr|
-        self.send("#{attr}=", (item.has_key?(attr.to_s) ? item[attr.to_s] : nil))
+        value = attr == :roles ? [] : nil
+        if item.has_key?(attr.to_s)
+          if attr == :roles
+            value = item[attr.to_s].map{ |role| role == 'msgserver' ? :mqserver : role.to_sym }
+          else
+            value = item[attr.to_s]
+          end
+        end
+        self.send("#{attr}=", value)
+      end
+      if not init_role.nil?
+        @roles = @roles.concat([init_role.to_sym]).uniq
       end
     end
 
@@ -40,35 +51,51 @@ module Installer
     end
 
     def is_broker?
-      role == :broker
+      roles.include?(:broker)
     end
 
     def is_node?
-      role == :node
+      roles.include?(:node)
     end
 
     def is_valid?(check=:basic)
       if not is_valid_hostname?(host)
         return false if check == :basic
-        raise Installer::HostInstanceHostNameException.new("Host instance host name / IP address '#{host}' in the #{role.to_s} list is invalid.")
+        raise Installer::HostInstanceHostNameException.new("Host instance host name '#{host}' is invalid.")
       end
       if not is_valid_hostname?(ssh_host)
         return false if check == :basic
-        raise Installer::HostInstanceHostNameException.new("Host instance host name / IP address '#{host}' in the #{role.to_s} list is invalid.")
+        raise Installer::HostInstanceHostNameException.new("Host instance SSH host name '#{host}' is invalid.")
       end
       if not is_valid_username?(user) or (localhost? and not user == `whoami`.chomp)
         return false if check == :basic
-        raise Installer::HostInstanceUserNameException.new("Host instance '#{host}' in the #{role.to_s} list has an invalid user name '#{user}'.")
+        raise Installer::HostInstanceUserNameException.new("Host instance '#{host}' has an invalid user name '#{user}'.")
+      end
+      if roles.length == 0
+        return false if check == :basic
+        raise Installer::HostInstanceUnassignedException.new("Host instance '#{host}' is not configured to any OpenShift roles.")
+      end
+      if not roles.length == roles.uniq.length
+        return false if check == :basic
+        raise Installer::HostInstanceDuplicateRoleException.new("Host instance '#{host}' has been assigned to the same role multiple times.")
       end
       if (is_broker? or is_node?) and not is_valid_ip_addr?(ip_addr)
         return false if check == :basic
-        raise Installer::HostInstanceIPAddressException.new("Host instance '#{host}' in the #{role.to_s} list has an invalid ip address '#{ip_addr}'.")
+        raise Installer::HostInstanceIPAddressException.new("Host instance '#{host}' has an invalid ip address '#{ip_addr}'.")
       end
       if [:origin, :origin_vm].include?(get_context) and is_node? and not is_valid_string?(ip_interface)
         return false if check == :basic
-        raise Installer::HostInstanceIPInterfaceException.new("Host instance '#{host}' in the #{role.to_s} list has a blank or missing ip interface setting.")
+        raise Installer::HostInstanceIPInterfaceException.new("Host instance '#{host}' has a blank or missing ip interface setting.")
       end
       true
+    end
+
+    def add_role role
+      @roles = roles.concat([role]).uniq
+    end
+
+    def remove_role role
+      @roles.delete_if{ |r| r == role }
     end
 
     def host_type
@@ -91,13 +118,18 @@ module Installer
       output = {}
       self.class.attrs.each do |attr|
         next if self.send(attr).nil?
-        output[attr.to_s] = self.send(attr)
+        output[attr.to_s] = attr == :roles ? self.send(attr).map{ |r| r.to_s } : self.send(attr)
       end
       output
     end
 
     def summarize
-      to_hash.each_pair.map{ |k,v| k.split('_').map{ |word| ['ssh'].include?(word) ? word.upcase : word.capitalize }.join(' ') + ': ' + v.to_s }.sort{ |a,b| a <=> b }.join(', ')
+      display_roles = []
+      Installer::Deployment.display_order.each do |role|
+        next if not roles.include?(role)
+        display_roles << Installer::Deployment.role_map[role].chop
+      end
+      "#{host} (#{display_roles.join(', ')})"
     end
 
     def ssh_target

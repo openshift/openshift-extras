@@ -5,78 +5,74 @@ module Installer
     include Installer::Helpers
 
     attr_reader :config
-    attr_accessor :brokers, :nodes, :mqservers, :dbservers, :dns
+    attr_accessor :dns, :hosts
 
-    def self.role_map
-      { :broker => 'Brokers',
-        :node => 'Nodes',
-        :mqserver => 'MsgServers',
-        :dbserver => 'DBServers',
-      }
-    end
+    class << self
+      def role_map
+        { :broker => 'Brokers',
+          :node => 'Nodes',
+          :mqserver => 'MsgServers',
+          :dbserver => 'DBServers',
+        }
+      end
 
-    def self.list_map
-      { :broker => :brokers,
-        :node => :nodes,
-        :mqserver => :mqservers,
-        :dbserver => :dbservers,
-      }
-    end
+      def list_map
+        { :broker => :brokers,
+          :node => :nodes,
+          :mqserver => :mqservers,
+          :dbserver => :dbservers,
+        }
+      end
 
-    def self.display_order
-      [:broker,:mqserver,:dbserver,:node]
-    end
+      def display_order
+        advanced_mode? ? [:broker,:mqserver,:dbserver,:node] : [:broker,:node]
+      end
 
-    def self.roles
-      @roles ||= self.role_map.keys.map{ |role| role.to_s }
+      def roles
+        @roles ||= self.role_map.keys.map{ |role| role.to_s }
+      end
     end
 
     def initialize config, deployment
       @config = config
-      self.class.role_map.each_pair do |role, hkey|
-        set_role_list role, (deployment.has_key?(hkey) ? deployment[hkey].map{ |i| Installer::HostInstance.new(role, i) } : [])
+      @hosts = []
+      if deployment.has_key?('Hosts')
+        deployment['Hosts'].each do |host_instance|
+          hosts << Installer::HostInstance.new(host_instance)
+        end
       end
-      set_dns (deployment.has_key?('DNS') ? deployment['DNS'] : {})
+      set_dns(deployment.has_key?('DNS') ? deployment['DNS'] : {})
+    end
+
+    def brokers
+      get_hosts_by_role :broker
+    end
+
+    def mqservers
+      get_hosts_by_role :mqserver
+    end
+
+    def dbservers
+      get_hosts_by_role :dbserver
+    end
+
+    def nodes
+      get_hosts_by_role :node
     end
 
     def add_host_instance! host_instance
-      list = get_role_list host_instance.role
-      list << host_instance
-      set_role_list host_instance.role, list
+      @hosts << host_instance
       save_to_disk!
     end
 
-    def update_host_instance! host_instance, index
-      list = get_role_list host_instance.role
-      list[index] = host_instance
-      set_role_list host_instance.role, list
+    def update_host_instance! host_instance
+      @hosts[@hosts.index{ |h| h.id == host_instance.id }] = host_instance
       save_to_disk!
     end
 
-    def remove_host_instance! host_instance, index
-      list = get_role_list host_instance.role
-      list.delete_at(index)
-      set_role_list host_instance.role, list
+    def remove_host_instance! id
+      hosts.delete_if{ |h| h.id == id }
       save_to_disk!
-    end
-
-    # For basic mode, the mqserver and dbserver settings always
-    # match the broker settings.
-    def clone_broker_instances!
-      broker_list = get_role_list :broker
-      [:mqserver, :dbserver].each do |clone_role|
-        set_role_list clone_role, broker_list.map{ |i| Installer::HostInstance.new(clone_role, { 'host' => i.host, 'ssh_host' => i.ssh_host, 'user' => i.user, 'ip_addr' => i.ip_addr, 'ip_interface' => i.ip_interface })}
-      end
-      save_to_disk!
-    end
-
-    def to_hash
-      { 'Brokers' => brokers.map{ |b| b.to_hash },
-        'Nodes' => nodes.map{ |n| n.to_hash },
-        'MsgServers' => mqservers.map{ |m| m.to_hash },
-        'DBServers' => dbservers.map{ |d| d.to_hash },
-        'DNS' => dns,
-      }
     end
 
     def save_to_disk!
@@ -84,54 +80,32 @@ module Installer
       config.save_to_disk!
     end
 
-    def get_role_list role
-      listname = "#{role.to_s}s".to_sym
-      self.send(listname)
-    end
-
-    def set_role_list role, list
-      listname = "#{role.to_s}s".to_sym
-      self.send("#{listname}=", list)
-    end
-
-    def set_dns dns
-      @dns = dns
-    end
-
-    def find_host_instance_for_workflow host_instance_key=nil, specific_role=nil
-      all_host_instances = []
-      self.class.list_map.each_pair do |role,lsym|
-        if not specific_role.nil? and role.to_s != specific_role
-          next
-        end
-        list = self.send(lsym)
-        group = self.class.role_map[role].chop
-        list.sort{ |a,b| a.host <=> b.host }.each do |instance|
-          current_key = "#{role.to_s}::#{instance.host}"
-          if not host_instance_key.nil? and host_instance_key == current_key
-            return instance
-          end
-          all_host_instances << { :text => "#{group} - #{instance.summarize}", :value => current_key }
+    def set_basic_hosts!
+      # Zip through the hosts, clean up the list so that all brokers also have mqserver and dbserver roles
+      # Also remove standalone mqserver and dbserver hosts
+      to_delete = []
+      hosts.each do |host_instance|
+        if host_instance.roles.include?(:broker)
+          # Broker hosts (which may also contain a node) get mqserver and dbserver as well
+          host_instance.roles = [:mqserver,:dbserver].concat(host_instance.roles).uniq
+        elsif host_instance.roles.include?(:node)
+          # Node hosts (which don't include brokers) get any other roles removed
+          host_instance.roles = [:node]
+        else
+          # Other hosts get nuked.
+          to_delete << host_instance.id
         end
       end
-      if not host_instance_key.nil?
-        return nil
+      if to_delete.length > 0
+        hosts.delete_if{ |h| to_delete.include?(h.id) }
       end
-      all_host_instances
-    end
-
-    def list_host_instances_for_workflow(role=nil)
-      find_host_instance_for_workflow(nil, role)
+      save_to_disk!
     end
 
     def is_complete?
-      [:brokers, :nodes, :mqservers, :dbservers].each do |group|
-        list = self.send(group)
-        if list.length == 0
+      self.class.list_map.values.each do |group|
+        if self.send(group).length == 0
           return false
-        end
-        list.each do |host_instance|
-          return false if not host_instance.is_valid?
         end
       end
       if not dns.has_key?('app_domain')
@@ -141,9 +115,14 @@ module Installer
     end
 
     def is_valid?(check=:basic)
-      # Check the host lists
-      [:broker, :node, :mqserver, :dbserver].each do |role|
-        return false if not is_valid_role_list?(role, check)
+      # Check the host list
+      if hosts.select{ |h| h.is_valid?(check) == false }.length > 0
+        return false
+      end
+      [:broker, :mqserver, :dbserver].each do |role|
+        if not hosts.select{ |h| h.roles.include?(role) }.length == 1
+          return false
+        end
       end
       # Check the DNS setup
       if not dns.has_key?('app_domain') or not is_valid_domain?(dns['app_domain'])
@@ -152,39 +131,30 @@ module Installer
       true
     end
 
-    def is_valid_role_list?(role, check=:basic)
+    def is_valid_role_list? role
       list = self.send(self.class.list_map[role])
-      seen_hosts = []
-      list.each do |host_instance|
-        if host_instance.role != role
-          return false if check == :basic
-          raise Installer::HostInstanceRoleIncompatibleException.new("Found a host instance of type '#{host_instance.role.to_s}' in the #{group.to_s} list.")
-        end
-        if seen_hosts.include?(host_instance.host)
-          return false if check == :basic
-          raise Installer::HostInstanceDuplicateTargetHostException.new("Multiple host instances in the #{group.to_s} list have the same target host or IP address")
-        else
-          seen_hosts << host_instance.host
-        end
-        if not host_instance.is_valid?(check)
-          return false
-        end
-      end
+      return false if list.length == 0
+      return false if list.select{ |h| h.is_valid? == false }.length > 0
       true
     end
 
-    # Return the host instance elements keyed by SSH host
-    def by_ssh_host
-      by_ssh_host = {}
-      self.class.list_map.each_pair do |role,list|
-        self.send(list).each do |host_instance|
-          if not by_ssh_host.has_key?(host_instance.ssh_host)
-            by_ssh_host[host_instance.ssh_host] = []
-          end
-          by_ssh_host[host_instance.ssh_host] << host_instance
-        end
-      end
-      by_ssh_host
+    def to_hash
+      { 'Hosts' => hosts.map{ |h| h.to_hash },
+        'DNS' => dns,
+      }
+    end
+
+    def get_role_list role
+      hosts.select{ |h| h.roles.include?(role) }
+    end
+
+    def set_dns dns
+      @dns = dns
+    end
+
+    private
+    def get_hosts_by_role role
+      hosts.select{ |h| h.roles.include?(role) }
     end
   end
 end

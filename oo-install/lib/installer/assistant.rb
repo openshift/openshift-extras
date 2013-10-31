@@ -13,10 +13,9 @@ module Installer
     attr_reader :workflow_id, :target_version
     attr_accessor :config, :deployment, :cli_subscription, :cfg_subscription, :workflow, :workflow_cfg
 
-    def initialize config, workflow_id=nil, advanced_mode=false, cli_subscription=nil, target_version=nil
+    def initialize config, workflow_id=nil, cli_subscription=nil, target_version=nil
       @config = config
       @target_version = target_version
-      @advanced_mode = advanced_mode
       @deployment = config.get_deployment
       @cfg_subscription = config.get_subscription
       @cli_subscription = cli_subscription
@@ -96,10 +95,6 @@ module Installer
       @save_subscription
     end
 
-    def advanced_mode?
-      @advanced_mode
-    end
-
     private
     def ui_title
       ui_newpage
@@ -143,20 +138,14 @@ module Installer
 
       # Deployment check
       if workflow.check_deployment?
-        deployment_question = "\nDo you want to change the basic deployment info?"
-        deployment_followup = "\nDo you want to go back and modify your basic deployment info settings?"
         if not deployment.is_complete?
           say translate :info_force_run_deployment_setup
           ui_edit_deployment
-          ui_show_deployment
-          deployment_question = deployment_followup
         else
           ui_show_deployment
-        end
-        while concur(deployment_question, translate(:help_basic_deployment))
-          ui_edit_deployment
-          ui_show_deployment
-          deployment_question = deployment_followup
+          if concur("\nDo you want to change the basic deployment info?", translate(:help_basic_deployment))
+            ui_edit_deployment
+          end
         end
       end
 
@@ -258,34 +247,49 @@ module Installer
     end
 
     def ui_edit_deployment
+      # Force the configuration of anything that is missing
+      resolved_issues = false
       unless deployment.dns.keys.length > 0
+        resolved_issues = true
         say "\n#{translate(:info_force_run_dns_setup)}"
         ui_modify_dns
-      else
-        list_dns
       end
-      while concur("\nDo you want to change the DNS settings?", translate(:help_dns_settings))
-        ui_modify_dns
-      end
+      # Zip through the roles and make sure there is a host instance assigned to each.
       Installer::Deployment.display_order.each do |role|
-        if not advanced_mode? and [:mqserver, :dbserver].include?(role)
-          next
+        group_name = Installer::Deployment.role_map[role]
+        group_item = group_name.chop
+        group_list = Installer::Deployment.list_map[role]
+        if deployment.send(group_list).length == 0
+          resolved_issues = true
+          say "\nYou must specify a #{group_item} host instance."
+          ui_add_remove_host_by_role role
         end
-        hkey = Installer::Deployment.role_map[role]
-        list_count = list_role role
-        role_singular = hkey.chop
-        role_list = role == :node ? "#{hkey} list" : role_singular
-        if list_count == 0
-          say "\nYou must add a #{role_singular}."
-          ui_modify_role_list role
+      end
+      # Now show the current deployment and provide an edit menu
+      exit_loop = false
+      loop do
+        if resolved_issues
+          ui_show_deployment
         end
-        while not deployment.is_valid_role_list?(role) or concur("\nDo you want to modify the #{role_list}?", translate(:help_roles_edits))
-          ui_modify_role_list role
+        node_choice = deployment.nodes.length > 1 ? "Add or remove a Node host" : "Add another Node host"
+        choose do |menu|
+          menu.header = "\nChoose from the following deployment configuration options"
+          menu.prompt = "#{translate(:menu_prompt)} "
+          menu.choice("Change the DNS configuration") { ui_modify_dns }
+          menu.choice("Move an OpenShift role to a different host") { ui_move_role }
+          menu.choice(node_choice) { ui_add_remove_host_by_role :node }
+          menu.choice("Modify the information for an existing host") { ui_modify_host }
+          menu.choice("Finish editing the deployment configuration") { exit_loop = true }
+          menu.hidden("q") { return_to_main_menu }
         end
+        if exit_loop
+          break
+        end
+        resolved_issues = true
       end
       # In basic mode, the mqserver and dbserver host lists are cloned from the broker list
       if not advanced_mode?
-        deployment.clone_broker_instances!
+        deployment.set_basic_hosts!
       end
     end
 
@@ -295,13 +299,10 @@ module Installer
       if not advanced_mode?
         say translate :basic_mode_explanation
       end
+      list_dns
       Installer::Deployment.display_order.each do |role|
-        if not advanced_mode? and [:mqserver, :dbserver].include?(role)
-          next
-        end
         list_role role
       end
-      list_dns
     end
 
     def ui_edit_subscription
@@ -393,26 +394,18 @@ module Installer
       puts table
     end
 
-    def ui_modify_role_list role
-      list = deployment.get_role_list(role)
-      if list.length
-        if role == :node
-          say "\nModifying the " + Installer::Deployment.role_map[role] + " list.\n\n"
-          choose do |menu|
-            menu.header = "Select the number of the #{role.to_s} host instance that you wish to modify"
-            menu.prompt = "#{translate(:menu_prompt)} "
-            for i in 0..(list.length - 1)
-              menu.choice(list[i].summarize) { ui_edit_host_instance list[i], list.length, i }
-            end
-            menu.choice("Add a new #{role.to_s}") { ui_edit_host_instance Installer::HostInstance.new(role) }
-            menu.hidden("q") { return_to_main_menu }
-          end
-        else
-          ui_edit_host_instance list[0], list.length, 0
-        end
+    def ui_modify_host
+      if deployment.hosts.length == 1
+        ui_edit_host_instance deployment.hosts[0]
       else
-        say "Add a new #{role.to_s}"
-        ui_edit_host_instance Installer::HostInstance.new(role)
+        choose do |menu|
+          menu.header = "\nSelect a host instance to modify"
+          menu.prompt = "#{translate(:menu_prompt)} "
+          deployment.hosts.each do |host_instance|
+            menu.choice(host_instance.summarize) { ui_edit_host_instance host_instance }
+          end
+          menu.hidden("q") { return_to_main_menu }
+        end
       end
     end
 
@@ -429,41 +422,133 @@ module Installer
       deployment.save_to_disk!
     end
 
-    def ui_edit_host_instance host_instance, role_count=0, index=nil
-      rolename = Installer::Deployment.role_map[host_instance.role].chop
-      puts "\n"
-      if index.nil?
-        say "Adding a new #{rolename}"
-      elsif host_instance.role == :node
-        say "Modifying #{rolename} number #{index + 1}"
+    def ui_add_remove_host_by_role role
+      role_list = deployment.send(Installer::Deployment.list_map[role])
+      target_list = deployment.hosts.select{ |h| not h.roles.include?(role) }
+      group_name = Installer::Deployment.role_map[role]
+      if role_list.length < 2 and target_list.length == 0
+        ui_edit_host_instance(nil, role)
       else
-        say "Modifying #{rolename}"
+        deletable_list = role_list.length == 1 ? [] : role_list.select{ |h| h.roles.length == 1 }
+        non_deletable_list = role_list.select{ |h| h.roles.length > 1 }
+        if deletable_list.length == 0 and target_list.length == 0
+          say "Currently you cannot delete any #{group_name} because they are all sharing hosts with other OpenShift components. Move the other roles to different hosts and then you will be able to delete them."
+          if concur("Do you want to add a new #{group_name.chop}?")
+            ui_edit_host_instance(nil, role)
+          end
+        else
+          header = "\nAdd a new host, add the role to an existing host, or choose one to remove"
+          if deletable_list.length == 0
+            header = "\nAdd a new host or add the #{group_name.chop} role to another existing host"
+          elsif target_list.length == 0
+            header = "\nAdd a new host or choose one to remove"
+          end
+          if non_deletable_list.length > 0
+            addendum = ".\nNote that the following hosts cannot be deleted because they are configured for other roles as well:\n\n"
+            non_deletable_list.each do |host_instance|
+              addendum << "* #{host_instance.summarize}\n"
+            end
+            addendum << "\nMove the other roles to different hosts and then you will be able to delete them.\n\nChoose an action"
+            header << addendum
+          end
+          choose do |menu|
+            menu.header = header
+            menu.prompt = "#{translate(:menu_prompt)} "
+            menu.choice("Add a new host") { ui_edit_host_instance(nil, role) }
+            target_list.each do |host_instance|
+              menu.choice("Add role to #{host_instance.host}") {
+                host_instance.add_role(role)
+                deployment.save_to_disk!
+                say "\nAdded #{role.to_s} role to #{host_instance.host}"
+              }
+            end
+            deletable_list.each do |host_instance|
+              menu.choice("Remove #{host_instance.host}") {
+                deployment.remove_host_instance!(host_instance.id)
+                say "\nRemoved #{host_instance.host}"
+              }
+            end
+            menu.hidden("q") { return_to_main_menu }
+          end
+        end
       end
-      if host_instance.role == :node and role_count > 1
+    end
+
+    def ui_move_role
+      move_role = nil
+      choose do |menu|
+        menu.header = "\nWhich role do you want to move to a different host?"
+        menu.prompt = "#{translate(:menu_prompt)} "
+        Installer::Deployment.display_order.each do |role|
+          group = Installer::Deployment.role_map[role]
+          menu.choice(group.chop) { move_role = role }
+        end
+        menu.hidden("q") { return_to_main_menu }
+      end
+      source_list = deployment.send(Installer::Deployment.list_map[move_role])
+      source_host = nil
+      if source_list.length > 1
         choose do |menu|
-          menu.header = "Do you want to delete this #{rolename} or update it?"
+          menu.header = "\nWhich host should no longer include the role?"
+          menu.prompt = "#{translate(:menu_prompt)} "
+          source_list.each do |host_instance|
+            menu.choice(host_instance.summarize) { source_host = host_instance }
+          end
+          menu.hidden("q") { return_to_main_menu }
+        end
+      else
+        source_host = source_list[0]
+      end
+      # Figure out if any currently existing host instances could be a new landing place.
+      target_hosts = deployment.hosts.select{ |h| not h.roles.include?(move_role) }
+      if target_hosts.length > 0
+        choose do |menu|
+          menu.header = "\nSelect a host to use for this role:"
+          menu.prompt = "#{translate(:menu_prompt)} "
+          target_hosts.each do |host_instance|
+            menu.choice(host_instance.summarize) { host_instance.add_role(role) }
+          end
+          menu.choice("Create a new host") { source_host.remove_role(move_role); ui_edit_host_instance(nil, move_role) }
+          menu.hidden("q") { return_to_main_menu }
+        end
+      else
+        source_host.remove_role(move_role)
+        ui_edit_host_instance(nil, move_role)
+      end
+    end
+
+    def ui_edit_host_instance(host_instance=nil, role_focus=nil, role_count=0)
+      puts "\n"
+      new_host = host_instance.nil?
+      if new_host
+        host_instance = Installer::HostInstance.new({}, role_focus)
+        say "Adding a new host for the #{role_focus.to_s} role"
+      else
+        say "Modifying host #{host_instance.host}"
+      end
+      if role_focus == :node and role_count > 1 and host_instance.roles.count == 1
+        # If this host instance is Node-only
+        choose do |menu|
+          menu.header = "You have defined multiple Node hosts. Do you want to delete this host or update it?"
           menu.prompt = "#{translate(:menu_prompt)} "
           menu.choice("Update it") {
             edit_host_instance host_instance
-            deployment.update_host_instance! host_instance, index
+            deployment.update_host_instance! host_instance
             say "Updated the #{rolename} host instance."
           }
           menu.choice("Delete it") {
-            deployment.remove_host_instance! host_instance, index
+            deployment.remove_host_instance! host_instance
             say "Deleted the #{rolename} host instance."
           }
         end
       else
         edit_host_instance host_instance
-        if index.nil?
+        if new_host
           deployment.add_host_instance! host_instance
-          index = 0
         else
-          deployment.update_host_instance! host_instance, index
+          deployment.update_host_instance! host_instance
         end
       end
-      puts "\n"
-      list_role host_instance.role
     end
 
     def edit_host_instance host_instance
@@ -626,6 +711,7 @@ module Installer
     def list_host_instance host_instance
       table = Terminal::Table.new do |t|
         Installer::HostInstance.attrs.each do |attr|
+          next if attr == :roles
           value = host_instance.send(attr)
           if value.nil?
             if attr == :ip_addr and host_instance.is_broker? or host_instance.is_node?
@@ -683,14 +769,12 @@ module Installer
 
     def check_deployment
       deployment_good = true
-      deployment.by_ssh_host.each_pair do |ssh_host,instance_list|
-        test_host = instance_list[0]
-        ssh_host_roles = instance_list.map{ |h| h.role }
-        say "\nChecking #{test_host.host}:"
+      deployment.hosts.each do |host_instance|
+        say "\nChecking #{host_instance.host}:"
         # Attempt SSH connection for remote hosts
-        if not test_host.localhost?
+        if not host_instance.localhost?
           begin
-            test_host.get_ssh_session
+            host_instance.get_ssh_session
           rescue Errno::ECONNREFUSED => e
             say "* SSH connection refused; check SSH settings"
             deployment_good = false
@@ -701,7 +785,7 @@ module Installer
         end
 
         # Check the target host deployment type
-        if workflow.targets[test_host.host_type].nil?
+        if workflow.targets[host_instance.host_type].nil?
           if workflow.targets.keys.length == 1
             say "* Target host does not appear to be a #{supported_targets[workflow.targets.keys[0]]} system"
           else
@@ -710,7 +794,7 @@ module Installer
           deployment_good = false
           next
         else
-          say "* Target host is running #{supported_targets[test_host.host_type]}"
+          say "* Target host is running #{supported_targets[host_instance.host_type]}"
         end
 
         # Check for all required utilities
@@ -720,18 +804,18 @@ module Installer
             check_on_role = util.split(":")[0].to_sym
             util = util.split(":")[1]
           end
-          if not check_on_role == :all and not ssh_host_roles.include?(check_on_role)
+          if not check_on_role == :all and not host_instance.roles.include?(check_on_role)
             next
           end
           cmd_result = {}
-          if test_host.localhost?
+          if host_instance.localhost?
             cmd_result[:exit_code] = which(util).nil? ? 1 : 0
           else
-            cmd_result = test_host.exec_on_host!("command -v #{util}")
+            cmd_result = host_instance.exec_on_host!("command -v #{util}")
           end
           if not cmd_result[:exit_code] == 0
             say "* Could not locate #{util}... "
-            find_result = test_host.exec_on_host!("yum -q provides */#{util}")
+            find_result = host_instance.exec_on_host!("yum -q provides */#{util}")
             if not find_result[:exit_code] == 0
               say "no suggestions available"
             else
@@ -739,20 +823,20 @@ module Installer
             end
             deployment_good = false
           else
-            if not test_host.root_user?
+            if not host_instance.root_user?
               say "* Located #{util}... "
               sudo_result = {}
-              if test_host.localhost?
+              if host_instance.localhost?
                 sudo_result[:stdout] = which('sudo')
                 sudo_result[:exit_code] = sudo_result[:stdout].nil? ? 1 : 0
               else
-                sudo_result = test_host.exec_on_host!("command -v sudo")
+                sudo_result = host_instance.exec_on_host!("command -v sudo")
               end
               if not sudo_result[:exit_code] == 0
                 say "could not locate sudo"
                 deployment_good = false
               else
-                sudo_cmd_result = test_host.exec_on_host!("#{sudo_result[:stdout]} #{util} --version")
+                sudo_cmd_result = host_instance.exec_on_host!("#{sudo_result[:stdout]} #{util} --version")
                 if not sudo_cmd_result[:exit_code] == 0
                   say "could not invoke '#{util} --version' with sudo"
                   deployment_good = false
@@ -766,10 +850,10 @@ module Installer
           end
         end
 
-        if not test_host.localhost?
+        if not host_instance.localhost?
           begin
             # Close the ssh session
-            test_host.close_ssh_session
+            host_instance.close_ssh_session
           rescue Errno::ENETUNREACH
             say "* Could not reach host"
             deployment_good = false

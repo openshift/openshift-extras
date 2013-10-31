@@ -19,10 +19,57 @@ module Installer
         @repo_attrs
       end
 
+      def subscription_info(type)
+        case type
+        when :none
+          return {
+            :desc => 'No subscription necessary',
+            :attrs => {},
+            :attr_order => [],
+          }
+        when :yum
+          return {
+            :desc => 'Get packages from yum and do not use a subscription',
+            :attrs => {
+              :repos_base => 'The base URL for the OpenShift repositories',
+              :jboss_repo_base => 'The base URL for a JBoss repository',
+              :jenkins_repo_base => 'The base URL for a Jenkins repository',
+              :scl_repo => 'The base URL for an SCL repository',
+              :os_repo => 'The URL of a yum repository for the operating system',
+              :os_optional_repo => 'The URL for an "Optional" repository for the operating system',
+            },
+            :attr_order => repo_attrs,
+          }
+        when :rhsm
+          return {
+            :desc => 'Use Red Hat Subscription Manager',
+            :attrs => {
+              :rh_username => 'Red Hat Login username',
+              :rh_password => 'Red Hat Login password',
+              :sm_reg_pool => 'Pool ID for OpenShift subscription',
+              :sm_reg_pool_rhel => 'Pool ID for RHEL subscription',
+            },
+            :attr_order => [:rh_username,:rh_password,:sm_reg_pool],
+          }
+        when :rhn
+          return {
+            :desc => 'Use Red Hat Network',
+            :attrs => {
+              :rh_username => 'Red Hat Login username',
+              :rh_password => 'Red Hat Login password',
+              :rhn_reg_actkey => 'RHN account activation key',
+            },
+            :attr_order => [:rh_username,:rh_password,:rhn_reg_actkey],
+          }
+        else
+          raise Installer::SubscriptionTypeNotRecognizedException.new("Subscription type '#{type}' is not recognized.")
+        end
+      end
+
       def valid_attr? attr, value, check=:basic
         if attr == :subscription_type
           begin
-            subscription_info_for_type(value.to_sym)
+            subscription_info(value.to_sym)
           rescue Installer::SubscriptionTypeNotRecognizedException => e
             if check == :basic
               return false
@@ -68,57 +115,10 @@ module Installer
         begin
           type_map = {}
           self.class.valid_types_for_context.each do |type|
-            type_map[type] = subscription_info(type)
+            type_map[type] = self.class.subscription_info(type)
           end
           type_map
         end
-    end
-
-    def subscription_info(type=subscription_type)
-      case type
-      when :none
-        return {
-          :desc => 'No subscription necessary',
-          :attrs => {},
-          :attr_order => [],
-        }
-      when :yum
-        return {
-          :desc => 'Get packages from yum and do not use a subscription',
-          :attrs => {
-            :repos_base => 'The base URL for the OpenShift repositories',
-            :jboss_repo_base => 'The base URL for a JBoss repository',
-            :jenkins_repo_base => 'The base URL for a Jenkins repository',
-            :scl_repo => 'The base URL for an SCL repository',
-            :os_repo => 'The URL of a yum repository for the operating system',
-            :os_optional_repo => 'The URL for an "Optional" repository for the operating system',
-          },
-          :attr_order => self.class.repo_attrs,
-        }
-      when :rhsm
-        return {
-          :desc => 'Use Red Hat Subscription Manager',
-          :attrs => {
-            :rh_username => 'Red Hat Login username',
-            :rh_password => 'Red Hat Login password',
-            :sm_reg_pool => 'Pool ID for OpenShift subscription',
-            :sm_reg_pool_rhel => 'Pool ID for RHEL subscription',
-          },
-          :attr_order => [:rh_username,:rh_password,:sm_reg_pool],
-        }
-      when :rhn
-        return {
-          :desc => 'Use Red Hat Network',
-          :attrs => {
-            :rh_username => 'Red Hat Login username',
-            :rh_password => 'Red Hat Login password',
-            :rhn_reg_actkey => 'RHN account activation key',
-          },
-          :attr_order => [:rh_username,:rh_password,:rhn_reg_actkey],
-        }
-      else
-        raise Installer::SubscriptionTypeNotRecognizedException.new("Subscription type '#{subscription_type}' is not recognized.")
-      end
     end
 
     def is_complete?
@@ -128,7 +128,7 @@ module Installer
         return true
       else
         # These others require username and password
-        self.subscription_info[:attrs].each_key do |attr|
+        self.class.subscription_info(subscription_type)[:attrs].each_key do |attr|
           next if not [:rh_username,:rh_password].include?(attr)
           return false if self.send(attr).nil?
         end

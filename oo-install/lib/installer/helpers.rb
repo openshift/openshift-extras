@@ -47,6 +47,14 @@ module Installer
       Installer::CONTEXT
     end
 
+    def set_mode(advanced_mode)
+      Installer.const_set("ADVANCED", advanced_mode)
+    end
+
+    def advanced_mode?
+      Installer::ADVANCED
+    end
+
     # SOURCE for #which:
     # http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
     def which(cmd)
