@@ -183,20 +183,25 @@ class OpenShiftAdminCheckSources:
                     if self.oscs.disable_repo(ii.repoid):
                         self.logger.warning('Disabled repository %s'%ii.repoid)
             else:
-                self.logger.error("The following OpenShift Enterprise repositories conflict with the detected or specified product version and should be disabled to prevent package conflicts:")
-                for ii in conflicts:
-                    self.logger.error("    %s"%ii.repoid)
-                if self.subscription == RHN:
-                    self.logger.error('Make the following modifications to /etc/yum/pluginconf.d/rhnplugin.conf')
-                else:
-                    self.logger.error("Disable these repositories with the following commands:")
-                for repo in conflicts:
-                    if self.subscription == RHN:
-                        self.logger.error("    Set enabled=0 in the [%s] section"%repo.repoid)
-                    elif self.subscription == RHSM:
-                        self.logger.error("# subscription-manager repos --disable=%s"%repo.repoid)
-                    else:
-                        self.logger.error("# yum-config-manager --disable %s"%repo.repoid)
+                rhsm_conflicts = [repo.repoid for repo in conflicts if self.oscs.repo_is_rhsm(repo.repoid)]
+                rhn_conflicts = [repo.repoid for repo in conflicts if self.oscs.repo_is_rhn(repo.repoid)]
+                other_conflicts = [repo.repoid for repo in conflicts if not (repo.repoid in rhsm_conflicts or repo.repoid in rhn_conflicts)]
+                types = ""
+                if rhsm_conflicts:
+                    self.logger.error("The following Red Hat Subscription Manager-managed OpenShift Enterprise repositories conflict with the detected or specified product version.")
+                    self.logger.error("To prevent package conflicts, disable these repositories by running these commands:")
+                    for repoid in rhsm_conflicts:
+                        self.logger.error("    # subscription-manager repos --disable=%s"%repoid)
+                if rhn_conflicts:
+                    self.logger.error("The following RHN Classic or RHN Satellite-managed OpenShift Enterprise repositories conflict with the detected or specified product version.")
+                    self.logger.error('To prevent package conflicts, disable these repositories by making the following modifications to /etc/yum/pluginconf.d/rhnplugin.conf')
+                    for repoid in rhn_conflicts:
+                        self.logger.error("    Set enabled=0 in the [%s] section"%repoid)
+                if other_conflicts:
+                    self.logger.error("The following Yum repositories conflict with the detected or specified product version.")
+                    self.logger.error("Disable these repositories by running these commands:")
+                    for repoid in other_conflicts:
+                        self.logger.error("    # yum-config-manager --disable %s"%repoid)
             return False
         return True
 
@@ -308,7 +313,7 @@ class OpenShiftAdminCheckSources:
                 if self.subscription == RHN:
                     self.logger.error('Make the following modifications to /etc/yum/pluginconf.d/rhnplugin.conf')
                 else:
-                    self.logger.error("Enable these repositories with the following commands:")
+                    self.logger.error("Enable these repositories by running these commands:")
                 for repoid in disabled_repos:
                     if self.subscription == RHN:
                         self.logger.error("    Set enabled=1 in the [%s] section"%repoid)
@@ -434,6 +439,7 @@ class OpenShiftAdminCheckSources:
             if not self.opts.oo_version:
                 self.logger.error('Could not determine product version. Please re-run this script with the --oo_version argument.')
             return False
+        print ""
         if not self.check_version_conflict():
             return False
         if not self.check_disabled_repos():
