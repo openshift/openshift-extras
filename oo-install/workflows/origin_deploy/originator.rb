@@ -13,21 +13,6 @@ else
   @config_file = ENV['HOME'] + '/.openshift/oo-install-cfg.yml'
 end
 
-# This is a -very- simple way of making sure we don't inadvertently
-# use a multicast IP addr or subnet mask. There's room for
-# improvement here.
-def find_good_ip_addrs list
-  good_addrs = []
-  list.each do |addr|
-    next if addr == '127.0.0.1'
-    triplets = addr.split('.')
-    if not triplets[0].to_i == 255 and not triplets[2].to_i == 255
-      good_addrs << addr
-    end
-  end
-  good_addrs
-end
-
 def env_backup
   @env_backup ||= ENV.to_hash
 end
@@ -95,11 +80,11 @@ end
 
 # Maps openshift.sh roles to oo-install deployment components
 @role_map =
-{ 'named' => { 'deploy_list' => 'Brokers', 'role' => 'broker', 'env_var' => 'named_hostname' },
-  'broker' => { 'deploy_list' => 'Brokers', 'role' => 'broker', 'env_var' => 'broker_hostname' },
-  'node' => { 'deploy_list' => 'Nodes', 'role' => 'node', 'env_var' => 'node_hostname' },
-  'activemq' => { 'deploy_list' => 'MsgServers', 'role' => 'mqserver', 'env_var' => 'activemq_hostname' },
-  'datastore' => { 'deploy_list' => 'DBServers', 'role' => 'dbserver', 'env_var' => 'datastore_hostname' },
+{ 'named' => { 'deploy_list' => 'Brokers', 'role' => 'broker', 'env_hostname' => 'named_hostname', 'env_ip_addr' => 'named_ip_addr' },
+  'broker' => { 'deploy_list' => 'Brokers', 'role' => 'broker', 'env_hostname' => 'broker_hostname', 'env_ip_addr' => 'broker_ip_addr' },
+  'node' => { 'deploy_list' => 'Nodes', 'role' => 'node', 'env_hostname' => 'node_hostname', 'env_ip_addr' => 'node_ip_addr', 'env_ip_interface' => 'conf_node_external_eth_dev' },
+  'activemq' => { 'deploy_list' => 'MsgServers', 'role' => 'mqserver', 'env_hostname' => 'activemq_hostname' },
+  'datastore' => { 'deploy_list' => 'DBServers', 'role' => 'dbserver', 'env_hostname' => 'datastore_hostname' },
 }
 
 # Will map hosts to roles
@@ -131,57 +116,17 @@ if config.has_key?('Deployment')
 
       # The env map is passed to each job, but nodes are handled individually
       if not role == 'node'
-        @puppet_map[@role_map[role]['env_var']] = host_instance['host']
+        @puppet_map[@role_map[role]['env_hostname']] = host_instance['host']
         user = host_instance['user']
         host = host_instance['ssh_host']
-        if role == 'named' and @puppet_map['named_ip_addr'].nil?
+        if @role_map[role].has_key?('env_ip_addr')
           if host_instance.has_key?('ip_addr')
-            @puppet_map['named_ip_addr'] = host_instance['ip_addr']
+            @puppet_map[@role_map[role]['env_ip_addr']] = host_instance['ip_addr']
           else
-            puts "\nAttempting to discover IP address for host #{host_instance['host']}"
-            # Try to look up the IP address of the Broker host to set the named IP address
-            ip_path = nil
-            if not host_instance['ssh_host'] == 'localhost'
-              ip_path = %x[ ssh #{user}@#{host} 'command -v ip' ].chomp
-            else
-              ip_path = which("ip")
-            end
-            if ip_path.nil?
-              puts "Could not determine path to 'ip' command"
-              exit 1
-            end
-
-            ip_lookup_command = "#{ip_path} addr | grep inet | egrep -v inet6"
-            if not host == 'localhost'
-              ip_lookup_command = "ssh #{user}@#{host} \"#{ip_lookup_command}\""
-            end
-            ip_text = %x[ #{ip_lookup_command} ].chomp
-            ip_addrs = ip_text.split(/[\s\:\/]/).select{ |v| v.match(VALID_IP_ADDR_RE) }
-            good_addrs = find_good_ip_addrs ip_addrs
-            if good_addrs.empty?
-              puts "Could not determine a Broker IP address for named. Trying a lookup from the installer host."
-              socket_info = nil
-              begin
-                socket_info = Socket.getaddrinfo(host_instance['host'], 'ssh')
-              rescue SocketError => e
-                puts "Socket lookup of broker IP address failed. The installation cannot continue."
-                exit
-              end
-              @puppet_map['named_ip_addr'] = socket_info[0][SOCKET_IP_ADDR]
-              puts "Using #{@puppet_map['named_ip_addr']} as Broker IP address."
-            elsif good_addrs.length == 1
-              @puppet_map['named_ip_addr'] = good_addrs[0]
-            else
-              puts "Found multiple possible IP addresses for target host #{host_instance['host']}:"
-              good_addrs.each do |addr|
-                puts "* #{addr}"
-              end
-              puts "The installer will attempt to continue with address #{good_addrs[0]}.\nConsider re-running the installer and manually entering a valid IP address for this target system."
-              @puppet_map['named_ip_addr'] = good_addrs[0]
-            end
+            puts "Configuration incomplete; config file is missing IP address for host instance #{host_instance['host']}"
+            exit 1
           end
         end
-
         if role == 'broker'
           # In order for the default htpasswd account to work, we must first create an htpasswd file.
           htpasswd_cmds = {
@@ -285,6 +230,7 @@ host_order.each do |ssh_host|
     :enabledns_rhel => 'service named restart',
     :check => 'puppet module list',
     :install => 'puppet module install openshift/openshift_origin',
+    :yum_clean => 'yum clean all',
     :apply => "puppet apply --verbose ~/#{hostfile}",
     :clear => "rm ~/#{hostfile}",
     :reboot => 'reboot',
@@ -348,9 +294,13 @@ host_order.each do |ssh_host|
 
   # Only include the node config setting for hosts that will have a node installation
   if @hosts[ssh_host]['roles'].include?('node')
-    @puppet_map[@role_map['node']['env_var']] = @hosts[ssh_host]['host']
+    @puppet_map[@role_map['node']['env_hostname']] = @hosts[ssh_host]['host']
+    @puppet_map[@role_map['node']['env_ip_addr']] = @hosts[ssh_host]['ip_addr']
+    @puppet_map[@role_map['node']['env_ip_interface']] = @hosts[ssh_host]['ip_interface']
   else
-    @puppet_map.delete(@role_map['node']['env_var'])
+    @puppet_map.delete(@role_map['node']['env_hostname'])
+    @puppet_map.delete(@role_map['node']['env_ip_addr'])
+    @puppet_map.delete(@role_map['node']['env_ip_interface'])
   end
 
   # Make a puppet config file for this host.
@@ -392,7 +342,7 @@ host_order.each do |ssh_host|
 
   # Good to go; step through the puppet setup now.
   has_openshift_module = false
-  [:check,:install,:apply,:clear,:reboot].each do |action|
+  [:check,:install,:yum_clean,:apply,:clear,:reboot].each do |action|
     if action == :install and has_openshift_module
       puts "Skipping module installation."
       next

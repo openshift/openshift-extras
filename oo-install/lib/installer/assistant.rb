@@ -272,7 +272,7 @@ module Installer
           say "\nYou must add a #{role_singular}."
           ui_modify_role_list role
         end
-        while concur("\nDo you want to modify the #{role_list}?", translate(:help_roles_edits))
+        while not deployment.is_valid_role_list?(role) or concur("\nDo you want to modify the #{role_list}?", translate(:help_roles_edits))
           ui_modify_role_list role
         end
       end
@@ -398,6 +398,7 @@ module Installer
               menu.choice(list[i].summarize) { ui_edit_host_instance list[i], list.length, i }
             end
             menu.choice("Add a new #{role.to_s}") { ui_edit_host_instance Installer::HostInstance.new(role) }
+            menu.hidden("q") { return_to_main_menu }
           end
         else
           ui_edit_host_instance list[0], list.length, 0
@@ -559,7 +560,7 @@ module Installer
         Installer::HostInstance.attrs.each do |attr|
           value = host_instance.send(attr)
           if value.nil? and [:ip_addr, :ip_interface].include?(attr)
-            value = "Not currently set. This must be configured."
+            value = "[unset; required]"
           end
           t.add_row [attr.to_s.split('_').map{ |word| ['db','ssh','ip'].include?(word) ? word.upcase : word.capitalize}.join(' '), value]
         end

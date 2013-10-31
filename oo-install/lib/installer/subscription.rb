@@ -129,7 +129,7 @@ module Installer
         return true
       else
         # These others require username and password
-        self.class.subscription_info_for_type(subscription_type.to_sym)[:attrs].each_key do |attr|
+        self.subscription_info[:attrs].each_key do |attr|
           next if not [:rh_username,:rh_password].include?(attr)
           return false if self.send(attr).nil?
         end
