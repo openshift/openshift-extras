@@ -504,7 +504,11 @@ module Installer
           # For localhost, run with what we already have
           host_instance.ssh_host = host_instance.host
           host_instance.user = `whoami`.chomp
-          host_instance.set_ip_exec_path(which('ip'))
+          ip_path = which('ip')
+          if ip_path.nil?
+            raise Installer::AssistantMissingUtilityException.new("Could not determine the location of the 'ip' utility for running 'ip addr list'. Exiting.")
+          end
+          host_instance.set_ip_exec_path(ip_path)
           say "Using current user (#{host_instance.user}) for local installation."
         end
         # Finally, set up the IP info
