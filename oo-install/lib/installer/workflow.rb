@@ -30,7 +30,7 @@ module Installer
 
       private
       def file_path
-        @file_path ||= gem_root_dir + '/conf/workflows.yml'
+        @file_path ||= gem_root_dir + '/config/workflows.yml'
       end
 
       def workflows_cache

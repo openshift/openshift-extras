@@ -166,6 +166,9 @@ loop do
     break
   rescue Installer::AssistantRestartException => e
     # Nothing to do; this will just carry us around to the main menu.
+  rescue Installer::AssistantMissingUtilityException => e
+    puts "\n#{e.message}"
+    break
   rescue Installer::DeploymentCheckFailedException => e
     puts "\n#{e.message}"
     break

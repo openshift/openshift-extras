@@ -13,7 +13,7 @@ module Installer
       @default_dir = ENV['HOME'] + '/.openshift'
       @context = context
       @default_file = '/oo-install-cfg.yml'
-      @file_template = gem_root_dir + "/conf/oo-install-cfg.yml#{ context == :ose ? '.ose' : '' }.example"
+      @file_template = gem_root_dir + "/config/oo-install-cfg.yml#{ context == :ose ? '.ose' : '' }.example"
       if config_file_path.nil?
         @file_path = default_dir + default_file
       else
