@@ -7,7 +7,7 @@ module Installer
     @repo_attrs = [:repos_base, :jboss_repo_base, :jenkins_repo_base, :scl_repo, :os_repo, :os_optional_repo]
     @object_attrs = [:subscription_type, :rh_username, :rh_password, :sm_reg_pool, :sm_reg_pool_rhel, :rhn_reg_actkey].concat(@repo_attrs)
 
-    attr_reader :config, :type, :context
+    attr_reader :config, :type
     attr_accessor *@object_attrs
 
     class << self
@@ -41,21 +41,20 @@ module Installer
         true
       end
 
-      def valid_types_for_context context
-        case context
+      def valid_types_for_context
+        case get_context
         when :origin, :origin_vm
           return [:none,:yum]
         when :ose
           return [:none,:yum,:rhsm,:rhn]
         else
-          raise Installer::UnrecognizedContextException.new("Installer context '#{context}' is not supported.")
+          raise Installer::UnrecognizedContextException.new("Installer context '#{get_context}' is not supported.")
         end
       end
     end
 
-    def initialize config, context, subscription={}
+    def initialize config, subscription={}
       @config = config
-      @context = context
       self.class.object_attrs.each do |attr|
         attr_str = attr == :subscription_type ? 'type' : attr.to_s
         if subscription.has_key?(attr_str)
@@ -68,7 +67,7 @@ module Installer
       @subscription_types ||=
         begin
           type_map = {}
-          self.class.valid_types_for_context(context).each do |type|
+          self.class.valid_types_for_context.each do |type|
             type_map[type] = subscription_info(type)
           end
           type_map

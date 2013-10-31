@@ -97,3 +97,4 @@ en:
   basic_mode_explanation: |-
     Note: ActiveMQ, MongoDB and named will all be installed on the Broker.
     For more flexibility, rerun the installer in advanced mode (-a)."
+  ip_config_help_text: This IP address information was found with a scan of the target system. If you would prefer to specify the necessary information manually, answer 'No'.

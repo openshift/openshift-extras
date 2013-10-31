@@ -12,11 +12,11 @@ require 'pathname'
 
 include Installer::Helpers
 
-@context = ENV.has_key?('OO_INSTALL_CONTEXT') ? ENV['OO_INSTALL_CONTEXT'].to_sym : :origin
+installer_context = ENV.has_key?('OO_INSTALL_CONTEXT') ? ENV['OO_INSTALL_CONTEXT'].to_sym : :origin
 
 # Catch a bogus ENV-supplied installer context straight away
-if not supported_contexts.include?(@context)
-  puts "Installer context '#{@context.to_s}' is not supported. Legal values are: #{supported_contexts.map{ |c| c.to_s }.join(', ')}."
+if not supported_contexts.include?(installer_context)
+  puts "Installer context '#{installer_context.to_s}' is not supported. Legal values are: #{supported_contexts.map{ |c| c.to_s }.join(', ')}."
   exit 1
 end
 
@@ -49,7 +49,7 @@ p = OptionParser.new do |opts|
     options[:workflow_id] = workflow_id
   end
   opts.on('-e', '--enterprise-mode', 'Show OpenShift Enterprise options (ignored in unattended mode)') do |flag|
-    @context = :ose
+    installer_context = :ose
   end
   opts.on('--openshift-version VERSION', 'Specify the version of OpenShift to be installed (default is latest)') do |version|
     options[:version] = version
@@ -81,6 +81,9 @@ rescue OptionParser::InvalidOption => e
   exit 1
 end
 
+# Set the installer context
+set_context(installer_context)
+
 # All sanity checking has to happen after the arguments are gathered.
 if not options[:workflow_id].nil? and not Installer::Workflow.ids.include?(options[:workflow_id])
   puts "Unknown workflow ID '#{options[:workflow_id]}'. Valid values are:\n\n#{Installer::Workflow.ids.sort.map{ |i| "* #{i}" }.join("\n")}\n\nExiting."
@@ -90,9 +93,9 @@ if options[:subscription_type].nil? and (not options[:rh_username].nil? or not o
   puts "Pass a subscription type to associate with the provided username and/or password."
   exit 1
 elsif not options[:subscription_type].nil?
-  subscription_types = Installer::Subscription.valid_types_for_context(@context)
+  subscription_types = Installer::Subscription.valid_types_for_context(get_context)
   if not subscription_types.include?(options[:subscription_type].to_sym)
-    version = @context == :ose ? 'Enterprise' : 'Origin'
+    version = get_context == :ose ? 'Enterprise' : 'Origin'
     valid_types = subscription_types.map{ |t| t.to_s }.join(", ")
     puts "Subscription type '#{options[:subscription_type]}' not supported for OpenShift #{version}.\nValid values are: #{valid_types}. Exiting."
     exit 1
@@ -128,7 +131,7 @@ end
 
 # Try to instantiate the config object
 begin
-  config = Installer::Config.new(options[:config_file], @context)
+  config = Installer::Config.new(options[:config_file])
 rescue Errno::ENOENT => e
   if not options[:config_file].nil?
     puts "ERROR: The configuration file could not be created at '#{options[:config_file]}'.\nEnsure that the path exists and is writeable."
@@ -143,14 +146,14 @@ unless config.is_valid?
 end
 
 # Instantiate the cli-provided subscription info in a subscription object
-cli_subscription = Installer::Subscription.new(config, @context)
+cli_subscription = Installer::Subscription.new(config)
 cli_subscription.subscription_type = options[:subscription_type]
 cli_subscription.rh_username = options[:rh_username]
 cli_subscription.rh_password = options[:rh_password]
 
 # Set up the assistant and get going
 begin
-  @assistant = Installer::Assistant.new(config, options[:workflow_id], @context, options[:advanced_mode], cli_subscription, options[:version])
+  @assistant = Installer::Assistant.new(config, options[:workflow_id], options[:advanced_mode], cli_subscription, options[:version])
 rescue Installer::UnrecognizedContextException => e
   puts "\n#{e.message}"
   exit
