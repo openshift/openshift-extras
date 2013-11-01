@@ -37,6 +37,7 @@ class OpenShiftAdminCheckSources:
     pri_header = False
     pri_resolve_header = False
     problem = False
+    resolved_repos = {}
 
     def __init__(self, opts, opt_parser):
         self.opts = opts
@@ -345,10 +346,13 @@ class OpenShiftAdminCheckSources:
         res = True
         required_pri = self._get_pri(required_repos)
         new_pri = OTHER_PRIORITY
+        if repoid in self.resolved_repos and self.resolved_repos[repoid] > required_pri:
+            return True
         if self.oscs.repo_priority(repoid) <= required_pri:
             if required_pri >= new_pri:
                 new_pri = min(99, required_pri+10)
-            self._set_pri(repoid, new_pri)
+            # self._set_pri(repoid, new_pri)
+            self.resolved_repos[repoid] = new_pri
             res = False
         return res
         
@@ -376,6 +380,8 @@ class OpenShiftAdminCheckSources:
             except KeyError as ke:
                 self.logger.error('Repository %s not enabled'%repoid)
                 res = False
+        for repoid, pri in self.resolved_repos.iteritems():
+            self._set_pri(repoid, pri)
         return res
 
     def guess_role(self):
