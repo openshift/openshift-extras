@@ -4,22 +4,15 @@ Vendor: OpenShift Origin Community
 Description: This is the configuration file for the OpenShift Installer.
 Version: 0.0.1
 Deployment:
-  Brokers:
+  Hosts:
     - host: localhost
       ssh_host: localhost
       user: root
-  MsgServers:
-    - host: localhost
-      ssh_host: localhost
-      user: root
-  DBServers:
-    - host: localhost
-      ssh_host: localhost
-      user: root
-  Nodes:
-    - host: localhost
-      ssh_host: localhost
-      user: root
+      roles:
+      - broker
+      - msgserver
+      - dbserver
+      - node
   DNS:
     app_domain: example.com
 Subscription:
