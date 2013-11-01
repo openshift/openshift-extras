@@ -318,16 +318,17 @@ class OpenShiftAdminCheckSources:
     def verify_priorities(self):
         res = True
         self.logger.info('Checking channel/repository priorities')
-        ose = self.blessed_repoids(enabled=True, required=True, product='ose')
+        ose_scl = self.blessed_repoids(enabled=True, required=True, product='ose')
+        ose_scl += self.blessed_repoids(enabled=True, required=True, product='rhscl')
         jboss = self.blessed_repoids(enabled=True, required=True, product='jboss')
         rhel = self.blessed_repoids(enabled=True, product='rhel')
         if rhel:
-            res &= self.verify_rhel_priorities(ose, rhel[0])
+            res &= self.verify_rhel_priorities(ose_scl, rhel[0])
         if jboss:
             if rhel:
-                res &= self.verify_jboss_priorities(ose, jboss, rhel[0])
+                res &= self.verify_jboss_priorities(ose_scl, jboss, rhel[0])
             else:
-                res &= self.verify_jboss_priorities(ose, jboss)
+                res &= self.verify_jboss_priorities(ose_scl, jboss)
         # for repoid, pri in sorted(self.resolved_repos.items(), key=lambda (kk, vv): vv):
         #     self._set_pri(repoid, pri)
         self._commit_resolved_pris()
@@ -393,12 +394,13 @@ class OpenShiftAdminCheckSources:
         res = True
         self.pri_resolve_header = False
         all_blessed_repos = repo_db.find_repoids(product_version = self.opts.oo_version)
-        enabled_ose_repos = self.blessed_repoids(enabled = True, required = True, product = 'ose')
+        enabled_ose_scl_repos = self.blessed_repoids(enabled = True, required = True, product = 'ose')
+        enabled_ose_scl_repos += self.blessed_repoids(enabled = True, required = True, product = 'rhscl')
         enabled_jboss_repos = self.blessed_repoids(enabled = True, required = True, product = 'jboss')
         rhel6_repo = self.blessed_repoids(product='rhel')
         if not rhel6_repo[0] in self.oscs.enabled_repoids():
             rhel6_repo = []
-        required_repos = enabled_ose_repos + rhel6_repo + enabled_jboss_repos
+        required_repos = enabled_ose_scl_repos + rhel6_repo + enabled_jboss_repos
         if not self._check_valid_pri(required_repos):
             return False
         for repoid in required_repos:

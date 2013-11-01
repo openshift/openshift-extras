@@ -24,6 +24,12 @@ repositories = [
               role = 'node-eap',
               repoid = 'jb-eap-6-for-rhel-6-server-rpms',
               key_pkg = 'openshift-origin-cartridge-jbosseap'),
+    RepoTuple(subscription = 'rhsm',
+              product = 'rhscl',
+              product_version = ('1.2', '2.0'),
+              role = ('node', 'broker'),
+              repoid = 'rhel-server-rhscl-6-rpms',
+              key_pkg = 'ruby193'),
 ]
 
 repositories += [
@@ -102,6 +108,12 @@ repositories += [
               role = 'node-eap',
               repoid = 'jbappplatform-6-x86_64-server-6-rpm',
               key_pkg = 'openshift-origin-cartridge-jbosseap'),
+    RepoTuple(subscription = 'rhn',
+              product = 'rhscl',
+              product_version = ('1.2', '2.0'),
+              role = ('node', 'broker'),
+              repoid = 'rhel-x86_64-server-6-rhscl-1',
+              key_pkg = 'ruby193'),
 ]
 
 repositories += [
