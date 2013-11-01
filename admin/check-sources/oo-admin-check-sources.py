@@ -280,14 +280,16 @@ class OpenShiftAdminCheckSources:
             res = False
         return res
 
-    def verify_jboss_priorities(self, ose_repos, jboss_repos, rhel6_repo):
+    def verify_jboss_priorities(self, ose_repos, jboss_repos, rhel6_repo=None):
         res = True
-        ose_pri = self._get_pri(ose_repos)
+        min_pri = self._get_pri(ose_repos)
         jboss_pri = self._get_pri(jboss_repos, minpri=True)
         jboss_max_pri = self._get_pri(jboss_repos)
-        rhel_pri = self.oscs.repo_priority(rhel6_repo)
-        if jboss_pri <= rhel_pri or jboss_max_pri >= 99:
-            self._set_pri(rhel6_repo, RHEL_PRIORITY)
+        if rhel6_repo:
+            min_pri = self.oscs.repo_priority(rhel6_repo)
+        if jboss_pri <= min_pri or jboss_max_pri >= 99:
+            if rhel6_repo:
+                self._set_pri(rhel6_repo, RHEL_PRIORITY)
             res = False
             for repoid in jboss_repos:
                 self._set_pri(repoid, JBOSS_PRIORITY)
@@ -303,7 +305,10 @@ class OpenShiftAdminCheckSources:
         if rhel:
             res &= self.verify_rhel_priorities(ose, rhel[0])
         if jboss:
-            res &= self.verify_jboss_priorities(ose, jboss, rhel)
+            if rhel:
+                res &= self.verify_jboss_priorities(ose, jboss, rhel[0])
+            else:
+                res &= self.verify_jboss_priorities(ose, jboss)
         return res
 
     def check_disabled_repos(self):
