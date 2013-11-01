@@ -41,6 +41,7 @@ class OpenShiftAdminCheckSources:
     pri_resolve_header = False
     problem = False
     resolved_repos = {}
+    committed_resolved_repos = {}
 
     def __init__(self, opts, opt_parser):
         self.opts = opts
@@ -229,10 +230,16 @@ class OpenShiftAdminCheckSources:
             return False
         return True
 
-    def _get_pri(self, repolist, minpri=False):
+    def _get_pri(self, repoid):
+        return self.resolved_repos.get(repoid, self.oscs.repo_priority(repoid))
+
+    def _limit_pri(self, repolist, minpri=False):
+        res = -1
+        c_fxn, p_limit = max, 0
         if minpri:
-            return min(chain((self.oscs.repo_priority(xx) for xx in repolist), [99]))
-        return max(chain((self.oscs.repo_priority(xx) for xx in repolist), [0]))
+            c_fxn, p_limit = min, 99
+        res = c_fxn(chain((self._get_pri(repoid) for repoid in repolist), [p_limit]))
+        return res
 
     def _set_pri(self, repoid, priority):
         self.problem = True
@@ -255,8 +262,16 @@ class OpenShiftAdminCheckSources:
             else:
                 self.logger.error("# yum-config-manager --setopt=%s.priority=%d %s --save"%(repoid, priority, repoid))
 
+    def _commit_resolved_pris(self):
+        for repoid, pri in sorted(self.resolved_repos.items(), key=lambda (kk, vv): vv):
+            if not self.committed_resolved_repos.get(repoid, None) == pri:
+                self._set_pri(repoid, pri)
+        self.committed_resolved_repos = self.resolved_repos.copy()
+
+
     def _check_valid_pri(self, repos):
-        bad_repos = [(xx, self.oscs.repo_priority(xx)) for xx in repos if self.oscs.repo_priority(xx) >= 99]
+        # bad_repos = [(xx, self.oscs.repo_priority(xx)) for xx in repos if self.oscs.repo_priority(xx) >= 99]
+        bad_repos = [(repoid, self._get_pri(repoid)) for repoid in repos if self._get_pri(repoid) >= 99]
         if bad_repos:
             self.problem = True
             self.logger.error('The calculated priorities for the following repoids are too large (>= 99)')
@@ -268,31 +283,35 @@ class OpenShiftAdminCheckSources:
 
     def verify_rhel_priorities(self, ose_repos, rhel6_repo):
         res = True
-        ose_pri = self._get_pri(ose_repos)
-        rhel_pri = self.oscs.repo_priority(rhel6_repo)
+        ose_pri = self._limit_pri(ose_repos)
+        rhel_pri = self._get_pri(rhel6_repo)
         if rhel_pri <= ose_pri:
             for repoid in ose_repos:
-                self._set_pri(repoid, OSE_PRIORITY)
+                self.resolved_repos[repoid] = OSE_PRIORITY
+                # self._set_pri(repoid, OSE_PRIORITY)
                 res = False
             ose_pri = OSE_PRIORITY
         if rhel_pri <= ose_pri or rhel_pri >= 99:
-            self._set_pri(rhel6_repo, RHEL_PRIORITY)
+            self.resolved_repos[rhel6_repo] = RHEL_PRIORITY
+            # self._set_pri(rhel6_repo, RHEL_PRIORITY)
             res = False
         return res
 
     def verify_jboss_priorities(self, ose_repos, jboss_repos, rhel6_repo=None):
         res = True
-        min_pri = self._get_pri(ose_repos)
-        jboss_pri = self._get_pri(jboss_repos, minpri=True)
-        jboss_max_pri = self._get_pri(jboss_repos)
+        min_pri = self._limit_pri(ose_repos)
+        jboss_pri = self._limit_pri(jboss_repos, minpri=True)
+        jboss_max_pri = self._limit_pri(jboss_repos)
         if rhel6_repo:
-            min_pri = self.oscs.repo_priority(rhel6_repo)
+            min_pri = self._get_pri(rhel6_repo)
         if jboss_pri <= min_pri or jboss_max_pri >= 99:
             if rhel6_repo:
-                self._set_pri(rhel6_repo, RHEL_PRIORITY)
+                self.resolved_repos[rhel6_repo] = RHEL_PRIORITY
+                # self._set_pri(rhel6_repo, RHEL_PRIORITY)
             res = False
             for repoid in jboss_repos:
-                self._set_pri(repoid, JBOSS_PRIORITY)
+                self.resolved_repos[repoid] = JBOSS_PRIORITY
+                # self._set_pri(repoid, JBOSS_PRIORITY)
                 res = False
         return res
 
@@ -309,6 +328,9 @@ class OpenShiftAdminCheckSources:
                 res &= self.verify_jboss_priorities(ose, jboss, rhel[0])
             else:
                 res &= self.verify_jboss_priorities(ose, jboss)
+        # for repoid, pri in sorted(self.resolved_repos.items(), key=lambda (kk, vv): vv):
+        #     self._set_pri(repoid, pri)
+        self._commit_resolved_pris()
         return res
 
     def check_disabled_repos(self):
@@ -356,11 +378,9 @@ class OpenShiftAdminCheckSources:
         priority should be below 99
         """
         res = True
-        required_pri = self._get_pri(required_repos)
+        required_pri = self._limit_pri(required_repos)
         new_pri = OTHER_PRIORITY
-        if repoid in self.resolved_repos and self.resolved_repos[repoid] > required_pri:
-            return True
-        if self.oscs.repo_priority(repoid) <= required_pri:
+        if self._get_pri(repoid) <= required_pri:
             if required_pri >= new_pri:
                 new_pri = min(99, required_pri+10)
             # self._set_pri(repoid, new_pri)
@@ -392,8 +412,10 @@ class OpenShiftAdminCheckSources:
             except KeyError as ke:
                 self.logger.error('Repository %s not enabled'%repoid)
                 res = False
-        for repoid, pri in self.resolved_repos.iteritems():
-            self._set_pri(repoid, pri)
+        # for repoid, pri in self.resolved_repos.iteritems():
+        #     if not old_resolved_repos.get(repoid, None) == pri:
+        #         self._set_pri(repoid, pri)
+        self._commit_resolved_pris()
         return res
 
     def guess_role(self):
