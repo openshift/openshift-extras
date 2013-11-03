@@ -295,10 +295,10 @@ configure_rhn_channels()
 {
   if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
     echo "Register with RHN using an activation key"
-    rhnreg_ks --force --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || abort_install
+    rhnreg_ks --force --activationkey=${CONF_RHN_REG_ACTKEY} --profilename="$profile_name" || abort_install
   else
     echo "Register with RHN with username and password"
-    rhnreg_ks --force --profilename=${hostname} --username ${CONF_RHN_USER} --password ${CONF_RHN_PASS} || abort_install
+    rhnreg_ks --force --profilename="$profile_name" --username ${CONF_RHN_USER} --password ${CONF_RHN_PASS} || abort_install
   fi
 
   # OSE packages are first priority
@@ -341,7 +341,7 @@ ycm_setopt() # e.g. ycm_setopt myrepo foo=bar; must have an option to do anythin
 configure_rhsm_channels()
 {
    echo "Register with RHSM"
-   subscription-manager register --force --username=$CONF_RHN_USER --password=$CONF_RHN_PASS || abort_install
+   subscription-manager register --force --username=$CONF_RHN_USER --password=$CONF_RHN_PASS --name "$profile_name" || abort_install
    for poolid in ${CONF_SM_REG_POOL//,/ }; do
      echo "Registering subscription from pool id $poolid"
      subscription-manager attach --pool $poolid || abort_install
@@ -1965,8 +1965,8 @@ set_defaults()
   #[[ "$CONF_INSTALL_METHOD" == "yum" ]] && disable_plugin='--disableplugin=subscription-manager --disableplugin=rhnplugin'
 
   # remap subscription parameters used previously
-  CONF_RHN_USER=${CONF_RHN_USER:-${CONF_SM_REG_NAME:-$CONF_RHN_REG_NAME}}
-  CONF_RHN_PASS=${CONF_RHN_PASS:-${CONF_SM_REG_PASS:-$CONF_RHN_REG_PASS}}
+  CONF_RHN_USER="${CONF_RHN_USER:-${CONF_SM_REG_NAME:-$CONF_RHN_REG_NAME}}"
+  CONF_RHN_PASS="${CONF_RHN_PASS:-${CONF_SM_REG_PASS:-$CONF_RHN_REG_PASS}}"
 
   # The domain name for the OpenShift Enterprise installation.
   domain="${CONF_DOMAIN:-example.com}"
@@ -2004,6 +2004,9 @@ set_defaults()
   # Unless otherwise specified, the node is assumed to be the current
   # host.
   node_ip_addr="${CONF_NODE_IP_ADDR:-$cur_ip_addr}"
+
+  # how to label the system when subscribing
+  profile_name="${CONF_PROFILE_NAME:-OpenShift-${hostname}-${cur_ip_addr}-${CONF_RHN_USER}}"
 
   node_v1_enable="${CONF_NODE_V1_ENABLE:-false}"
 
