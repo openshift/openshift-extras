@@ -28,6 +28,16 @@ def restore_env
   end
 end
 
+def components_list host_instance
+  values = []
+  host_instance['roles'].each do |role|
+    @role_map[role].each do |puppet_role|
+      values << puppet_role['component']
+    end
+  end
+  "[" + values.map{ |r| "'#{r}'" }.join(',') + "]"
+end
+
 # SOURCE for which:
 # http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
 def which(cmd)
@@ -81,12 +91,12 @@ end
 # Maps openshift.sh roles to oo-install deployment components
 @role_map =
 { 'broker' => [
-    { 'env_hostname' => 'broker_hostname', 'env_ip_addr' => 'broker_ip_addr' },
-    { 'env_hostname' => 'named_hostname', 'env_ip_addr' => 'named_ip_addr' },
+    { 'component' => 'broker', 'env_hostname' => 'broker_hostname', 'env_ip_addr' => 'broker_ip_addr' },
+    { 'component' => 'named', 'env_hostname' => 'named_hostname', 'env_ip_addr' => 'named_ip_addr' },
   ],
-  'node' => [{ 'env_hostname' => 'node_hostname', 'env_ip_addr' => 'node_ip_addr', 'env_ip_interface' => 'conf_node_external_eth_dev' }],
-  'mqserver' => [{ 'env_hostname' => 'activemq_hostname' }],
-  'dbserver' => [{ 'env_hostname' => 'datastore_hostname' }],
+  'node' => [{ 'component' => 'node', 'env_hostname' => 'node_hostname', 'env_ip_addr' => 'node_ip_addr', 'env_ip_interface' => 'conf_node_external_eth_dev' }],
+  'mqserver' => [{ 'component' => 'activemq', 'env_hostname' => 'activemq_hostname' }],
+  'dbserver' => [{ 'component' => 'datastore', 'env_hostname' => 'datastore_hostname' }],
 }
 
 # Will map hosts to roles
@@ -224,7 +234,7 @@ host_order.each do |ssh_host|
   puts "Deploying host '#{host}'"
 
   hostfile = "oo_install_configure_#{host}.pp"
-  @puppet_map['roles'] = "[" + @hosts[ssh_host]['roles'].map{ |r| "'#{r}'" }.join(',') + "]"
+  @puppet_map['roles'] = components_list(@hosts[ssh_host])
 
   # Set up the commands that we will be using.
   commands = {
