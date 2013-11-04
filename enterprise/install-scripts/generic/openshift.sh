@@ -1944,6 +1944,18 @@ configure_hosts_dns()
   fi
 }
 
+configure_network()
+{
+  # Ensure interface is configured to come up on boot
+  sed -i -e 's/ONBOOT="no"/ONBOOT="yes"/' /etc/sysconfig/network-scripts/ifcfg-$iface
+
+  # Check if static IP configured
+  if grep -q "IPADDR" /etc/sysconfig/network-scripts/ifcfg-$iface; then
+    sed -i -e 's/BOOTPROTO="dhcp"/BOOTPROTO="none"/' /etc/sysconfig/network-scripts/ifcfg-$iface
+    sed -i -e 's/IPV6INIT="yes"/IPV6INIT="no"/' /etc/sysconfig/network-scripts/ifcfg-$iface
+  fi
+}
+
 # Make resolv.conf point to our named service, which will resolve the
 # host names used in this installation of OpenShift.  Our named service
 # will forward other requests to some other DNS servers.
@@ -1955,15 +1967,14 @@ configure_dns_resolution()
   # will resolve public addresses even when our private named is
   # nonfunctional.  However, our private named must appear first in
   # order for hostnames private to our OpenShift PaaS to resolve.
-  sed -i -e "1i# The named we install for our OpenShift PaaS must appear first.\\nnameserver ${named_ip_addr}\\n" /etc/resolv.conf
+  sed -i -e "1i# The named we install for our OpenShift PaaS must appear first.\\nsearch ${hosts_domain}.\\nnameserver ${named_ip_addr}\\n" /etc/resolv.conf
 
   # Append resolution conf to the DHCP configuration.
-  cat <<EOF >> /etc/dhcp/dhclient-eth0.conf
+  cat <<EOF >> /etc/dhcp/dhclient-$iface.conf
 
 prepend domain-name-servers ${named_ip_addr};
-prepend domain-search "${domain}";
+prepend domain-search "${hosts_domain}";
 EOF
-
 }
 
 
@@ -2512,6 +2523,9 @@ set_defaults()
   # This should be a list of IP addresses with a semicolon after each.
   nameservers="$(awk '/nameserver/ { printf "%s; ", $2 }' /etc/resolv.conf)"
 
+  # Main interface to configure
+  iface="${CONF_INTERFACE:-eth0}"
+
   # Set $bind_krb_keytab and $bind_krb_principal to the values of
   # $CONF_BIND_KRB_KEYTAB and $CONF_BIND_KRB_PRINCIPAL if these values
   # are both non-empty, or set $bind_key to the value of $CONF_BIND_KEY
@@ -2684,6 +2698,7 @@ configure_host()
   # Note: configure_named must run before configure_controller if we are
   # installing both named and broker on the same host.
   named && configure_named
+  configure_network
   is_false "$CONF_KEEP_NAMESERVERS" && configure_dns_resolution
   is_false "$CONF_KEEP_HOSTNAME" && configure_hostname
   echo "OpenShift: Completed configuring host."
