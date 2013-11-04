@@ -491,8 +491,8 @@ install
 text
 skipx
 
-# NB: Be sure to change the password before running this script.
-rootpw  --iscrypted $6$QgevUVWY7.dTjKz6$jugejKU4YTngbFpfNlqrPsiE4sLJSj/ahcfqK8fE5lO0jxDhvdg59Qjk9Qn3vNPAUTWXOp9mchQDy6EV9.XBW1
+# NB: Be sure to change this default password in a production deployment
+rootpw openshift
 
 lang en_US.UTF-8
 keyboard us
