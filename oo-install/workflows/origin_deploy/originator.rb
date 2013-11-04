@@ -104,6 +104,7 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
     # Basic config file sanity check
     ['ssh_host','host','user','roles','ip_addr'].each do |attr|
       next if not host_info[attr].nil?
+      next if not host_info['roles'].include?('broker') and not host_info['roles'].include?('node') and attr == 'ip_addr'
       puts "One of the hosts in the configuration is missing the '#{attr}' setting. Exiting."
       exit 1
     end
