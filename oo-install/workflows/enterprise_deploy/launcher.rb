@@ -52,12 +52,12 @@ end
 # Maps openshift.sh roles to oo-install deployment components
 @role_map =
 { 'broker' => [
-    { 'env_hostname' => 'CONF_BROKER_HOSTNAME', 'env_ip_addr' => 'CONF_BROKER_IP_ADDR' },
-    { 'env_hostname' => 'CONF_NAMED_HOSTNAME', 'env_ip_addr' => 'CONF_NAMED_IP_ADDR' },
+    { 'component' => 'broker', 'env_hostname' => 'CONF_BROKER_HOSTNAME', 'env_ip_addr' => 'CONF_BROKER_IP_ADDR' },
+    { 'component' => 'named', 'env_hostname' => 'CONF_NAMED_HOSTNAME', 'env_ip_addr' => 'CONF_NAMED_IP_ADDR' },
   ],
-  'node' => [{ 'env_hostname' => 'CONF_NODE_HOSTNAME', 'env_ip_addr' => 'CONF_NODE_IP_ADDR' }],
-  'mqserver' => [{ 'env_hostname' => 'CONF_ACTIVEMQ_HOSTNAME' }],
-  'dbserver' => [{ 'env_hostname' => 'CONF_DATASTORE_HOSTNAME' }],
+  'node' => [{ 'component' => 'node', 'env_hostname' => 'CONF_NODE_HOSTNAME', 'env_ip_addr' => 'CONF_NODE_IP_ADDR' }],
+  'mqserver' => [{ 'component' => 'activemq', 'env_hostname' => 'CONF_ACTIVEMQ_HOSTNAME' }],
+  'dbserver' => [{ 'component' => 'datastore', 'env_hostname' => 'CONF_DATASTORE_HOSTNAME' }],
 }
 
 # Will map hosts to roles
@@ -81,6 +81,16 @@ def restore_env
   env_backup.each_pair do |name,value|
     ENV[name] = value
   end
+end
+
+def components_list host_instance
+  values = []
+  host_instance['roles'].each do |role|
+    @role_map[role].each do |ose_role|
+      values << ose_role['component']
+    end
+  end
+  values.join(',')
 end
 
 # SOURCE for which:
@@ -196,7 +206,7 @@ end
 # Run the jobs
 host_order.each do |ssh_host|
   user = @hosts[ssh_host]['user']
-  @env_map['CONF_INSTALL_COMPONENTS'] = @hosts[ssh_host]['roles'].join(',')
+  @env_map['CONF_INSTALL_COMPONENTS'] = components_list(@hosts[ssh_host])
 
   # Only include the node config setting for hosts that will have a node installation
   if @hosts[ssh_host]['roles'].include?('node')
