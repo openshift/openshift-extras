@@ -265,6 +265,20 @@ module Installer
           ui_add_remove_host_by_role role
         end
       end
+      # Zip through the hosts and make sure they are legit.
+      first = true
+      deployment.hosts.each do |host_instance|
+        if not host_instance.is_valid?
+          if first
+            say "\nThe configuration file does not include some of the required settings for your primary host instance. Please provide this information below.\n\n"
+          else
+            say "\nThe configuration file does not include some of the required settings for host instance #{host_instance.host}. Please provide them here.\n\n"
+          end
+          edit_host_instance host_instance
+          resolved_issues = true
+        end
+        first = false
+      end
       # Now show the current deployment and provide an edit menu
       exit_loop = false
       loop do
