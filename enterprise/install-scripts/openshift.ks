@@ -1917,23 +1917,20 @@ key ${zone} {
 EOF
 
   # Create the initial BIND database.
-  nsdb=/var/named/dynamic/${zone}.db
-  cat <<EOF > $nsdb
+  cat <<EOF > /var/named/dynamic/${zone}.db
 \$ORIGIN .
 \$TTL 1	; 1 seconds (for testing only)
-${zone}		IN SOA	ns1.$zone. hostmaster.$zone. (
+${zone}		IN SOA	$named_hostname. hostmaster.$zone. (
 				2011112904 ; serial
 				60         ; refresh (1 minute)
 				15         ; retry (15 seconds)
 				1800       ; expire (30 minutes)
 				10         ; minimum (10 seconds)
 				)
-			NS	ns1.${zone}.
-			MX	10 mail.${zone}.
+			NS	$named_hostname.
+			MX	10 mail.$zone.
 \$ORIGIN ${zone}.
-ns1			A	${named_ip_addr}
 EOF
-
 
   # Add a record for the zone to named conf
   cat <<EOF >> /etc/named.conf
@@ -1948,17 +1945,40 @@ EOF
 
 }
 
+ensure_domain()
+{ # adds a domain to hostname if it does not have one
+  # $1 = host; $2 = domain
+  if [[ $1 == *.* ]]; then # already FQDN or IP
+    echo "$1"
+  else # needs a domain
+    echo "$1.$2"
+  fi
+}
+
 # TODO: use oo-register-dns to do this instead.
+add_host_to_zone()
+{
+  # $1 = host; $2 = ip
+  zone="$hosts_domain"
+  nsdb="/var/named/dynamic/${zone}.db"
+  # sanity check that $1 isn't an IP, and $2 is.
+  ip_regex='^[.0-9]+$' # all numbers and dots = IP (not rigorous)
+  if [[ $1 =~ $ip_regex || ! $2 =~ $ip_regex ]]; then
+    echo "Not adding DNS record to host zone: '$1' should be a hostname and '$2' should be an IP address"
+  else
+    echo "${1%.${zone}}			A	$2" >> $nsdb
+  fi
+}
+
 configure_hosts_dns()
 {
-  zone="$hosts_domain"
-  nsdb=/var/named/dynamic/${zone}.db
+  add_host_to_zone "$named_hostname" "$named_ip_addr" # always define self
   if [ -z $CONF_NAMED_ENTRIES ]; then
-    # Add A records any other components that are being installed locally.
-    broker && echo "${broker_hostname%.${zone}}			A	${broker_ip_addr}" >> $nsdb
-    node && echo "${node_hostname%.${zone}}			A	${node_ip_addr}" >> $nsdb
-    activemq && echo "${activemq_hostname%.${zone}}			A	${cur_ip_addr}" >> $nsdb
-    datastore && echo "${datastore_hostname%.${zone}}			A	${cur_ip_addr}" >> $nsdb
+    # Add A records for any other components that are being installed locally.
+    broker && add_host_to_zone "$broker_hostname" "$broker_ip_addr"
+    node && add_host_to_zone "$node_hostname" "$node_ip_addr"
+    activemq && add_host_to_zone "$activemq_hostname" "$cur_ip_addr"
+    datastore && add_host_to_zone "$datastore_hostname" "$cur_ip_addr"
   elif [[ "$CONF_NAMED_ENTRIES" =~ : ]]; then
     # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
     pairs=(${CONF_NAMED_ENTRIES//,/ })
@@ -1966,11 +1986,11 @@ configure_hosts_dns()
     do
       host_ip=${pairs[i]}
       host_ip=(${host_ip//:/ })
-      echo "${host_ip[0]%.${zone}}			A	${host_ip[1]}" >> $nsdb
+      add_host_to_zone "${host_ip[0]}" "${host_ip[1]}"
     done
-  fi # if "none" then just don't add anything
-  echo >> $nsdb
-
+  else # if "none" then just don't add anything
+    echo "Not adding named entries; named_entries = $CONF_NAMED_ENTRIES"
+  fi
 }
 
 # Make resolv.conf point to our named service, which will resolve the
@@ -2485,11 +2505,11 @@ set_defaults()
   hosts_domain="${CONF_HOSTS_DOMAIN:-$domain}"
 
   # hostnames to use for the components (could all resolve to same host)
-  broker_hostname="${CONF_BROKER_HOSTNAME:-broker.${hosts_domain}}"
-  node_hostname="${CONF_NODE_HOSTNAME:-node.${hosts_domain}}"
-  named_hostname="${CONF_NAMED_HOSTNAME:-ns1.${hosts_domain}}"
-  activemq_hostname="${CONF_ACTIVEMQ_HOSTNAME:-activemq.${hosts_domain}}"
-  datastore_hostname="${CONF_DATASTORE_HOSTNAME:-datastore.${hosts_domain}}"
+  broker_hostname=$(ensure_domain "${CONF_BROKER_HOSTNAME:-broker}" "$hosts_domain")
+  node_hostname=$(ensure_domain "${CONF_NODE_HOSTNAME:-node}" "$hosts_domain")
+  named_hostname=$(ensure_domain "${CONF_NAMED_HOSTNAME:-ns1}" "$hosts_domain")
+  activemq_hostname=$(ensure_domain "${CONF_ACTIVEMQ_HOSTNAME:-activemq}" "$hosts_domain")
+  datastore_hostname=$(ensure_domain "${CONF_DATASTORE_HOSTNAME:-datastore}" "$hosts_domain")
 
   # The hostname name for this host.
   # Note: If this host is, e.g., both a broker and a datastore, we want
