@@ -358,6 +358,10 @@ host_order.each do |ssh_host|
   # Good to go; step through the puppet setup now.
   has_openshift_module = false
   [:check,:install,:yum_clean,:apply,:clear,:reboot].each do |action|
+    if action == :clear and ENV.has_key?('OO_INSTALL_KEEP_ASSETS') and ENV['OO_INSTALL_KEEP_ASSETS'] == 'true'
+      puts "Keeping #{hostfile}"
+      next
+    end
     if action == :install and has_openshift_module
       puts "Skipping module installation."
       next
