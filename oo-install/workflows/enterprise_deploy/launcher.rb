@@ -51,11 +51,13 @@ end
 
 # Maps openshift.sh roles to oo-install deployment components
 @role_map =
-{ 'named' => { 'deploy_list' => 'Brokers', 'role' => 'broker', 'env_hostname' => 'CONF_NAMED_HOSTNAME', 'env_ip_addr' => 'CONF_NAMED_IP_ADDR' },
-  'broker' => { 'deploy_list' => 'Brokers', 'role' => 'broker', 'env_hostname' => 'CONF_BROKER_HOSTNAME', 'env_ip_addr' => 'CONF_BROKER_IP_ADDR' },
-  'node' => { 'deploy_list' => 'Nodes', 'role' => 'node', 'env_hostname' => 'CONF_NODE_HOSTNAME', 'env_ip_addr' => 'CONF_NODE_IP_ADDR' },
-  'activemq' => { 'deploy_list' => 'MsgServers', 'role' => 'mqserver', 'env_hostname' => 'CONF_ACTIVEMQ_HOSTNAME' },
-  'datastore' => { 'deploy_list' => 'DBServers', 'role' => 'dbserver', 'env_hostname' => 'CONF_DATASTORE_HOSTNAME' },
+{ 'broker' => [
+    { 'env_hostname' => 'CONF_BROKER_HOSTNAME', 'env_ip_addr' => 'CONF_BROKER_IP_ADDR' },
+    { 'env_hostname' => 'CONF_NAMED_HOSTNAME', 'env_ip_addr' => 'CONF_NAMED_IP_ADDR' },
+  ],
+  'node' => [{ 'env_hostname' => 'CONF_NODE_HOSTNAME', 'env_ip_addr' => 'CONF_NODE_IP_ADDR' }],
+  'mqserver' => [{ 'env_hostname' => 'CONF_ACTIVEMQ_HOSTNAME' }],
+  'dbserver' => [{ 'env_hostname' => 'CONF_DATASTORE_HOSTNAME' }],
 }
 
 # Will map hosts to roles
@@ -97,43 +99,47 @@ end
 config = YAML.load_file(@config_file)
 
 # Set values from deployment configuration
-if config.has_key?('Deployment')
-  @deployment_cfg = config['Deployment']
+@seen_roles = {}
+if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and config['Deployment'].has_key?('DNS')
+  config_hosts = config['Deployment']['Hosts']
+  config_dns = config['Deployment']['DNS']
 
-  # First, make a host map and a complete env map
-  @role_map.keys.each do |role|
-    # We only support multiple nodes; bail if we have multiple host instances for other roles.
-    if not role == 'node' and @deployment_cfg[@role_map[role]['deploy_list']].length > 1
-      puts "This workflow can only handle deployments containing a single #{role}. Exiting."
+  config_hosts.each do |host_info|
+    # Basic config file sanity check
+    ['ssh_host','host','user','roles','ip_addr'].each do |attr|
+      next if not host_info[attr].nil?
+      next if not host_info['roles'].include?('broker') and not host_info['roles'].include?('node') and attr == 'ip_addr'
+      puts "One of the hosts in the configuration is missing the '#{attr}' setting. Exiting."
       exit 1
     end
 
-    @deployment_cfg[@role_map[role]['deploy_list']].each do |host_instance|
-      if role == 'node' and @target_node_hostname == host_instance['host']
-        @target_node_ssh_host = host_instance['ssh_host']
-      end
-      # The host map helps us sanity check and call openshift.sh jobs
-      if not @hosts.has_key?(host_instance['ssh_host'])
-        @hosts[host_instance['ssh_host']] = { 'roles' => [], 'username' => host_instance['user'], 'host' => host_instance['host'] }
-      end
-      @hosts[host_instance['ssh_host']]['roles'] << role
+    # Map hosts by ssh alias
+    @hosts[host_info['ssh_host']] = host_info
 
-      # The env map is passed to each job, but nodes are handled individually
-      if not role == 'node'
-        @env_map[@role_map[role]['env_hostname']] = host_instance['host']
-        if @role_map[role].has_key?('env_ip_addr')
-          if host_instance.has_key?('ip_addr')
-            @env_map[@role_map[role]['env_ip_addr']] = host_instance['ip_addr']
-          else
-            puts "Configuration incomplete; config file is missing IP address for host instance #{host_instance['host']}"
-            exit 1
-          end
+    # Set up the OSE-related ENV variables except node settings
+    host_info['roles'].each do |role|
+      if not @seen_roles.has_key?(role)
+        @seen_roles[role] = 1
+      elsif not role == 'node'
+        puts "Error: The #{role} role has been assigned to multiple hosts. This is not currently supported. Exiting."
+        exit 1
+      end
+      if role == 'node'
+        if @target_node_hostname == host_info['host']
+          @target_node_ssh_host = host_instance['ssh_host']
+        end
+        # Skip other node-oriented config for now.
+        next
+      end
+      @role_map[role].each do |ose_cfg|
+        @env_map[ose_cfg['env_hostname']] = host_info['host']
+        if ose_cfg.has_key?('env_ip_addr')
+          @env_map[ose_cfg['env_ip_addr']] = host_info['ip_addr']
         end
       end
     end
   end
-
-  @env_map['CONF_DOMAIN'] = @deployment_cfg['DNS']['app_domain']
+  @env_map['CONF_DOMAIN'] = config_dns['app_domain']
 end
 
 if @hosts.empty?
@@ -189,16 +195,16 @@ end
 
 # Run the jobs
 host_order.each do |ssh_host|
-  user = @hosts[ssh_host]['username']
+  user = @hosts[ssh_host]['user']
   @env_map['CONF_INSTALL_COMPONENTS'] = @hosts[ssh_host]['roles'].join(',')
 
   # Only include the node config setting for hosts that will have a node installation
   if @hosts[ssh_host]['roles'].include?('node')
-    @env_map[@role_map['node']['env_hostname']] = @hosts[ssh_host]['host']
-    @env_map[@role_map['node']['env_ip_addr']] = @hosts[ssh_host]['ip_addr']
+    @env_map[@role_map['node'][0]['env_hostname']] = @hosts[ssh_host]['host']
+    @env_map[@role_map['node'][0]['env_ip_addr']] = @hosts[ssh_host]['ip_addr']
   else
-    @env_map.delete(@role_map['node']['env_hostname'])
-    @env_map.delete(@role_map['node']['env_ip_addr'])
+    @env_map.delete(@role_map['node'][0]['env_hostname'])
+    @env_map.delete(@role_map['node'][0]['env_ip_addr'])
   end
 
   if not ssh_host == 'localhost'

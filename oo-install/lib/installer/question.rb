@@ -36,11 +36,11 @@ module Installer
           q.responses[:not_valid] = "Provide a value or list of values from: #{legal_values}."
         }
       elsif type.start_with?('rolehost')
-        role = type.split(':')[1]
+        role = type.split(':')[1].to_sym
         choose do |menu|
           menu.header = text
-          deployment.list_host_instances_for_workflow(role).each do |item|
-            menu.choice(item[:text]) { workflow_cfg[id] = item[:value] }
+          deployment.send(Installer::Deployment.list_map[role]).each do |host_instance|
+            menu.choice(host_instance.summarize) { workflow_cfg[id] = host_instance.host }
           end
         end
       elsif type == 'remotehost'
@@ -88,7 +88,8 @@ module Installer
       elsif type == 'role'
         return false if not Installer::Deployment.role_map.keys.map{ |role| role.to_s }.include?(value)
       elsif type.start_with?('rolehost')
-        return false if deployment.find_host_instance_for_workflow(value).nil?
+        role = type.split(':')[1].to_sym
+        return false if deployment.hosts.select{ |h| h.host == value and h.roles.include?(role) }.length == 0
       end
       true
     end

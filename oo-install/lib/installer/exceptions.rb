@@ -115,14 +115,14 @@ module Installer
     end
   end
 
-  class HostInstanceRoleIncompatibleException < Exception
-    def initialize(message="A host instance of one role type was added the host instance list of a different role type.", code=1)
+  class HostInstanceDuplicateRoleException < Exception
+    def initialize(message="A host instance has been assigned to the same role multiple times.", code=1)
       super(message, code)
     end
   end
 
-  class HostInstanceDuplicateTargetHostException < Exception
-    def initialize(message="Multiple host instances in a single role list have the same target host or IP address.", code=1)
+  class HostInstanceUnassignedException < Exception
+    def initialize(message="A host instance is not configured to any OpenShift roles.", code=1)
       super(message, code)
     end
   end

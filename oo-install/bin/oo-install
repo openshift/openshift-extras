@@ -84,6 +84,9 @@ end
 # Set the installer context
 set_context(installer_context)
 
+# Set the interface mode
+set_mode(options[:advanced_mode])
+
 # All sanity checking has to happen after the arguments are gathered.
 if not options[:workflow_id].nil? and not Installer::Workflow.ids.include?(options[:workflow_id])
   puts "Unknown workflow ID '#{options[:workflow_id]}'. Valid values are:\n\n#{Installer::Workflow.ids.sort.map{ |i| "* #{i}" }.join("\n")}\n\nExiting."
@@ -153,7 +156,7 @@ cli_subscription.rh_password = options[:rh_password]
 
 # Set up the assistant and get going
 begin
-  @assistant = Installer::Assistant.new(config, options[:workflow_id], options[:advanced_mode], cli_subscription, options[:version])
+  @assistant = Installer::Assistant.new(config, options[:workflow_id], cli_subscription, options[:version])
 rescue Installer::UnrecognizedContextException => e
   puts "\n#{e.message}"
   exit
