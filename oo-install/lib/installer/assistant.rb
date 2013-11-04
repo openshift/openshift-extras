@@ -138,8 +138,8 @@ module Installer
 
       # Deployment check
       if workflow.check_deployment?
-        if not deployment.is_complete?
-          say translate :info_force_run_deployment_setup
+        if not deployment.is_complete? or not deployment.is_valid?
+          ui_show_deployment(translate(:info_force_run_deployment_setup))
           ui_edit_deployment
         else
           ui_show_deployment
@@ -155,7 +155,7 @@ module Installer
         msub = merged_subscription
         sub_question = "\nDo you want to make any changes to the subscription info in the configuration file?"
         sub_followup = "\nDo you want to go back and modify your subscription info settings in the configuration file?"
-        if not msub.is_complete? or not Installer::Subscription.valid_types_for_context.include?(msub.subscription_type.to_sym)
+        if not msub.is_complete? or not Installer::Subscription.valid_types_for_context.include?(msub.subscription_type)
           ui_show_subscription(translate(:info_force_run_subscription_setup))
           puts "\n"
           @show_menu = true
@@ -277,8 +277,8 @@ module Installer
           menu.prompt = "#{translate(:menu_prompt)} "
           menu.choice("Change the DNS configuration") { ui_modify_dns }
           menu.choice("Move an OpenShift role to a different host") { ui_move_role }
-          menu.choice(node_choice) { ui_add_remove_host_by_role :node }
           menu.choice("Modify the information for an existing host") { ui_modify_host }
+          menu.choice(node_choice) { ui_add_remove_host_by_role :node }
           menu.choice("Finish editing the deployment configuration") { exit_loop = true }
           menu.hidden("q") { return_to_main_menu }
         end
@@ -293,33 +293,36 @@ module Installer
       end
     end
 
-    def ui_show_deployment
+    def ui_show_deployment(message=translate(:deployment_summary))
       ui_newpage
-      say translate :deployment_summary
+      say message
       if not advanced_mode?
-        say translate :basic_mode_explanation
+        say "\n#{translate(:basic_mode_explanation)}"
       end
       list_dns
-      Installer::Deployment.display_order.each do |role|
-        list_role role
+      say "\nRole Assignments"
+      list_role_host_map
+      say "\nHost Information"
+      deployment.hosts.each do |host_instance|
+        list_host_instance host_instance
       end
     end
 
     def ui_edit_subscription
       ui_newpage
       tgt_subscription = save_subscription? ? cfg_subscription : cli_subscription
-      valid_types = tgt_subscription.subscription_types
-      valid_types_list = valid_types.keys.map{ |t| t.to_s }.join(', ')
+      valid_types = Installer::Subscription.valid_types_for_context
+      valid_types_list = valid_types.map{ |t| t.to_s }.join(', ')
       tgt_subscription.subscription_type = ask("What type of subscription should be used? (#{valid_types_list}) ") { |q|
-        if not merged_subscription.subscription_type.nil? and valid_types.keys.include?(merged_subscription.subscription_type)
-          q.default = merged_subscription.subscription_type
+        if not merged_subscription.subscription_type.nil? and valid_types.include?(merged_subscription.subscription_type)
+          q.default = merged_subscription.subscription_type.to_s
         end
-        q.validate = lambda { |p| valid_types.keys.include?(p.to_sym) }
+        q.validate = lambda { |p| valid_types.include?(p.to_sym) }
         q.responses[:not_valid] = "Valid subscription types are #{valid_types_list}"
-      }.to_s
-      type_settings = valid_types[tgt_subscription.subscription_type.to_sym]
+      }.to_sym
+      type_settings = Installer::Subscription.subscription_info(tgt_subscription.subscription_type)
       type_settings[:attr_order].each do |attr|
-        if tgt_subscription.subscription_type == 'yum' and not workflow.repositories.empty? and not workflow.repositories.include?(attr)
+        if tgt_subscription.subscription_type == :yum and not workflow.repositories.empty? and not workflow.repositories.include?(attr)
           next
         end
         desc = type_settings[:attrs][attr]
@@ -365,7 +368,7 @@ module Installer
       show_settings = false
       if not values.empty? and Installer::Subscription.valid_types_for_context.include?(values['type'].to_sym)
         type = values['type']
-        settings = mrg_subscription.subscription_types[type.to_sym]
+        settings = Installer::Subscription.subscription_info(mrg_subscription.subscription_type)
         show_settings = true
       end
       table = Terminal::Table.new do |t|
@@ -639,8 +642,8 @@ module Installer
                 ip_addrs.each do |info|
                   ip_interface = info[0]
                   ip_addr = info[1]
+                  menu.choice("#{ip_addr} on interface #{ip_interface}") { host_instance.ip_addr = ip_addr; host_instance.ip_interface = ip_interface if host_instance.is_node? }
                 end
-                menu.choice("#{ip_addr} on interface #{ip_interface}") { host_instance.ip_addr = ip_addr; host_instance.ip_interface = ip_interface if host_instance.is_node? }
               end
               menu.hidden("?") { say "The current host instance has mutliple IP options. Select the one that it will use to connect to other OpenShift components." }
               menu.hidden("q") { return_to_main_menu }
@@ -694,33 +697,43 @@ module Installer
       end
     end
 
-    def list_role role
-      list = deployment.get_role_list(role)
-      header = role == :node && list.length > 1 ? Installer::Deployment.role_map[role] : Installer::Deployment.role_map[role].chop
-      puts "\n#{header}\n"
-      if list.length
-        list.each do |host_instance|
-          list_host_instance host_instance
+    def list_role_host_map
+      table = Terminal::Table.new do |t|
+        Installer::Deployment.display_order.each do |role|
+          hosts = deployment.hosts.select{ |h| h.roles.include?(role) }.map{ |h| h.host }
+          role_title = Installer::Deployment.role_map[role]
+          if hosts.length == 1
+            role_title = role_title.chop
+          elsif hosts.length == 0
+            hosts << '-'
+          end
+          t.add_row [role_title, hosts.join("\n")]
         end
-      else
-        puts "  [None]\n"
       end
-      list.length
+      puts table
     end
 
     def list_host_instance host_instance
       table = Terminal::Table.new do |t|
         Installer::HostInstance.attrs.each do |attr|
-          next if attr == :roles
           value = host_instance.send(attr)
           if value.nil?
             if attr == :ip_addr and host_instance.is_broker? or host_instance.is_node?
-              value = "[unset - required]"
+              value = "[unset]"
             elsif [:origin_vm,:origin].include?(get_context) and attr == :ip_interface and host_instance.is_node?
-              value = "[unset - required]"
+              value = "[unset]"
             else
               next
             end
+          end
+          if attr == :roles
+            has_roles = []
+            Installer::Deployment.display_order.each do |role|
+              if host_instance.roles.include?(role)
+                has_roles << Installer::Deployment.role_map[role].chop
+              end
+            end
+            value = has_roles.length > 0 ? has_roles.join(', ') : '[unset]'
           end
           t.add_row [attr.to_s.split('_').map{ |word| ['db','ssh','ip'].include?(word) ? word.upcase : word.capitalize}.join(' '), value]
         end

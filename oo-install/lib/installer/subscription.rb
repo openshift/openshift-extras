@@ -69,7 +69,7 @@ module Installer
       def valid_attr? attr, value, check=:basic
         if attr == :subscription_type
           begin
-            subscription_info(value.to_sym)
+            subscription_info(value)
           rescue Installer::SubscriptionTypeNotRecognizedException => e
             if check == :basic
               return false
@@ -105,7 +105,8 @@ module Installer
       self.class.object_attrs.each do |attr|
         attr_str = attr == :subscription_type ? 'type' : attr.to_s
         if subscription.has_key?(attr_str)
-          self.send("#{attr.to_s}=".to_sym, subscription[attr_str])
+          value = attr == :subscription_type ? subscription[attr_str].to_sym : subscription[attr_str]
+          self.send("#{attr.to_s}=".to_sym, value)
         end
       end
     end
@@ -123,7 +124,7 @@ module Installer
 
     def is_complete?
       return false if subscription_type.nil?
-      if ['none','yum'].include?(subscription_type)
+      if [:none,:yum].include?(subscription_type)
         # These methods do not require other settings
         return true
       else
@@ -142,16 +143,16 @@ module Installer
       end
     end
 
-    def test_commands
-      return self.class.subscription_types[subscription_type][:test_commands]
-    end
-
     def to_hash
       export_hash = {}
       self.class.object_attrs.each do |attr|
         value = self.send(attr)
         if not value.nil?
-          key = attr == :subscription_type ? 'type' : attr.to_s
+          key = attr.to_s
+          if attr == :subscription_type
+            key = 'type'
+            value = value.to_s
+          end
           export_hash[key] = value
         end
       end

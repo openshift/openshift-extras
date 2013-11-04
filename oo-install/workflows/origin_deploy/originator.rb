@@ -80,11 +80,13 @@ end
 
 # Maps openshift.sh roles to oo-install deployment components
 @role_map =
-{ 'named' => { 'deploy_list' => 'Brokers', 'role' => 'broker', 'env_hostname' => 'named_hostname', 'env_ip_addr' => 'named_ip_addr' },
-  'broker' => { 'deploy_list' => 'Brokers', 'role' => 'broker', 'env_hostname' => 'broker_hostname', 'env_ip_addr' => 'broker_ip_addr' },
-  'node' => { 'deploy_list' => 'Nodes', 'role' => 'node', 'env_hostname' => 'node_hostname', 'env_ip_addr' => 'node_ip_addr', 'env_ip_interface' => 'conf_node_external_eth_dev' },
-  'activemq' => { 'deploy_list' => 'MsgServers', 'role' => 'mqserver', 'env_hostname' => 'activemq_hostname' },
-  'datastore' => { 'deploy_list' => 'DBServers', 'role' => 'dbserver', 'env_hostname' => 'datastore_hostname' },
+{ 'broker' => [
+    { 'env_hostname' => 'broker_hostname', 'env_ip_addr' => 'broker_ip_addr' },
+    { 'env_hostname' => 'named_hostname', 'env_ip_addr' => 'named_ip_addr' },
+  ],
+  'node' => [{ 'env_hostname' => 'node_hostname', 'env_ip_addr' => 'node_ip_addr', 'env_ip_interface' => 'conf_node_external_eth_dev' }],
+  'mqserver' => [{ 'env_hostname' => 'activemq_hostname' }],
+  'dbserver' => [{ 'env_hostname' => 'datastore_hostname' }],
 }
 
 # Will map hosts to roles
@@ -93,69 +95,71 @@ end
 config = YAML.load_file(@config_file)
 
 # Set values from deployment configuration
-if config.has_key?('Deployment')
-  @deployment_cfg = config['Deployment']
+@seen_roles = {}
+if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and config['Deployment'].has_key?('DNS')
+  config_hosts = config['Deployment']['Hosts']
+  config_dns = config['Deployment']['DNS']
 
-  # First, make a host map and a complete env map
-  @role_map.keys.each do |role|
-    # We only support multiple nodes; bail if we have multiple host instances for other roles.
-    if not role == 'node' and @deployment_cfg[@role_map[role]['deploy_list']].length > 1
-      puts "This workflow can only handle deployments containing a single #{role}. Exiting."
+  config_hosts.each do |host_info|
+    # Basic config file sanity check
+    ['ssh_host','host','user','roles','ip_addr'].each do |attr|
+      next if not host_info[attr].nil?
+      puts "One of the hosts in the configuration is missing the '#{attr}' setting. Exiting."
       exit 1
     end
 
-    @deployment_cfg[@role_map[role]['deploy_list']].each do |host_instance|
-      if role == 'node' and @target_node_hostname == host_instance['host']
-        @target_node_ssh_host = host_instance['ssh_host']
-      end
-      # The host map helps us sanity check and call Puppet jobs
-      if not @hosts.has_key?(host_instance['ssh_host'])
-        @hosts[host_instance['ssh_host']] = { 'roles' => [], 'username' => host_instance['user'], 'host' => host_instance['host'] }
-      end
-      @hosts[host_instance['ssh_host']]['roles'] << role
+    # Map hosts by ssh alias
+    @hosts[host_info['ssh_host']] = host_info
 
-      # The env map is passed to each job, but nodes are handled individually
-      if not role == 'node'
-        @puppet_map[@role_map[role]['env_hostname']] = host_instance['host']
-        user = host_instance['user']
-        host = host_instance['ssh_host']
-        if @role_map[role].has_key?('env_ip_addr')
-          if host_instance.has_key?('ip_addr')
-            @puppet_map[@role_map[role]['env_ip_addr']] = host_instance['ip_addr']
-          else
-            puts "Configuration incomplete; config file is missing IP address for host instance #{host_instance['host']}"
-            exit 1
-          end
+    # Set up the puppet-related ENV variables except node settings
+    host_info['roles'].each do |role|
+      if not @seen_roles.has_key?(role)
+        @seen_roles[role] = 1
+      elsif not role == 'node'
+        puts "Error: The #{role} role has been assigned to multiple hosts. This is not currently supported. Exiting."
+        exit 1
+      end
+      if role == 'node'
+        if @target_node_hostname == host_info['host']
+          @target_node_ssh_host = host_instance['ssh_host']
         end
-        if role == 'broker'
-          # In order for the default htpasswd account to work, we must first create an htpasswd file.
-          htpasswd_cmds = {
-            :mkdir_openshift => 'mkdir -p /etc/openshift',
-            :touch_htpasswd => 'touch /etc/openshift/htpasswd',
-          }
-          if not user == 'root'
-            htpasswd_cmds.each_pair do |action,command|
-              htpasswd_cmds[action] = "sudo #{command}"
-            end
-          end
-          full_command = "#{htpasswd_cmds[:mkdir_openshift]} && #{htpasswd_cmds[:touch_htpasswd]}"
-          if not host == 'localhost'
-            full_command = "ssh #{user}@#{host} '#{full_command}'"
-          end
-          puts "Setting up htpasswd for default user account."
-          system full_command
-          if $?.exitstatus > 0
-            puts "Could not create / verify '/etc/openshift/htpasswd' on target host. Exiting."
-            exit
-          end
-        end
-        if role == 'datastore'
-          # Make sure that /etc/hostname is an FQDN that matches
+        # Skip other node-oriented config for now.
+        next
+      end
+      @role_map[role].each do |puppet_cfg|
+        @puppet_map[puppet_cfg['env_hostname']] = host_info['host']
+        if puppet_cfg.has_key?('env_ip_addr')
+          @puppet_map[puppet_cfg['env_ip_addr']] = host_info['ip_addr']
         end
       end
     end
+
+    if host_info['roles'].include?('broker')
+      user = host_info['user']
+      host = host_info['host']
+      # In order for the default htpasswd account to work, we must first create an htpasswd file.
+      htpasswd_cmds = {
+        :mkdir_openshift => 'mkdir -p /etc/openshift',
+        :touch_htpasswd => 'touch /etc/openshift/htpasswd',
+      }
+      if not user == 'root'
+        htpasswd_cmds.each_pair do |action,command|
+          htpasswd_cmds[action] = "sudo #{command}"
+        end
+      end
+      full_command = "#{htpasswd_cmds[:mkdir_openshift]} && #{htpasswd_cmds[:touch_htpasswd]}"
+      if not host == 'localhost'
+        full_command = "ssh #{user}@#{host} '#{full_command}'"
+      end
+      puts "Setting up htpasswd for default user account."
+      system full_command
+      if $?.exitstatus > 0
+        puts "Could not create / verify '/etc/openshift/htpasswd' on target host. Exiting."
+        exit 1
+      end
+    end
   end
-  @puppet_map['domain'] = @deployment_cfg['DNS']['app_domain']
+  @puppet_map['domain'] = config_dns['app_domain']
 end
 
 if @hosts.empty?
@@ -213,7 +217,7 @@ end
 local_dns_key = nil
 saw_deployment_error = false
 host_order.each do |ssh_host|
-  user = @hosts[ssh_host]['username']
+  user = @hosts[ssh_host]['user']
   host = @hosts[ssh_host]['host']
 
   puts "Deploying host '#{host}'"
@@ -248,7 +252,7 @@ host_order.each do |ssh_host|
   end
 
   # Figure out the DNS key before we write the puppet config file
-  if @hosts[ssh_host]['roles'].include?('named')
+  if @hosts[ssh_host]['roles'].include?('broker')
     puts "\nChecking for DNS key on #{ssh_host}..."
     output = `#{commands[:keycheck]}`
     chkstatus = $?.exitstatus
@@ -294,13 +298,13 @@ host_order.each do |ssh_host|
 
   # Only include the node config setting for hosts that will have a node installation
   if @hosts[ssh_host]['roles'].include?('node')
-    @puppet_map[@role_map['node']['env_hostname']] = @hosts[ssh_host]['host']
-    @puppet_map[@role_map['node']['env_ip_addr']] = @hosts[ssh_host]['ip_addr']
-    @puppet_map[@role_map['node']['env_ip_interface']] = @hosts[ssh_host]['ip_interface']
+    @puppet_map[@role_map['node'][0]['env_hostname']] = @hosts[ssh_host]['host']
+    @puppet_map[@role_map['node'][0]['env_ip_addr']] = @hosts[ssh_host]['ip_addr']
+    @puppet_map[@role_map['node'][0]['env_ip_interface']] = @hosts[ssh_host]['ip_interface']
   else
-    @puppet_map.delete(@role_map['node']['env_hostname'])
-    @puppet_map.delete(@role_map['node']['env_ip_addr'])
-    @puppet_map.delete(@role_map['node']['env_ip_interface'])
+    @puppet_map.delete(@role_map['node'][0]['env_hostname'])
+    @puppet_map.delete(@role_map['node'][0]['env_ip_addr'])
+    @puppet_map.delete(@role_map['node'][0]['env_ip_interface'])
   end
 
   # Make a puppet config file for this host.

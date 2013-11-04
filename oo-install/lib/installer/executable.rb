@@ -76,7 +76,7 @@ module Installer
       Installer::Subscription.object_attrs.each do |attr|
         value = subscription.send(attr)
         if not value.nil?
-          env_vars["OO_INSTALL_#{attr.to_s.upcase}"] = value
+          env_vars["OO_INSTALL_#{attr.to_s.upcase}"] = value.to_s
         end
       end
       env_vars

@@ -7,7 +7,7 @@ module Installer
     attr_accessor :id, :host, :ip_addr, :ip_interface, :ssh_host, :user, :roles
 
     def self.attrs
-      %w{host ssh_host user ip_addr ip_interface roles}.map{ |a| a.to_sym }
+      %w{host roles ssh_host user ip_addr ip_interface}.map{ |a| a.to_sym }
     end
 
     def initialize(item={}, init_role=nil)
@@ -37,7 +37,7 @@ module Installer
           return true
         end
         return false
-      rescue Net::SSH::AuthenticationFailed => e
+      rescue Net::SSH::AuthenticationFailed, SocketError => e
         return false
       end
     end
