@@ -2750,6 +2750,8 @@ configure_host()
   configure_network
   is_false "$CONF_KEEP_NAMESERVERS" && configure_dns_resolution
   is_false "$CONF_KEEP_HOSTNAME" && configure_hostname
+  # minimize grub timeout on startup
+  sed -i -e 's/^timeout=.*/timeout=1/' /etc/grub.conf;
   echo "OpenShift: Completed configuring host."
 }
 
