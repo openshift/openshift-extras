@@ -65,6 +65,10 @@ class OpenShiftAdminCheckSources:
         #     self.logger.addHandler(logfilehandler)
         
     def required_repos(self):
+        """Return a list of RepoTuples that match the specified role,
+        subscription type and oo-version
+
+        """
         # Include the base RHEL repo in the required repos
         roles = self.opts.role + ['base']
         return flatten([repo_db.find_repos(subscription = self.opts.subscription,
@@ -73,18 +77,45 @@ class OpenShiftAdminCheckSources:
                         for rr in roles])
 
     def required_repoids(self):
+        """Return a list of repoids as Strings that match the specified role,
+        subscription type and oo-version
+
+        """
         return [repo.repoid for repo in self.required_repos()]
 
     def enabled_blessed_repos(self):
+        """Return a list of RepoTuples from repo_db that match repoids of
+        enabled repositories
+
+        """
         enabled = self.oscs.enabled_repoids()
         return [repo for repo in repo_db.find_repos_by_repoid(enabled)
                 if repo.subscription == self.opts.subscription
                 and repo.product_version == self.opts.oo_version]
 
     def blessed_repoids(self, **kwargs):
+        """Return a list of just repoids for the results of blessed_repos
+        called with the provided arguments
+
+        """
         return [repo.repoid for repo in self.blessed_repos(**kwargs)]
 
     def blessed_repos(self, enabled = False, required = False, product = None):
+        """Return a list of RepoTuples from repo_db that match the provided
+        criteria
+
+        Keyword arguments:
+        enabled -- if True, constrain results to those matching the
+                   repoids of currently enabled repositories
+                   Default: False
+        required -- if True, constrain search to the list provided by
+                    required_repos
+                    Default: False
+        product -- if provided, constrain results to RepoTuples with a
+                   product field that matches the string provided
+                   Default: None
+        """
+
         kwargs = {'subscription': self.opts.subscription, 'product_version': self.opts.oo_version}
         if product:
             kwargs['product'] = product
@@ -132,6 +163,12 @@ class OpenShiftAdminCheckSources:
         return False
 
     def guess_ose_version_and_subscription(self):
+        """Attempt to determine the product version and subscription
+        management tool in use if one or both arguments aren't
+        provided by the user.
+
+        TODO: Better description of guess criteria
+        """
         if self.opts.subscription != UNKNOWN and self.opts.oo_version:
             # Short-circuit guess if user specifies sub and ver
             return True
@@ -180,6 +217,10 @@ class OpenShiftAdminCheckSources:
         return False
 
     def check_version_conflict(self):
+        """Determine if repositories for multiple versions of OpenShift have
+        been wrongly enabled, and advice or fix accordingly.
+
+        """
         matches = repo_db.find_repos_by_repoid(self.oscs.enabled_repoids())
         conflicts = filter(lambda xx: 
                            (not hasattr(xx.product_version, '__iter__')
@@ -215,9 +256,10 @@ class OpenShiftAdminCheckSources:
 
 
     def verify_yum_plugin_priorities(self):
-        """Make sure the required yum plugin package yum-plugin-priorities is installed
+        """Determine if the required yum plugin package yum-plugin-priorities
+        is installed. No action should be taken if the package can't
+        be found (advise only)
 
-        TODO: Install automatically if --fix is specified?
         """
         self.logger.info('Checking if yum-plugin-priorities is installed')
         if not self.oscs.verify_package('yum-plugin-priorities'):
@@ -234,6 +276,10 @@ class OpenShiftAdminCheckSources:
         return self.resolved_repos.get(repoid, self.oscs.repo_priority(repoid))
 
     def _limit_pri(self, repolist, minpri=False):
+        """Determine the highest or lowest priority for the provided repos,
+        depending on minpri value
+
+        """
         res = -1
         c_fxn, p_limit = max, 0
         if minpri:
@@ -282,6 +328,11 @@ class OpenShiftAdminCheckSources:
         return True
 
     def verify_rhel_priorities(self, ose_repos, rhel6_repo):
+        """Check that the base Red Hat Enterprise Linux repositories are lower
+        priority than the OpenShift repositories and fix or advise
+        accordingly
+
+        """
         res = True
         ose_pri = self._limit_pri(ose_repos)
         rhel_pri = self._get_pri(rhel6_repo)
@@ -298,6 +349,11 @@ class OpenShiftAdminCheckSources:
         return res
 
     def verify_jboss_priorities(self, ose_repos, jboss_repos, rhel6_repo=None):
+        """Check that the JBoss EAP and EWS repositories are lower priority
+        than the base Red Hat Enterprise Linux repositories and fix or
+        advise accordingly
+
+        """
         res = True
         min_pri = self._limit_pri(ose_repos)
         jboss_pri = self._limit_pri(jboss_repos, minpri=True)
@@ -316,6 +372,10 @@ class OpenShiftAdminCheckSources:
         return res
 
     def verify_priorities(self):
+        """Verify that the relative priorities of the blessed repositories are
+        correctly ordered and fix or advise accordingly
+
+        """
         res = True
         self.logger.info('Checking channel/repository priorities')
         ose_scl = self.blessed_repoids(enabled=True, required=True, product='ose')
@@ -335,6 +395,10 @@ class OpenShiftAdminCheckSources:
         return res
 
     def check_disabled_repos(self):
+        """Check if any required repositories are disabled, and fix or advise
+        accordingly
+
+        """
         disabled_repos = list(set(self.blessed_repoids(required = True)).intersection(self.oscs.disabled_repoids()))
         if disabled_repos:
             self.problem = True
@@ -361,6 +425,10 @@ class OpenShiftAdminCheckSources:
         return True
 
     def check_missing_repos(self):
+        """Check if any required repositories are missing, and advise
+        accordingly
+
+        """
         missing_repos = [repo for repo in self.blessed_repoids(required = True) if repo not in self.oscs.all_repoids()]
         if missing_repos:
             self.problem = True
@@ -391,6 +459,13 @@ class OpenShiftAdminCheckSources:
         
 
     def find_package_conflicts(self):
+        """Search for packages from non-blessed repositories which could
+        conflict with the "official" packages provided in the blessed
+        repositories, determine an appropriate priority for the
+        non-blessed repos to resolve the conflict, and fix or advise
+        accordingly
+
+        """
         res = True
         self.pri_resolve_header = False
         all_blessed_repos = repo_db.find_repoids(product_version = self.opts.oo_version)
@@ -421,6 +496,10 @@ class OpenShiftAdminCheckSources:
         return res
 
     def guess_role(self):
+        """Try to determine the system role by comparing installed packages to
+        key_pkg field in the repo_db
+
+        """
         self.logger.warning('No roles have been specified. Attempting to guess the roles for this system...')
         self.opts.role = []
         if self.oscs.verify_package('openshift-origin-broker'):
@@ -440,6 +519,11 @@ class OpenShiftAdminCheckSources:
         return True
 
     def validate_roles(self):
+        """Check supplied roles against VALID_ROLES.
+
+        TODO: This probably isn't necessary any longer
+
+        """
         if not self.opts.role:
             return True
         for role in self.opts.role:
@@ -451,6 +535,11 @@ class OpenShiftAdminCheckSources:
         return True
 
     def validate_version(self):
+        """Check supplied product version against VALID_OO_VERSIONS.
+
+        TODO: This probably isn't necessary any longer
+
+        """
         if self.opts.oo_version:
             if not self.opts.oo_version in VALID_OO_VERSIONS:
                 self.logger.error('You have specified an invalid version: %s is not one of %s'%(self.opts.oo_version, self.valid_oo_versions))
@@ -459,6 +548,11 @@ class OpenShiftAdminCheckSources:
         return True
 
     def massage_roles(self):
+        """Set supplied roles to lowercase, guarantee that the "node" role is
+        set if "node-eap" is set, and advise user on "node-eap" role
+        if "node" is set without "node-eap"
+
+        """
         if not self.opts.role:
             self.guess_role()
         if self.opts.role:

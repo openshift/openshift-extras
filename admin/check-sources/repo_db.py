@@ -182,6 +182,8 @@ def _repo_tuple_match(repo, match_attr, match_val):
     return hasattr(attr, '__iter__') and match_val in attr
 
 def find_repos(**kwargs):
+    """Return (and cache) tuple of RepoTuples that match the criteria specified
+    """
     global repo_cache
     if len(repo_cache) > 512:
         # Try to keep the repo_cache from growing infinitely
@@ -202,9 +204,15 @@ def find_repos(**kwargs):
     return repo_cache[hkey]
 
 def find_repoids(**kwargs):
+    """Return list of repoids for cooresponding results from find_repos
+
+    """
     return [repo.repoid for repo in find_repos(**kwargs)]
 
 def find_repos_by_repoid(repoids):
+    """Return tuple of RepoTuples which match the list of repoids provided
+
+    """
     if hasattr(repoids, '__iter__'):
         res = []
         for r_id in repoids:
