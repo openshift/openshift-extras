@@ -644,9 +644,9 @@ module Installer
                   ip_addr = info[1]
                   menu.choice("#{ip_addr} on interface #{ip_interface}") { host_instance.ip_addr = ip_addr; host_instance.ip_interface = ip_interface if host_instance.is_node? }
                 end
+                menu.hidden("?") { say "The current host instance has mutliple IP options. Select the one that it will use to connect to other OpenShift components." }
+                menu.hidden("q") { return_to_main_menu }
               end
-              menu.hidden("?") { say "The current host instance has mutliple IP options. Select the one that it will use to connect to other OpenShift components." }
-              menu.hidden("q") { return_to_main_menu }
             else
               manual_ip_info_for_host_instance(host_instance, ip_addrs)
             end
