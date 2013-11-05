@@ -523,7 +523,7 @@ module Installer
           menu.header = "\nSelect a host to use for this role:"
           menu.prompt = "#{translate(:menu_prompt)} "
           target_hosts.each do |host_instance|
-            menu.choice(host_instance.summarize) { host_instance.add_role(role) }
+            menu.choice(host_instance.summarize) { source_host.remove_role(move_role); host_instance.add_role(move_role) }
           end
           menu.choice("Create a new host") { source_host.remove_role(move_role); ui_edit_host_instance(nil, move_role) }
           menu.hidden("q") { return_to_main_menu }
