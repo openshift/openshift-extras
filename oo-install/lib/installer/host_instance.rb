@@ -37,7 +37,7 @@ module Installer
           return true
         end
         return false
-      rescue Net::SSH::AuthenticationFailed, SocketError => e
+      rescue Net::SSH::AuthenticationFailed, SocketError, Timeout::Error => e
         return false
       end
     end

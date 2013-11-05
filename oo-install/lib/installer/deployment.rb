@@ -60,6 +60,14 @@ module Installer
       get_hosts_by_role :node
     end
 
+    def get_host_instance_by_hostname hostname
+      host_list = @hosts.select{ |h| h.host == hostname }
+      if host_list.nil? or host_list.length == 0
+        return nil
+      end
+      host_list[0]
+    end
+
     def add_host_instance! host_instance
       @hosts << host_instance
       save_to_disk!

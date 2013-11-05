@@ -16,8 +16,51 @@ end
 # If this is the add-a-node scenario, the node to be installed will
 # be passed via the command line
 @target_version = ARGV[0]
-@target_node_hostname = ARGV[1].nil? ? nil : ARGV[1].split('::')[1].to_s
+@target_node_hostname = ARGV[1]
 @target_node_ssh_host = nil
+
+# This converts an ENV hash into a string of ENV settings
+def env_setup
+  @env_map.each_pair.map{ |k,v| "#{k}=#{v}" }.join(' ')
+end
+
+def env_backup
+  @env_backup ||= ENV.to_hash
+end
+
+def clear_env
+  env_backup
+  ENV.delete_if{ |name,value| not name.nil? }
+end
+
+def restore_env
+  env_backup.each_pair do |name,value|
+    ENV[name] = value
+  end
+end
+
+def components_list host_instance
+  values = []
+  host_instance['roles'].each do |role|
+    @role_map[role].each do |ose_role|
+      values << ose_role['component']
+    end
+  end
+  values.join(',')
+end
+
+# SOURCE for which:
+# http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
+def which(cmd)
+  exts = ENV['PATHEXT'] ? ENV['PATHEXT'].split(';') : ['']
+  ENV['PATH'].split(File::PATH_SEPARATOR).each do |path|
+    exts.each { |ext|
+      exe = File.join(path, "#{cmd}#{ext}")
+      return exe if File.executable? exe
+    }
+  end
+  return nil
+end
 
 # Default and baked-in config values for the openshift.sh deployment
 @env_map = { 'CONF_INSTALL_COMPONENTS' => 'all' }
@@ -63,49 +106,7 @@ end
 # Will map hosts to roles
 @hosts = {}
 
-# This converts an ENV hash into a string of ENV settings
-def env_setup
-  @env_map.each_pair.map{ |k,v| "#{k}=#{v}" }.join(' ')
-end
-
-def env_backup
-  @env_backup ||= ENV.to_hash
-end
-
-def clear_env
-  env_backup
-  ENV.delete_if{ |name,value| not name.nil? }
-end
-
-def restore_env
-  env_backup.each_pair do |name,value|
-    ENV[name] = value
-  end
-end
-
-def components_list host_instance
-  values = []
-  host_instance['roles'].each do |role|
-    @role_map[role].each do |ose_role|
-      values << ose_role['component']
-    end
-  end
-  values.join(',')
-end
-
-# SOURCE for which:
-# http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
-def which(cmd)
-  exts = ENV['PATHEXT'] ? ENV['PATHEXT'].split(';') : ['']
-  ENV['PATH'].split(File::PATH_SEPARATOR).each do |path|
-    exts.each { |ext|
-      exe = File.join(path, "#{cmd}#{ext}")
-      return exe if File.executable? exe
-    }
-  end
-  return nil
-end
-
+# Grab the config file contents
 config = YAML.load_file(@config_file)
 
 # Set values from deployment configuration
@@ -136,7 +137,7 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
       end
       if role == 'node'
         if @target_node_hostname == host_info['host']
-          @target_node_ssh_host = host_instance['ssh_host']
+          @target_node_ssh_host = host_info['ssh_host']
         end
         # Skip other node-oriented config for now.
         next
@@ -209,6 +210,8 @@ host_order.each do |ssh_host|
 end
 
 # Run the jobs
+@reboots = []
+@child_pids = []
 host_order.each do |ssh_host|
   user = @hosts[ssh_host]['user']
   @env_map['CONF_INSTALL_COMPONENTS'] = components_list(@hosts[ssh_host])
@@ -227,23 +230,73 @@ host_order.each do |ssh_host|
     system "scp #{File.dirname(__FILE__)}/openshift.sh #{user}@#{ssh_host}:~/"
   end
   puts "Running deployment\n"
-  if not ssh_host == 'localhost'
-    system "ssh #{user}@#{ssh_host} 'chmod u+x ~/openshift.sh \&\& #{env_setup} ~/openshift.sh \&\& reboot'"
-  else
-    # Clean out the ENV
-    clear_env
 
-    # Ruby 1.8-ism; we have to jam the env settings into our own ENV
-    @env_map.each_pair do |env,val|
-      ENV[env] = val
+  reboot_info = [ssh_host, 'reboot', 'exit']
+  if not user == 'root'
+    [1,2].each do |idx|
+      reboot_info[idx] = "sudo #{reboot_info[idx]}"
     end
-    system "bash -l -c '#{File.dirname(__FILE__)}/openshift.sh \&\& reboot'"
-
-    # Now restore the original env
-    restore_env
   end
+  if not ssh_host == 'localhost'
+    [1,2].each do |idx|
+      reboot_info[idx] = "ssh #{user}@#{ssh_host} '#{reboot_info[idx]}'"
+    end
+  end
+  @reboots << reboot_info
 
-  puts "Installation on target #{ssh_host} completed.\n"
+  @child_pids << Process.fork do
+    sudo = user == 'root' ? '' : 'sudo '
+    if not ssh_host == 'localhost'
+      system "ssh #{user}@#{ssh_host} '#{sudo}chmod u+x ~/openshift.sh \&\& #{sudo}#{env_setup} ~/openshift.sh'"
+    else
+      # Local installation. Clean out the ENV.
+      clear_env
+
+      # Ruby 1.8-ism; we have to jam the env settings into our own ENV
+      @env_map.each_pair do |env,val|
+        ENV[env] = val
+      end
+      system "bash -l -c '#{sudo}#{File.dirname(__FILE__)}/openshift.sh'"
+
+      # Now restore the original env
+      restore_env
+    end
+    # Leave the fork
+    exit
+  end
+  puts "Installation completed for host #{@hosts[ssh_host]['host']}\n"
+end
+
+procs = Process.waitall
+
+puts "Rebooting systems to complete installation."
+@reboots.each do |info|
+  ssh_host = info[0]
+  reboot = info[1]
+  responsive = info[2]
+  # We don't start the next reboot until the previous syetm is available.
+  if not system(reboot) and not $?.exitstatus == 255
+    puts "Attempted to run '#{reboot}' against #{ssh_host} but was unsuccessful. You must manually reboot the hosts in this OpenShift deployment to complete the installation process."
+    exit
+  else
+    retries = 5
+    loop do
+      # Try the system every 15 seconds until it is reachable or we hit our limit
+      sleep 15
+      print "\nAttempting to contact #{ssh_host}... "
+      if not system(responsive)
+        puts "not responding yet; trying again in 15 seconds.\n\n"
+        retries = retries - 1
+      else
+        puts "succeeded.\n\n"
+        break
+      end
+      if retries < 0
+        puts "\nWarning: Could not reconect to #{ssh_host} after several retries. Moving on to next host, but there may be issues with your deployment.\n\n"
+        break
+      end
+    end
+  end
 end
 
 exit
