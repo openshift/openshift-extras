@@ -178,17 +178,22 @@ end
 
 # Set the installation order
 host_order = []
-@utility_install_order.each do |role|
-  if not role == 'node' and not @target_node_ssh_host.nil?
+@utility_install_order.each do |order_role|
+  if not order_role == 'node' and not @target_node_ssh_host.nil?
     next
   end
-  @hosts.select{ |key,hash| hash['roles'].include?(role) }.each do |matched_host|
-    ssh_host = matched_host[0]
-    if not @target_node_ssh_host.nil? and not @target_node_ssh_host == ssh_host
-      next
-    end
-    if not host_order.include?(ssh_host)
-      host_order << ssh_host
+  @hosts.each_pair do |ssh_host,host_info|
+    host_info['roles'].each do |host_role|
+      @role_map[host_role].each do |ose_info|
+        if ose_info['component'] == order_role
+          if not @target_node_ssh_host.nil? and not @target_node_ssh_host == ssh_host
+            next
+          end
+          if not host_order.include?(ssh_host)
+            host_order << ssh_host
+          end
+        end
+      end
     end
   end
 end
