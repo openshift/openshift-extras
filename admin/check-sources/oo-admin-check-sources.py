@@ -56,6 +56,10 @@ class OpenShiftAdminCheckSources:
             self.opts.subscription = UNKNOWN
         else:
             self.opts.subscription = self.opts.subscription.lower()
+        if self.opts.repo_config:
+            self.rdb = repo_db.RepoDB(file(self.opts.repo_config), user_repos_only=self.opts.user_repos_only)
+        else:
+            self.rdb = repo_db.RepoDB()
 
     def _setup_logger(self):
         self.opts.loglevel = logging.INFO
@@ -75,7 +79,7 @@ class OpenShiftAdminCheckSources:
         """
         # Include the base RHEL repo in the required repos
         roles = self.opts.role + ['base']
-        return flatten([repo_db.find_repos(subscription = self.opts.subscription,
+        return flatten([self.rdb.find_repos(subscription = self.opts.subscription,
                                            role = rr,
                                            product_version = self.opts.oo_version)
                         for rr in roles])
@@ -88,12 +92,12 @@ class OpenShiftAdminCheckSources:
         return [repo.repoid for repo in self.required_repos()]
 
     def enabled_blessed_repos(self):
-        """Return a list of RepoTuples from repo_db that match repoids of
+        """Return a list of RepoTuples from self.rdb that match repoids of
         enabled repositories
 
         """
         enabled = self.oscs.enabled_repoids()
-        return [repo for repo in repo_db.find_repos_by_repoid(enabled)
+        return [repo for repo in self.rdb.find_repos_by_repoid(enabled)
                 if repo.subscription == self.opts.subscription
                 and repo.product_version == self.opts.oo_version]
 
@@ -105,7 +109,7 @@ class OpenShiftAdminCheckSources:
         return [repo.repoid for repo in self.blessed_repos(**kwargs)]
 
     def blessed_repos(self, enabled = False, required = False, product = None):
-        """Return a list of RepoTuples from repo_db that match the provided
+        """Return a list of RepoTuples from self.rdb that match the provided
         criteria
 
         Keyword arguments:
@@ -129,12 +133,12 @@ class OpenShiftAdminCheckSources:
                 return [repo for repo in self.required_repos() 
                         if repo.repoid in self.oscs.enabled_repoids()
                         and (not product or repo.product == product)]
-            return [repo for repo in repo_db.find_repos(**kwargs)
+            return [repo for repo in self.rdb.find_repos(**kwargs)
                     if repo.repoid in self.oscs.enabled_repoids()]
         if required:
             return [repo for repo in self.required_repos()
                     if not product or repo.product == product]
-        return repo_db.find_repos(**kwargs)
+        return self.rdb.find_repos(**kwargs)
 
     def _sub(self, subscription):
         self.opts.subscription = subscription
@@ -176,15 +180,15 @@ class OpenShiftAdminCheckSources:
         if self.opts.subscription != UNKNOWN and self.opts.oo_version:
             # Short-circuit guess if user specifies sub and ver
             return True
-        matches = repo_db.find_repos_by_repoid(self.oscs.all_repoids())
+        matches = self.rdb.find_repos_by_repoid(self.oscs.all_repoids())
         rhsm_ose_2_0 = [xx for xx in matches
-                        if xx in repo_db.find_repos(subscription = 'rhsm', product_version = '2.0', product = 'ose')]
+                        if xx in self.rdb.find_repos(subscription = 'rhsm', product_version = '2.0', product = 'ose')]
         rhn_ose_2_0 = [xx for xx in matches
-                       if xx in repo_db.find_repos(subscription = 'rhn', product_version = '2.0', product = 'ose')]
+                       if xx in self.rdb.find_repos(subscription = 'rhn', product_version = '2.0', product = 'ose')]
         rhsm_ose_1_2 = [xx for xx in matches
-                        if xx in repo_db.find_repos(subscription = 'rhsm', product_version = '1.2', product = 'ose')]
+                        if xx in self.rdb.find_repos(subscription = 'rhsm', product_version = '1.2', product = 'ose')]
         rhn_ose_1_2 = [xx for xx in matches
-                       if xx in repo_db.find_repos(subscription = 'rhn', product_version = '1.2', product = 'ose')]
+                       if xx in self.rdb.find_repos(subscription = 'rhn', product_version = '1.2', product = 'ose')]
         rhsm_2_0_avail = [xx for xx in rhsm_ose_2_0 if xx.repoid in self.oscs.enabled_repoids()]
         rhn_2_0_avail = [xx for xx in rhn_ose_2_0 if xx.repoid in self.oscs.enabled_repoids()]
         rhsm_1_2_avail = [xx for xx in rhsm_ose_1_2 if xx.repoid in self.oscs.enabled_repoids()]
@@ -225,7 +229,7 @@ class OpenShiftAdminCheckSources:
         been wrongly enabled, and advice or fix accordingly.
 
         """
-        matches = repo_db.find_repos_by_repoid(self.oscs.enabled_repoids())
+        matches = self.rdb.find_repos_by_repoid(self.oscs.enabled_repoids())
         conflicts = filter(lambda xx: 
                            (not hasattr(xx.product_version, '__iter__')
                             and xx.product_version != self.opts.oo_version), matches)
@@ -475,7 +479,7 @@ class OpenShiftAdminCheckSources:
         """
         res = True
         self.pri_resolve_header = False
-        all_blessed_repos = repo_db.find_repoids(product_version = self.opts.oo_version)
+        all_blessed_repos = self.rdb.find_repoids(product_version = self.opts.oo_version)
         enabled_ose_scl_repos = self.blessed_repoids(enabled = True, required = True, product = 'ose')
         enabled_ose_scl_repos += self.blessed_repoids(enabled = True, required = True, product = 'rhscl')
         enabled_jboss_repos = self.blessed_repoids(enabled = True, required = True, product = 'jboss')
@@ -504,19 +508,16 @@ class OpenShiftAdminCheckSources:
 
     def guess_role(self):
         """Try to determine the system role by comparing installed packages to
-        key_pkg field in the repo_db
+        key packages
 
         """
         self.logger.warning('No roles have been specified. Attempting to guess the roles for this system...')
         self.opts.role = []
-        if self.oscs.verify_package('openshift-origin-broker'):
-            self.opts.role.append('broker')
-        if self.oscs.verify_package('rubygem-openshift-origin-node'):
-            self.opts.role.append('node')
-        if self.oscs.verify_package('rhc'):
-            self.opts.role.append('client')
-        if self.oscs.verify_package('openshift-origin-cartridge-jbosseap'):
-            self.opts.role.append('node-eap')
+        for rr in VALID_ROLES:
+            # get uniquified list of packages that coorespond to only one role
+            check_pkgs = list(set([repo.key_pkg for repo in self.rdb.find_repos(role=rr) if not hasattr(repo.role, '__iter__')]))
+            if filter(self.oscs.verify_package, check_pkgs):
+                self.opts.role.append(rr)
         if not self.opts.role:
             self.logger.error('No roles could be detected.')
             self.problem = True
@@ -632,17 +633,21 @@ if __name__ == "__main__":
     FIX_HELP = 'Attempt to repair the first problem found.'
     FIX_ALL_HELP = 'Attempt to repair all problems found.'
     REPORT_ALL_HELP = 'Report all problems (default is to halt after first problem report.)'
+    REPO_CONF_HELP = 'Load blessed repository data from the specified file instead of built-in values'
+    USER_REPOS_HELP = 'Requires --repo-config. Blend the repository data loaded via --repo-config with the built-in values'
 
     # TODO: This is getting unwieldy - time for a wrapper?
     try:
         import argparse
         opt_parser = argparse.ArgumentParser()
-        opt_parser.add_argument('-r', '--role', default=None, type=str, action='append', help=ROLE_HELP)
+        opt_parser.add_argument('-r', '--role', default=None, choices=VALID_ROLES, action='append', help=ROLE_HELP)
         opt_parser.add_argument('-o', '--oo_version', '--oo-version', default=None, choices=VALID_OO_VERSIONS, dest='oo_version', help=OO_VERSION_HELP)
         opt_parser.add_argument('-s', '--subscription-type', default=None, choices=VALID_SUBS, dest='subscription', help=SUBSCRIPTION_HELP)
         opt_parser.add_argument('-f', '--fix', action='store_true', default=False, help=FIX_HELP)
         opt_parser.add_argument('-a', '--fix-all', action='store_true', default=False, dest='fix_all', help=FIX_ALL_HELP)
         opt_parser.add_argument('-p', '--report-all', action='store_true', default=False, dest='report_all', help=REPORT_ALL_HELP)
+        opt_parser.add_argument('-c', '--repo-config', default=None, type=str, help=REPO_CONF_HELP)
+        # opt_parser.add_argument('-u', '--blend-user-repos', action='store_true', default=True, dest='user_repos_only', help=USER_REPOS_HELP)
         opts = opt_parser.parse_args()
     except ImportError:
         import optparse
@@ -656,7 +661,10 @@ if __name__ == "__main__":
         opt_parser.add_option('-f', '--fix', action='store_true', default=False, help=FIX_HELP)
         opt_parser.add_option('-a', '--fix-all', action='store_true', default=False, dest='fix_all', help=FIX_ALL_HELP)
         opt_parser.add_option('-p', '--report-all', action='store_true', default=False, dest='report_all', help=REPORT_ALL_HELP)
+        opt_parser.add_option('-c', '--repo-config', default=None, type='string', help=REPO_CONF_HELP)
+        # opt_parser.add_option('-u', '--blend-user-repos', action='store_true', default=True, dest='user_repos_only', help=USER_REPOS_HELP)
         (opts, args) = opt_parser.parse_args()
+    opts.user_repos_only = True
     oacs = OpenShiftAdminCheckSources(opts, opt_parser)
     if not oacs.main():
         sys.exit(1)
