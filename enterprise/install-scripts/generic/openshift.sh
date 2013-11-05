@@ -1227,7 +1227,7 @@ configure_sshd_on_node()
 
 install_datastore_pkgs()
 {
-  yum_install_or_exit mongodb-server
+  yum_install_or_exit mongodb-server mongodb
 }
 
 # The init script lies to us as of version 2.0.2-1.el6_3: The start 
