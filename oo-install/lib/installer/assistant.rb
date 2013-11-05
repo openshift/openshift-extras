@@ -238,7 +238,12 @@ module Installer
           if question.type.start_with?('rolehost')
             # Look up the host instance to show
             role = question.type.split(':')[1]
-            say "Target system - " << deployment.find_host_instance_for_workflow(workflow_cfg[question.id], role).summarize
+            host_instance = deployment.get_host_instance_by_hostname(workflow_cfg[question.id])
+            if host_instance.nil? or not host_instance.roles.include?(role.to_sym)
+              say "Target system - [unset]"
+            else
+              say "Target system - " << host_instance.summarize
+            end
           else
             say "#{question.id.capitalize}: #{workflow_cfg[question.id]}"
           end
@@ -523,7 +528,12 @@ module Installer
           menu.header = "\nSelect a host to use for this role:"
           menu.prompt = "#{translate(:menu_prompt)} "
           target_hosts.each do |host_instance|
-            menu.choice(host_instance.summarize) { source_host.remove_role(move_role); host_instance.add_role(move_role) }
+            menu.choice(host_instance.summarize) {
+              if remove_role(source_host, move_role)
+                host_instance.add_role(move_role)
+                deployment.save_to_disk!
+              end
+            }
           end
           menu.choice("Create a new host") { source_host.remove_role(move_role); ui_edit_host_instance(nil, move_role) }
           menu.hidden("q") { return_to_main_menu }
@@ -532,6 +542,23 @@ module Installer
         source_host.remove_role(move_role)
         ui_edit_host_instance(nil, move_role)
       end
+    end
+
+    def remove_role source_host, role
+      if source_host.roles.length == 1
+        if concur("\nThe #{role.to_s} role was the only one assigned to host #{source_host.host}. If you move the role, this host will be removed from the deployment. Is it okay to proceed?")
+          say "\nOkay; removing host #{source_host.host}."
+          deployment.remove_host_instance!(source_host.id)
+          return true
+        else
+          say "\nOkay; cancelling role move."
+          return false
+        end
+      elsif source_host.roles.length > 1
+        source_host.remove_role(role)
+        return true
+      end
+      true
     end
 
     def ui_edit_host_instance(host_instance=nil, role_focus=nil, role_count=0)
@@ -806,6 +833,10 @@ module Installer
             say "* SSH connection refused; check SSH settings"
             deployment_good = false
             # Don't bother to try the rest of the checks
+            next
+          rescue SocketError => e
+            say "* SSH connection could not be established; check SSH settings"
+            deployment_good = false
             next
           end
           say "* SSH connection succeeded"

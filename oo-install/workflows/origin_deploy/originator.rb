@@ -58,7 +58,7 @@ end
 
 # If this is the add-a-node scenario, the node to be installed will
 # be passed via the command line
-@target_node_hostname = ARGV[0].nil? ? nil : ARGV[0].split('::')[1].to_i
+@target_node_hostname = ARGV[0]
 @target_node_ssh_host = nil
 
 # Default and baked-in config values for the Puppet deployment
@@ -132,7 +132,7 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
       end
       if role == 'node'
         if @target_node_hostname == host_info['host']
-          @target_node_ssh_host = host_instance['ssh_host']
+          @target_node_ssh_host = host_info['ssh_host']
         end
         # Skip other node-oriented config for now.
         next
@@ -232,6 +232,8 @@ end
 # Make it so
 local_dns_key = nil
 saw_deployment_error = false
+@reboots = []
+@child_pids = []
 host_order.each do |ssh_host|
   user = @hosts[ssh_host]['user']
   host = @hosts[ssh_host]['host']
@@ -254,6 +256,7 @@ host_order.each do |ssh_host|
     :apply => "puppet apply --verbose ~/#{hostfile}",
     :clear => "rm ~/#{hostfile}",
     :reboot => 'reboot',
+    :reachable => 'exit',
   }
   # Modify the commands with sudo & ssh as necessary for this target host
   commands.keys.each do |action|
@@ -266,6 +269,8 @@ host_order.each do |ssh_host|
       commands[action] = "bash -l -c '#{commands[action]}'"
     end
   end
+
+  @reboots << [ssh_host, commands[:reboot], commands[:reachable]]
 
   # Figure out the DNS key before we write the puppet config file
   if @hosts[ssh_host]['roles'].include?('broker')
@@ -361,41 +366,79 @@ host_order.each do |ssh_host|
   puts "\nRunning Puppet deployment\n\n"
 
   # Good to go; step through the puppet setup now.
-  has_openshift_module = false
-  [:check,:install,:yum_clean,:apply,:clear,:reboot].each do |action|
-    if action == :clear and ENV.has_key?('OO_INSTALL_KEEP_ASSETS') and ENV['OO_INSTALL_KEEP_ASSETS'] == 'true'
-      puts "Keeping #{hostfile}"
-      next
+  @child_pids << Process.fork do
+    has_openshift_module = false
+    [:check,:install,:yum_clean,:apply,:clear].each do |action|
+      if action == :clear and ENV.has_key?('OO_INSTALL_KEEP_ASSETS') and ENV['OO_INSTALL_KEEP_ASSETS'] == 'true'
+        puts "Keeping #{hostfile}"
+        next
+      end
+      if action == :install and has_openshift_module
+        puts "Skipping module installation."
+        next
+      end
+      command = commands[action]
+      puts "Running \"#{command}\"...\n"
+      if ssh_host == 'localhost'
+        clear_env
+      end
+      output = `#{command}`
+      if ssh_host == 'localhost'
+        restore_env
+      end
+      if $?.exitstatus == 0
+        puts "Command completed.\n"
+      else
+        # Note errors here but don't break; Puppet throws ignorable errors right now and we need to figure out how to deal with them
+        saw_deployment_error = true
+      end
+      if action == :check and output.match('openshift')
+        has_openshift_module = true
+      end
     end
-    if action == :install and has_openshift_module
-      puts "Skipping module installation."
-      next
+    if saw_deployment_error
+      puts "Warning: There were errors duing the deployment on host '#{host}'."
     end
-    command = commands[action]
-    puts "Running \"#{command}\"...\n"
-    if ssh_host == 'localhost'
-      clear_env
-    end
-    output = `#{command}`
-    if ssh_host == 'localhost'
-      restore_env
-    end
-    if $?.exitstatus == 0
-      puts "Command completed.\n"
-    else
-      saw_deployment_error = true
-      break
-    end
-    if action == :check and output.match('openshift')
-      has_openshift_module = true
-    end
-  end
-  if saw_deployment_error
-    puts "Exiting due to errors on host '#{host}'"
-    break
+    # Bail out of the fork
+    exit
   end
 end
+
+# Wait for the parallel installs to finish
+procs = Process.waitall
+
+puts "Rebooting systems to complete installation."
+@reboots.each do |info|
+  ssh_host = info[0]
+  reboot = info[1]
+  responsive = info[2]
+  # We don't start the next reboot until the previous syetm is available.
+  if not system(reboot) and not $?.exitstatus == 255
+    puts "Attempted to run '#{reboot}' against #{ssh_host} but was unsuccessful. You must manually reboot the hosts in this OpenShift deployment to complete the installation process."
+    exit
+  else
+    retries = 5
+    loop do
+      # Try the system every 15 seconds until it is reachable or we hit our limit
+      sleep 15
+      print "\nAttempting to contact #{ssh_host}... "
+      if not system(responsive)
+        puts "not responding yet; trying again in 15 seconds.\n\n"
+        retries = retries - 1
+      else
+        puts "succeeded.\n\n"
+        break
+      end
+      if retries < 0
+        puts "\nWarning: Could not reconect to #{ssh_host} after several retries. Moving on to next host, but there may be issues with your deployment.\n\n"
+        break
+      end
+    end
+  end
+end
+
 if saw_deployment_error
+  puts "OpenShift Origin deployment completed with errors."
   exit 1
 else
   puts "OpenShift Origin deployment completed."
