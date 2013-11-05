@@ -4,6 +4,7 @@ import sys
 import repo_db
 from check_sources import OpenShiftCheckSources
 from itertools import chain
+from yum import Errors
 import logging
 
 OSE_PRIORITY = 10
@@ -34,6 +35,9 @@ def flatten(llist):
     except TypeError:
         newlist = flatten(filter(lambda xx: hasattr(xx, '__iter__'), llist))
         return newlist + filter(lambda xx: not hasattr(xx, '__iter__'), llist)
+
+class UnrecoverableYumError(Exception):
+    pass
 
 class OpenShiftAdminCheckSources:
 
@@ -262,14 +266,17 @@ class OpenShiftAdminCheckSources:
 
         """
         self.logger.info('Checking if yum-plugin-priorities is installed')
-        if not self.oscs.verify_package('yum-plugin-priorities'):
-            self.problem = True
-            if self.oscs.package_available('yum-plugin-priorities'):
-                self.logger.error('Required package yum-plugin-priorities is not installed. Install the package with the following command:')
-                self.logger.error('# yum install yum-plugin-priorities')
-            else:
-                self.logger.error('Required package yum-plugin-priorities is not available.')
-            return False
+        try:
+            if not self.oscs.verify_package('yum-plugin-priorities'):
+                self.problem = True
+                if self.oscs.package_available('yum-plugin-priorities'):
+                    self.logger.error('Required package yum-plugin-priorities is not installed. Install the package with the following command:')
+                    self.logger.error('# yum install yum-plugin-priorities')
+                else:
+                    self.logger.error('Required package yum-plugin-priorities is not available.')
+                return False
+        except Errors.RepoError, e:
+            raise UnrecoverableYumError, e
         return True
 
     def _get_pri(self, repoid):
@@ -607,11 +614,16 @@ class OpenShiftAdminCheckSources:
         if self.opts.fix_all:
             self.opts.report_all = True
             self.opts.fix = True
-        self.run_checks()
-        if not self.opts.fix and self.problem:
-            self.logger.info('Please re-run this tool after making any recommended repairs to this system')
-        return not self.problem
-
+        try:
+            self.run_checks()
+            if not self.opts.fix and self.problem:
+                self.logger.info('Please re-run this tool after making any recommended repairs to this system')
+            return not self.problem
+        except UnrecoverableYumError, e:
+            self.logger.critical('An unrecoverable error prevents further checks from being run. Re-run this tool after the problem has been repaired:')
+            print ''
+            self.logger.critical(e)
+            return 255
 
 if __name__ == "__main__":
     ROLE_HELP = 'OpenShift component role(s) this system will fulfill.'
