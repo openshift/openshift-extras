@@ -247,7 +247,7 @@ host_order.each do |ssh_host|
   @child_pids << Process.fork do
     sudo = user == 'root' ? '' : 'sudo '
     if not ssh_host == 'localhost'
-      system "ssh #{user}@#{ssh_host} '#{sudo}chmod u+x ~/openshift.sh \&\& #{sudo}#{env_setup} ~/openshift.sh'"
+      system "ssh #{user}@#{ssh_host} '#{sudo}chmod u+x ~/openshift.sh \&\& #{sudo}#{env_setup} ~/openshift.sh \|\& tee -a ~/openshift-install.log'"
     else
       # Local installation. Clean out the ENV.
       clear_env
@@ -256,7 +256,7 @@ host_order.each do |ssh_host|
       @env_map.each_pair do |env,val|
         ENV[env] = val
       end
-      system "bash -l -c '#{sudo}#{File.dirname(__FILE__)}/openshift.sh'"
+      system "bash -l -c '#{sudo}#{File.dirname(__FILE__)}/openshift.sh \|\& tee -a /root/openshift-install.log'"
 
       # Now restore the original env
       restore_env
