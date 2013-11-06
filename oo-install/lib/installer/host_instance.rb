@@ -47,7 +47,7 @@ module Installer
     end
 
     def localhost?
-      host == 'localhost'
+      ssh_host == 'localhost'
     end
 
     def is_broker?
