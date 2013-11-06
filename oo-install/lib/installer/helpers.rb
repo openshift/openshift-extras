@@ -55,6 +55,14 @@ module Installer
       Installer::ADVANCED
     end
 
+    def set_debug(debug)
+      Installer.const_set("DEBUG", debug)
+    end
+
+    def debug_mode?
+      Installer::DEBUG
+    end
+
     # SOURCE for #which:
     # http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
     def which(cmd)

@@ -29,6 +29,7 @@ options = {
   :rh_password => nil,
   :advanced_mode => false,
   :version => nil,
+  :debug => false,
 }
 
 
@@ -63,6 +64,9 @@ p = OptionParser.new do |opts|
   opts.on('-p', '--password PASSWORD', 'Red Hat Login password') do |password|
     options[:rh_password] = password
   end
+  opts.on('-d', '--debug', 'Enable debugging messages') do |debug|
+    options[:debug] = debug
+  end
 end
 
 begin
@@ -86,6 +90,9 @@ set_context(installer_context)
 
 # Set the interface mode
 set_mode(options[:advanced_mode])
+
+# Set the debug level
+set_debug(options[:debug])
 
 # All sanity checking has to happen after the arguments are gathered.
 if not options[:workflow_id].nil? and not Installer::Workflow.ids.include?(options[:workflow_id])
