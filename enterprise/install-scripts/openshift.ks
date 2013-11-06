@@ -813,7 +813,9 @@ rhn_setopt() # e.g. rhn_setopt myrepo foo=bar
   repo=$1; shift
   echo "setting $@ on channel $repo"
   # subscribe to channel if not already
+  set +x # don't log password
   [[ "$(rhn-channel -l)" == *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
+  set -x
   # NOTE: this next bit could go haywire with repo names that include special regex chars
   sed -i "/^\\[$repo\\]/,/^\\[/{ /^\\[/ !d }" $RHNPLUGINCONF   # remove previous [repo] section if there
   sed -i "/^\\[$repo\\]/ d" $RHNPLUGINCONF   # remove previous section header if there
@@ -829,7 +831,9 @@ configure_rhn_channels()
     rhnreg_ks --force --activationkey=${CONF_RHN_REG_ACTKEY} --profilename="$profile_name" || abort_install
   else
     echo "Register with RHN with username and password"
+    set +x # don't log password
     rhnreg_ks --force --profilename="$profile_name" --username ${CONF_RHN_USER} --password ${CONF_RHN_PASS} || abort_install
+    set -x
   fi
 
   # RHN method for setting yum priorities and excludes:
@@ -870,7 +874,9 @@ ycm_setopt() # e.g. ycm_setopt myrepo foo=bar; must have an option to do anythin
 configure_rhsm_channels()
 {
    echo "Register with RHSM"
+   set +x # don't log password
    subscription-manager register --force --username=$CONF_RHN_USER --password=$CONF_RHN_PASS --name "$profile_name" || abort_install
+   set -x
    for poolid in ${CONF_SM_REG_POOL//,/ }; do
      echo "Registering subscription from pool id $poolid"
      subscription-manager attach --pool $poolid || abort_install
@@ -2545,7 +2551,9 @@ set_defaults()
 
   # remap subscription parameters used previously
   CONF_RHN_USER="${CONF_RHN_USER:-${CONF_SM_REG_NAME:-$CONF_RHN_REG_NAME}}"
+  set +x # don't log password
   CONF_RHN_PASS="${CONF_RHN_PASS:-${CONF_SM_REG_PASS:-$CONF_RHN_REG_PASS}}"
+  set -x
 
   # The domain name for the OpenShift Enterprise installation.
   domain="${CONF_DOMAIN:-example.com}"
@@ -2736,10 +2744,12 @@ validate_preflight()
   fi
   # test that subscription parameters are available if needed
   if [[ "$CONF_INSTALL_METHOD" =~ rhn|rhsm ]]; then
+    set +x # don't log password
     if [ ! "$CONF_RHN_USER" -o ! "$CONF_RHN_PASS" ]; then
       echo "Install method $CONF_INSTALL_METHOD requires an RHN user and password."
       preflight_failure=1
     fi
+    set -x
   fi
   if [ "$CONF_INSTALL_METHOD" = rhsm -a ! "$CONF_SM_REG_POOL" ]; then
     echo "Install method rhsm requires a poolid."
