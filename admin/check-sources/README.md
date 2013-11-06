@@ -30,7 +30,10 @@ Make sure that this directory is in your load path for Python, either by setting
       -a, --fix-all         Attempt to repair all problems found.
       -p, --report-all      Report all problems (default is to halt after first
                             problem report.)
-
+      -c REPO_CONFIG, --repo-config=REPO_CONFIG
+                            Load blessed repository data from the specified file
+                            instead of built-in values
+                        
 ## Contributing
 
 1. Fork it
