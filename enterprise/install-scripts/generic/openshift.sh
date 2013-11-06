@@ -2135,6 +2135,7 @@ fix_broker_routing()
 {
   cat <<EOF >> /var/lib/openshift/.httpd.d/nodes.txt
 __default__ REDIRECT:/console
+__default__/rsync_id_rsa.pub NOPROXY
 __default__/console TOHTTPS:127.0.0.1:8118/console
 __default__/broker TOHTTPS:127.0.0.1:8080/broker
 __default__/admin-console TOHTTPS:127.0.0.1:8080/admin-console
