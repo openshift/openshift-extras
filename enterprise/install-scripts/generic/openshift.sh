@@ -1435,9 +1435,6 @@ enable_services_on_broker()
   is_false "$CONF_NO_NTP" && chkconfig ntpd on
   chkconfig sshd on
 
-  # Remove VirtualHost from the default ssl.conf to prevent a warning
-   sed -i '/VirtualHost/,/VirtualHost/ d' /etc/httpd/conf.d/ssl.conf
-
   # make sure mcollective client log is created with proper ownership.
   # if root owns it, the broker (apache user) can't log to it.
   touch /var/log/ruby193-mcollective-client.log
@@ -2740,8 +2737,13 @@ configure_host()
   configure_network
   is_false "$CONF_KEEP_NAMESERVERS" && configure_dns_resolution
   is_false "$CONF_KEEP_HOSTNAME" && configure_hostname
+
   # minimize grub timeout on startup
   sed -i -e 's/timeout=.*/timeout=1/' /etc/grub.conf;
+
+  # Remove VirtualHost from the default httpd ssl.conf to prevent a warning
+  sed -i '/VirtualHost/,/VirtualHost/ d' /etc/httpd/conf.d/ssl.conf
+
   echo "OpenShift: Completed configuring host."
 }
 
