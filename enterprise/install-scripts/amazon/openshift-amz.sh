@@ -4,6 +4,8 @@ CONF_PREFIX="${CONF_PREFIX:-demo}"
 CONF_DOMAIN="${CONF_PREFIX}.cloudydemo.com"
 CONF_APPS_DOMAIN="apps.${CONF_PREFIX}.cloudydemo.com"
 
+CONF_KEEP_HOSTNAME=true
+CONF_KEEP_NAMESERVERS=true
 CONF_NO_NTP=true
 # During a kickstart you can tail the log file showing %post execution
 # by using the following command:
@@ -297,7 +299,9 @@ rhn_setopt() # e.g. rhn_setopt myrepo foo=bar
   repo=$1; shift
   echo "setting $@ on channel $repo"
   # subscribe to channel if not already
+  set +x # don't log password
   [[ "$(rhn-channel -l)" == *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
+  set -x
   # NOTE: this next bit could go haywire with repo names that include special regex chars
   sed -i "/^\\[$repo\\]/,/^\\[/{ /^\\[/ !d }" $RHNPLUGINCONF   # remove previous [repo] section if there
   sed -i "/^\\[$repo\\]/ d" $RHNPLUGINCONF   # remove previous section header if there
@@ -310,10 +314,12 @@ configure_rhn_channels()
 {
   if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
     echo "Register with RHN using an activation key"
-    rhnreg_ks --force --activationkey=${CONF_RHN_REG_ACTKEY} --profilename=${hostname} || abort_install
+    rhnreg_ks --force --activationkey=${CONF_RHN_REG_ACTKEY} --profilename="$profile_name" || abort_install
   else
     echo "Register with RHN with username and password"
-    rhnreg_ks --force --profilename=${hostname} --username ${CONF_RHN_USER} --password ${CONF_RHN_PASS} || abort_install
+    set +x # don't log password
+    rhnreg_ks --force --profilename="$profile_name" --username ${CONF_RHN_USER} --password ${CONF_RHN_PASS} || abort_install
+    set -x
   fi
 
   # RHN method for setting yum priorities and excludes:
@@ -354,7 +360,9 @@ ycm_setopt() # e.g. ycm_setopt myrepo foo=bar; must have an option to do anythin
 configure_rhsm_channels()
 {
    echo "Register with RHSM"
-   subscription-manager register --force --username=$CONF_RHN_USER --password=$CONF_RHN_PASS || abort_install
+   set +x # don't log password
+   subscription-manager register --force --username=$CONF_RHN_USER --password=$CONF_RHN_PASS --name "$profile_name" || abort_install
+   set -x
    for poolid in ${CONF_SM_REG_POOL//,/ }; do
      echo "Registering subscription from pool id $poolid"
      subscription-manager attach --pool $poolid || abort_install
@@ -758,7 +766,7 @@ configure_sshd_on_node()
 
 install_datastore_pkgs()
 {
-  yum_install_or_exit mongodb-server
+  yum_install_or_exit mongodb-server mongodb
 }
 
 # The init script lies to us as of version 2.0.2-1.el6_3: The start 
@@ -891,7 +899,7 @@ configure_datastore()
     echo 'The broker and data store are on separate hosts.'
 
     echo 'Configuring the firewall to allow connections to mongod...'
-    lokkit --nostart --port=27017:tcp
+    $lokkit --port=27017:tcp
 
     echo 'Configuring mongod to listen on external interfaces...'
     set_mongodb bind_ip 0.0.0.0
@@ -935,13 +943,13 @@ enable_services_on_node()
   # will produce errors.  Anyway, we only need the configuration 
   # activated Anaconda reboots, so --nostart makes sense in any case.
 
-  lokkit --nostart --service=ssh
-  lokkit --nostart --service=https
-  lokkit --nostart --service=http
+  $lokkit --service=ssh
+  $lokkit --service=https
+  $lokkit --service=http
 
   # Allow connections to openshift-node-web-proxy
-  lokkit --nostart --port=8000:tcp
-  lokkit --nostart --port=8443:tcp
+  $lokkit --port=8000:tcp
+  $lokkit --port=8443:tcp
 
   chkconfig httpd on
   chkconfig network on
@@ -959,17 +967,14 @@ enable_services_on_broker()
   # will produce errors.  Anyway, we only need the configuration 
   # activated after Anaconda reboots, so --nostart makes sense.
 
-  lokkit --nostart --service=ssh
-  lokkit --nostart --service=https
-  lokkit --nostart --service=http
+  $lokkit --service=ssh
+  $lokkit --service=https
+  $lokkit --service=http
 
   chkconfig httpd on
   chkconfig network on
   is_false "$CONF_NO_NTP" && chkconfig ntpd on
   chkconfig sshd on
-
-  # Remove VirtualHost from the default ssl.conf to prevent a warning
-   sed -i '/VirtualHost/,/VirtualHost/ d' /etc/httpd/conf.d/ssl.conf
 
   # make sure mcollective client log is created with proper ownership.
   # if root owns it, the broker (apache user) can't log to it.
@@ -1292,8 +1297,8 @@ EOF
 
 
   # Allow connections to ActiveMQ.
-  lokkit --nostart --port=61613:tcp
-  allow_openwire && lokkit --nostart --port=61616:tcp
+  $lokkit --port=61613:tcp
+  allow_openwire && $lokkit --port=61616:tcp
 
   # Configure ActiveMQ to start on boot.
   chkconfig activemq on
@@ -1387,7 +1392,7 @@ EOF
   configure_hosts_dns
 
   # Configure named to start on boot.
-  lokkit --nostart --service=dns
+  $lokkit --service=dns
   chkconfig named on
 
   # Start named so we can perform some updates immediately.
@@ -1415,23 +1420,20 @@ key ${zone} {
 EOF
 
   # Create the initial BIND database.
-  nsdb=/var/named/dynamic/${zone}.db
-  cat <<EOF > $nsdb
+  cat <<EOF > /var/named/dynamic/${zone}.db
 \$ORIGIN .
 \$TTL 1	; 1 seconds (for testing only)
-${zone}		IN SOA	ns1.$zone. hostmaster.$zone. (
+${zone}		IN SOA	$named_hostname. hostmaster.$zone. (
 				2011112904 ; serial
 				60         ; refresh (1 minute)
 				15         ; retry (15 seconds)
 				1800       ; expire (30 minutes)
 				10         ; minimum (10 seconds)
 				)
-			NS	ns1.${zone}.
-			MX	10 mail.${zone}.
+			NS	$named_hostname.
+			MX	10 mail.$zone.
 \$ORIGIN ${zone}.
-ns1			A	${named_ip_addr}
 EOF
-
 
   # Add a record for the zone to named conf
   cat <<EOF >> /etc/named.conf
@@ -1446,17 +1448,40 @@ EOF
 
 }
 
+ensure_domain()
+{ # adds a domain to hostname if it does not have one
+  # $1 = host; $2 = domain
+  if [[ $1 == *.* ]]; then # already FQDN or IP
+    echo "$1"
+  else # needs a domain
+    echo "$1.$2"
+  fi
+}
+
 # TODO: use oo-register-dns to do this instead.
+add_host_to_zone()
+{
+  # $1 = host; $2 = ip
+  zone="$hosts_domain"
+  nsdb="/var/named/dynamic/${zone}.db"
+  # sanity check that $1 isn't an IP, and $2 is.
+  ip_regex='^[.0-9]+$' # all numbers and dots = IP (not rigorous)
+  if [[ $1 =~ $ip_regex || ! $2 =~ $ip_regex ]]; then
+    echo "Not adding DNS record to host zone: '$1' should be a hostname and '$2' should be an IP address"
+  else
+    echo "${1%.${zone}}			A	$2" >> $nsdb
+  fi
+}
+
 configure_hosts_dns()
 {
-  zone="$hosts_domain"
-  nsdb=/var/named/dynamic/${zone}.db
+  add_host_to_zone "$named_hostname" "$named_ip_addr" # always define self
   if [ -z $CONF_NAMED_ENTRIES ]; then
-    # Add A records any other components that are being installed locally.
-    broker && echo "${broker_hostname%.${zone}}			A	${broker_ip_addr}" >> $nsdb
-    node && echo "${node_hostname%.${zone}}			A	${node_ip_addr}" >> $nsdb
-    activemq && echo "${activemq_hostname%.${zone}}			A	${cur_ip_addr}" >> $nsdb
-    datastore && echo "${datastore_hostname%.${zone}}			A	${cur_ip_addr}" >> $nsdb
+    # Add A records for any other components that are being installed locally.
+    broker && add_host_to_zone "$broker_hostname" "$broker_ip_addr"
+    node && add_host_to_zone "$node_hostname" "$node_ip_addr"
+    activemq && add_host_to_zone "$activemq_hostname" "$cur_ip_addr"
+    datastore && add_host_to_zone "$datastore_hostname" "$cur_ip_addr"
   elif [[ "$CONF_NAMED_ENTRIES" =~ : ]]; then
     # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
     pairs=(${CONF_NAMED_ENTRIES//,/ })
@@ -1464,11 +1489,23 @@ configure_hosts_dns()
     do
       host_ip=${pairs[i]}
       host_ip=(${host_ip//:/ })
-      echo "${host_ip[0]%.${zone}}			A	${host_ip[1]}" >> $nsdb
+      add_host_to_zone "${host_ip[0]}" "${host_ip[1]}"
     done
-  fi # if "none" then just don't add anything
-  echo >> $nsdb
+  else # if "none" then just don't add anything
+    echo "Not adding named entries; named_entries = $CONF_NAMED_ENTRIES"
+  fi
+}
 
+configure_network()
+{
+  # Ensure interface is configured to come up on boot
+  sed -i -e 's/ONBOOT="no"/ONBOOT="yes"/' /etc/sysconfig/network-scripts/ifcfg-$iface
+
+  # Check if static IP configured
+  if grep -q "IPADDR" /etc/sysconfig/network-scripts/ifcfg-$iface; then
+    sed -i -e 's/BOOTPROTO="dhcp"/BOOTPROTO="none"/' /etc/sysconfig/network-scripts/ifcfg-$iface
+    sed -i -e 's/IPV6INIT="yes"/IPV6INIT="no"/' /etc/sysconfig/network-scripts/ifcfg-$iface
+  fi
 }
 
 # Make resolv.conf point to our named service, which will resolve the
@@ -1482,15 +1519,14 @@ configure_dns_resolution()
   # will resolve public addresses even when our private named is
   # nonfunctional.  However, our private named must appear first in
   # order for hostnames private to our OpenShift PaaS to resolve.
-  sed -i -e "1i# The named we install for our OpenShift PaaS must appear first.\\nnameserver ${named_ip_addr}\\n" /etc/resolv.conf
+  sed -i -e "1i# The named we install for our OpenShift PaaS must appear first.\\nsearch ${hosts_domain}.\\nnameserver ${named_ip_addr}\\n" /etc/resolv.conf
 
   # Append resolution conf to the DHCP configuration.
-  cat <<EOF >> /etc/dhcp/dhclient-eth0.conf
+  cat <<EOF >> /etc/dhcp/dhclient-$iface.conf
 
 prepend domain-name-servers ${named_ip_addr};
-prepend domain-search "${domain}";
+prepend domain-search "${hosts_domain}";
 EOF
-
 }
 
 
@@ -1661,14 +1697,13 @@ configure_access_keys_on_broker()
   # Generate a key pair for moving gears between nodes from the broker
   ssh-keygen -t rsa -b 2048 -P "" -f /root/.ssh/rsync_id_rsa
   cp /root/.ssh/rsync_id_rsa* /etc/openshift/
-  # the .pub key needs to go on nodes, but there is no good way
-  # to script that generically. Nodes should not have password-less
-  # access to brokers to copy the .pub key, but this can be performed
-  # manually:
-  #   # scp root@broker:/etc/openshift/rsync_id_rsa.pub /root/.ssh/
-  # the above step will ask for the root password of the broker machine
-  #   # cat /root/.ssh/rsync_id_rsa.pub >> /root/.ssh/authorized_keys
-  #   # rm /root/.ssh/rsync_id_rsa.pub
+  # the .pub key needs to go on nodes. So, we provide it via a standard
+  # location on httpd:
+  cp /root/.ssh/rsync_id_rsa.pub /var/www/html/
+  # The node install script can retrieve this or it can be performed manually:
+  #   # wget -q -O- --no-check-certificate https://${broker_hostname}/rsync_id_rsa.pub >> /root/.ssh/authorized_keys
+  # In order to enable this during the install, we turn on httpd.
+  service httpd start
 }
 
 configure_wildcard_ssl_cert_on_node()
@@ -1753,6 +1788,19 @@ configure_node()
 update_openshift_facts_on_node()
 {
   /etc/cron.minutely/openshift-facts
+}
+
+# So that the broker can ssh to nodes for moving gears, get the broker's
+# public key (if available) and add it to node's authorized keys.
+install_rsync_pub_key()
+{
+  mkdir -p /root/.ssh
+  chmod 700 /root/.ssh
+  # Get key hosted on broker machine
+  wget -q -O- --no-check-certificate "https://${broker_hostname}/rsync_id_rsa.pub" \
+    >> /root/.ssh/authorized_keys \
+    || echo "WARNING: could not install rsync_id_rsa.pub key; please do it manually."
+  chmod 644 /root/.ssh/authorized_keys
 }
 
 echo_installation_intentions()
@@ -1988,19 +2036,21 @@ set_defaults()
   #[[ "$CONF_INSTALL_METHOD" == "yum" ]] && disable_plugin='--disableplugin=subscription-manager --disableplugin=rhnplugin'
 
   # remap subscription parameters used previously
-  CONF_RHN_USER=${CONF_RHN_USER:-${CONF_SM_REG_NAME:-$CONF_RHN_REG_NAME}}
-  CONF_RHN_PASS=${CONF_RHN_PASS:-${CONF_SM_REG_PASS:-$CONF_RHN_REG_PASS}}
+  CONF_RHN_USER="${CONF_RHN_USER:-${CONF_SM_REG_NAME:-$CONF_RHN_REG_NAME}}"
+  set +x # don't log password
+  CONF_RHN_PASS="${CONF_RHN_PASS:-${CONF_SM_REG_PASS:-$CONF_RHN_REG_PASS}}"
+  set -x
 
   # The domain name for the OpenShift Enterprise installation.
   domain="${CONF_DOMAIN:-example.com}"
   hosts_domain="${CONF_HOSTS_DOMAIN:-$domain}"
 
   # hostnames to use for the components (could all resolve to same host)
-  broker_hostname="${CONF_BROKER_HOSTNAME:-broker.${hosts_domain}}"
-  node_hostname="${CONF_NODE_HOSTNAME:-node.${hosts_domain}}"
-  named_hostname="${CONF_NAMED_HOSTNAME:-ns1.${hosts_domain}}"
-  activemq_hostname="${CONF_ACTIVEMQ_HOSTNAME:-activemq.${hosts_domain}}"
-  datastore_hostname="${CONF_DATASTORE_HOSTNAME:-datastore.${hosts_domain}}"
+  broker_hostname=$(ensure_domain "${CONF_BROKER_HOSTNAME:-broker}" "$hosts_domain")
+  node_hostname=$(ensure_domain "${CONF_NODE_HOSTNAME:-node}" "$hosts_domain")
+  named_hostname=$(ensure_domain "${CONF_NAMED_HOSTNAME:-ns1}" "$hosts_domain")
+  activemq_hostname=$(ensure_domain "${CONF_ACTIVEMQ_HOSTNAME:-activemq}" "$hosts_domain")
+  datastore_hostname=$(ensure_domain "${CONF_DATASTORE_HOSTNAME:-datastore}" "$hosts_domain")
 
   # The hostname name for this host.
   # Note: If this host is, e.g., both a broker and a datastore, we want
@@ -2028,6 +2078,9 @@ set_defaults()
   # host.
   node_ip_addr="${CONF_NODE_IP_ADDR:-$cur_ip_addr}"
 
+  # how to label the system when subscribing
+  profile_name="${CONF_PROFILE_NAME:-OpenShift-${hostname}-${cur_ip_addr}-${CONF_RHN_USER}}"
+
   node_apache_frontend="${CONF_NODE_APACHE_FRONTEND:-mod_rewrite}"
 
   # Unless otherwise specified, the named service, data store, and
@@ -2048,6 +2101,9 @@ set_defaults()
   # The nameservers to which named on the broker will forward requests.
   # This should be a list of IP addresses with a semicolon after each.
   nameservers="$(awk '/nameserver/ { printf "%s; ", $2 }' /etc/resolv.conf)"
+
+  # Main interface to configure
+  iface="${CONF_INTERFACE:-eth0}"
 
   # Set $bind_krb_keytab and $bind_krb_principal to the values of
   # $CONF_BIND_KRB_KEYTAB and $CONF_BIND_KRB_PRINCIPAL if these values
@@ -2146,7 +2202,7 @@ set_defaults()
 init_message()
 {
   echo_installation_intentions
-#  configure_console_msg
+  [ "$environment" = ks ] && configure_console_msg
 }
 
 validate_preflight()
@@ -2174,10 +2230,12 @@ validate_preflight()
   fi
   # test that subscription parameters are available if needed
   if [[ "$CONF_INSTALL_METHOD" =~ rhn|rhsm ]]; then
+    set +x # don't log password
     if [ ! "$CONF_RHN_USER" -o ! "$CONF_RHN_PASS" ]; then
       echo "Install method $CONF_INSTALL_METHOD requires an RHN user and password."
       preflight_failure=1
     fi
+    set -x
   fi
   if [ "$CONF_INSTALL_METHOD" = rhsm -a ! "$CONF_SM_REG_POOL" ]; then
     echo "Install method rhsm requires a poolid."
@@ -2221,8 +2279,16 @@ configure_host()
   # Note: configure_named must run before configure_controller if we are
   # installing both named and broker on the same host.
   named && configure_named
+  configure_network
   is_false "$CONF_KEEP_NAMESERVERS" && configure_dns_resolution
   is_false "$CONF_KEEP_HOSTNAME" && configure_hostname
+
+  # minimize grub timeout on startup
+  sed -i -e 's/timeout=.*/timeout=1/' /etc/grub.conf;
+
+  # Remove VirtualHost from the default httpd ssl.conf to prevent a warning
+  sed -i '/VirtualHost/,/VirtualHost/ d' /etc/httpd/conf.d/ssl.conf
+
   echo "OpenShift: Completed configuring host."
 }
 
@@ -2248,11 +2314,11 @@ configure_openshift()
   node && configure_sshd_on_node
   broker && configure_controller
   broker && configure_remote_user_auth_plugin
-  broker && configure_access_keys_on_broker
   broker && configure_messaging_plugin
   broker && configure_dns_plugin
   broker && configure_httpd_auth
   broker && configure_broker_ssl_cert
+  broker && configure_access_keys_on_broker
   broker && configure_rhc
 
   node && configure_port_proxy
@@ -2262,6 +2328,7 @@ configure_openshift()
   node && update_openshift_facts_on_node
 
   node && broker && fix_broker_routing
+  node && install_rsync_pub_key
 
   echo "OpenShift: Completed configuring OpenShift."
 }
@@ -2287,13 +2354,20 @@ do_all_actions()
 
 ########################################################################
 
-# parse_kernel_cmdline is only needed for kickstart and not if this %post
-# section is extracted and executed on a running system.
-#parse_kernel_cmdline
+lokkit="lokkit" # normally...
 
-# parse_cmdline is only needed for shell scripts generated by extracting
-# this %post section.
-parse_cmdline "$@"
+environment=amz
+if [ "$environment" = ks ]; then
+  # parse_kernel_cmdline is only needed for kickstart and not if this %post
+  # section is extracted and executed on a running system.
+  parse_kernel_cmdline
+  # during a kickstart a live lokkit fails
+  lokkit="lokkit --nostart"
+else
+  # parse_cmdline is only needed for shell scripts generated by extracting
+  # this %post section.
+  parse_cmdline "$@"
+fi
 
 set_defaults
 
@@ -2305,7 +2379,6 @@ done
 
 
 chmod 600 /root/.ssh/named_rsa
-}
 
 # Keeps the broker from getting SSH warnings when running the client
 configure_permissive_ssh()
