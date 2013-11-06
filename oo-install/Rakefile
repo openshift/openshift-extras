@@ -38,7 +38,6 @@ task :package do
       Dir.mkdir(pkgdir)
     end
     pkgname << pkgtime
-    puts "PKGURL: #{pkgurl}"
 
     # Copy the installer source to $TMPDIR
     system "cp -r #{gem_root_dir} #{@tmpdir}"
@@ -48,7 +47,7 @@ task :package do
     # If there is a replacement openshift.sh file, get it.
     if not build[:wget].nil?
       system "rm #{openshift_path}"
-      system "wget --output-document=#{openshift_path} #{build[:wget]}"
+      system "wget -nv --output-document=#{openshift_path} #{build[:wget]}"
       if not $?.exitstatus == 0
         puts "Failed to get #{build[:wget]}\nExiting."
         exit 1
