@@ -2799,7 +2799,7 @@ configure_host()
   is_false "$CONF_KEEP_HOSTNAME" && configure_hostname
 
   # minimize grub timeout on startup
-  sed -i -e 's/timeout=.*/timeout=1/' /etc/grub.conf;
+  sed -i -e 's/^timeout=.*/timeout=1/' /etc/grub.conf;
 
   # Remove VirtualHost from the default httpd ssl.conf to prevent a warning
   sed -i '/VirtualHost/,/VirtualHost/ d' /etc/httpd/conf.d/ssl.conf
