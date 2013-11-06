@@ -7,10 +7,17 @@ SOCKET_IP_ADDR = 3
 VALID_IP_ADDR_RE = Regexp.new('^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
 
 # Check ENV for an alternate config file location.
-if ENV.has_key?('CONF_CONFIG_FILE')
-  @config_file = ENV['CONF_CONFIG_FILE']
+if ENV.has_key?('OO_INSTALL_CONFIG_FILE')
+  @config_file = ENV['OO_INSTALL_CONFIG_FILE']
 else
   @config_file = ENV['HOME'] + '/.openshift/oo-install-cfg.yml'
+end
+
+@ssh_cmd = 'ssh'
+@scp_cmd = 'scp'
+if ENV.has_key?('OO_INSTALL_DEBUG') and ENV['OO_INSTALL_DEBUG'] == 'true'
+  @ssh_cmd = 'ssh -v'
+  @scp_cmd = 'scp -v'
 end
 
 # If this is the add-a-node scenario, the node to be installed will
@@ -227,7 +234,7 @@ host_order.each do |ssh_host|
 
   if not ssh_host == 'localhost'
     puts "Copying deployment script to target #{ssh_host}.\n"
-    system "scp #{File.dirname(__FILE__)}/openshift.sh #{user}@#{ssh_host}:~/"
+    system "#{@scp_cmd} #{File.dirname(__FILE__)}/openshift.sh #{user}@#{ssh_host}:~/"
   end
   puts "Running deployment\n"
 
@@ -239,7 +246,7 @@ host_order.each do |ssh_host|
   end
   if not ssh_host == 'localhost'
     [1,2].each do |idx|
-      reboot_info[idx] = "ssh #{user}@#{ssh_host} '#{reboot_info[idx]}'"
+      reboot_info[idx] = "#{@ssh_cmd} #{user}@#{ssh_host} '#{reboot_info[idx]}'"
     end
   end
   @reboots << reboot_info
@@ -247,7 +254,7 @@ host_order.each do |ssh_host|
   @child_pids << Process.fork do
     sudo = user == 'root' ? '' : 'sudo '
     if not ssh_host == 'localhost'
-      system "ssh #{user}@#{ssh_host} '#{sudo}chmod u+x ~/openshift.sh \&\& #{sudo}#{env_setup} ~/openshift.sh \|\& tee -a ~/openshift-install.log'"
+      system "#{@ssh_cmd} #{user}@#{ssh_host} '#{sudo}chmod u+x ~/openshift.sh \&\& #{sudo}#{env_setup} ~/openshift.sh \|\& tee -a ~/openshift-install.log'"
     else
       # Local installation. Clean out the ENV.
       clear_env

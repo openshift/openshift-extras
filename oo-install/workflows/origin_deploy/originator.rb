@@ -7,10 +7,17 @@ SOCKET_IP_ADDR = 3
 VALID_IP_ADDR_RE = Regexp.new('^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
 
 # Check ENV for an alternate config file location.
-if ENV.has_key?('CONF_CONFIG_FILE')
-  @config_file = ENV['CONF_CONFIG_FILE']
+if ENV.has_key?('OO_INSTALL_CONFIG_FILE')
+  @config_file = ENV['OO_INSTALL_CONFIG_FILE']
 else
   @config_file = ENV['HOME'] + '/.openshift/oo-install-cfg.yml'
+end
+
+@ssh_cmd = 'ssh'
+@scp_cmd = 'scp'
+if ENV.has_key?('OO_INSTALL_DEBUG') and ENV['OO_INSTALL_DEBUG'] == 'true'
+  @ssh_cmd = 'ssh -v'
+  @scp_cmd = 'scp -v'
 end
 
 def env_backup
@@ -160,7 +167,7 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
       end
       full_command = "#{htpasswd_cmds[:mkdir_openshift]} && #{htpasswd_cmds[:touch_htpasswd]}"
       if not host == 'localhost'
-        full_command = "ssh #{user}@#{host} '#{full_command}'"
+        full_command = "#{@ssh_cmd} #{user}@#{host} '#{full_command}'"
       end
       puts "Setting up htpasswd for default user account."
       system full_command
@@ -264,7 +271,7 @@ host_order.each do |ssh_host|
       commands[action] = "sudo #{commands[action]}"
     end
     if not ssh_host == 'localhost'
-      commands[action] = "ssh #{user}@#{ssh_host} '#{commands[action]}'"
+      commands[action] = "#{@ssh_cmd} #{user}@#{ssh_host} '#{commands[action]}'"
     else
       commands[action] = "bash -l -c '#{commands[action]}'"
     end
@@ -348,7 +355,7 @@ host_order.each do |ssh_host|
   # Handle the config file copying and delete the original.
   if not ssh_host == 'localhost'
     puts "Copying Puppet configuration script to target #{ssh_host}.\n"
-    system "scp #{hostfilepath} #{user}@#{ssh_host}:~/"
+    system "#{@scp_cmd} #{hostfilepath} #{user}@#{ssh_host}:~/"
     if not $?.exitstatus == 0
       puts "Could not copy Puppet config to remote host. Exiting."
       saw_deployment_error = true

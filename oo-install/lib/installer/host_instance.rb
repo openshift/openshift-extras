@@ -138,7 +138,7 @@ module Installer
 
     def get_ssh_session
       if @ssh_session.nil? or @ssh_session.closed?
-        @ssh_session = Net::SSH.start(ssh_host, user, { :auth_methods => ['publickey'], :timeout => 10 })
+        @ssh_session = Net::SSH.start(ssh_host, user, { :auth_methods => ['publickey'], :timeout => 10, :verbose => (debug_mode? ? :debug : :fatal) })
       end
       @ssh_session
     end

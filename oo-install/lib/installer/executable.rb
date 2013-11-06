@@ -30,7 +30,7 @@ module Installer
 
       # Pass along the config file path for non-default locations
       if not config_file_path.nil?
-        env_vars['CONF_CONFIG_FILE'] = config_file_path
+        env_vars['OO_INSTALL_CONFIG_FILE'] = config_file_path
       end
 
       # Set up a pile of env variables
@@ -78,6 +78,9 @@ module Installer
         if not value.nil?
           env_vars["OO_INSTALL_#{attr.to_s.upcase}"] = value.to_s
         end
+      end
+      if debug_mode?
+        env_vars['OO_INSTALL_DEBUG'] = 'true'
       end
       env_vars
     end
