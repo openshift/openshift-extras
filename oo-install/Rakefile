@@ -12,23 +12,59 @@ task :package do
     system 'rm', '-rf', @package_dir
   end
 
-  # Set up a new package / archive name
-  pkgname = "oo-install-#{Time.now.getutc.strftime('%Y%m%d-%H%M')}"
-
-  # Copy the installer source to $TMPDIR
-  system "cp -r #{gem_root_dir} #{@tmpdir}"
-  system "mv #{@tmpdir}/oo-install #{@tmpdir}/#{pkgname}"
-
   # Recreate the package dir
   Dir.mkdir(@package_dir)
 
-  # Zip up the source and copy it to the package dir
-  system "cd #{@tmpdir}; zip -qq -r #{pkgname}.zip #{pkgname}"
-  system 'mv', "#{@tmpdir}#{pkgname}.zip", @package_dir
-  system 'rm', '-rf', "#{@tmpdir}oo-install*"
+  # Set up a new package / archive name
+  pkgtime = Time.now.getutc.strftime('%Y%m%d-%H%M')
 
-  # Copy the bootstrap file to the package dir
-  system 'cp', 'oo-install-bootstrap.sh', "#{@package_dir}/index.html"
-  system "sed -i .bak 's/INSTALLPKGNAME/#{pkgname}/g' #{@package_dir}/index.html"
-  system 'rm', "#{@package_dir}/index.html.bak"
+  builds = [
+    { :version => nil,
+      :wget => nil,
+    },
+    { :version => 'ose-2.0b',
+      :wget => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
+    },
+  ]
+
+  builds.each do |build|
+    pkgname = 'oo-install-'
+    pkgurl = ''
+    pkgdir = @package_dir
+    if not build[:version].nil?
+      pkgname << build[:version] + '-'
+      pkgurl = build[:version] + '\/'
+      pkgdir << "/" + build[:version]
+      Dir.mkdir(pkgdir)
+    end
+    pkgname << pkgtime
+    puts "PKGURL: #{pkgurl}"
+
+    # Copy the installer source to $TMPDIR
+    system "cp -r #{gem_root_dir} #{@tmpdir}"
+    system "mv #{@tmpdir}/oo-install #{@tmpdir}/#{pkgname}"
+    openshift_path = "#{@tmpdir}/#{pkgname}/workflows/enterprise_deploy/openshift.sh"
+
+    # If there is a replacement openshift.sh file, get it.
+    if not build[:wget].nil?
+      system "rm #{openshift_path}"
+      system "wget --output-document=#{openshift_path} #{build[:wget]}"
+      if not $?.exitstatus == 0
+        puts "Failed to get #{build[:wget]}\nExiting."
+        exit 1
+      end
+    end
+
+    # Zip up the source and copy it to the package dir
+    system "cd #{@tmpdir}; zip -qq -r #{pkgname}.zip #{pkgname}"
+    system 'mv', "#{@tmpdir}#{pkgname}.zip", pkgdir
+
+    # Copy the bootstrap file to the package dir
+    system 'cp', 'oo-install-bootstrap.sh', "#{pkgdir}/index.html"
+    system "sed -i .bak 's/INSTALLPKGNAME/#{pkgname}/g' #{pkgdir}/index.html"
+    system "sed -i .bak 's/VERPATH/#{pkgurl}/' #{pkgdir}/index.html"
+    system 'rm', "#{pkgdir}/index.html.bak"
+  end
+
+  system 'rm', '-rf', "#{@tmpdir}oo-install*"
 end
