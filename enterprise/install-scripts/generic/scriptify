@@ -1,6 +1,6 @@
 #!/bin/bash
 
-sed -e '1i #!/bin/bash
+sed -e '1i #!/bin/bash -x
 /^#Begin Kickstart Script/,/^set -x/ d
 /^%end/ d
 ' $1 > $2
