@@ -1,6 +1,5 @@
 
 chmod 600 /root/.ssh/named_rsa
-}
 
 # Keeps the broker from getting SSH warnings when running the client
 configure_permissive_ssh()

@@ -4,6 +4,8 @@ CONF_PREFIX="${CONF_PREFIX:-demo}"
 CONF_DOMAIN="${CONF_PREFIX}.cloudydemo.com"
 CONF_APPS_DOMAIN="apps.${CONF_PREFIX}.cloudydemo.com"
 
+CONF_KEEP_HOSTNAME=true
+CONF_KEEP_NAMESERVERS=true
 CONF_NO_NTP=true
 # During a kickstart you can tail the log file showing %post execution
 # by using the following command:
@@ -882,7 +884,7 @@ configure_datastore()
     echo 'The broker and data store are on separate hosts.'
 
     echo 'Configuring the firewall to allow connections to mongod...'
-    lokkit --nostart --port=27017:tcp
+    $lokkit --port=27017:tcp
 
     echo 'Configuring mongod to listen on external interfaces...'
     sed -i -e "s/^bind_ip = .*$/bind_ip = 0.0.0.0/" /etc/mongodb.conf
@@ -924,13 +926,13 @@ enable_services_on_node()
   # will produce errors.  Anyway, we only need the configuration 
   # activated Anaconda reboots, so --nostart makes sense in any case.
 
-  lokkit --nostart --service=ssh
-  lokkit --nostart --service=https
-  lokkit --nostart --service=http
+  $lokkit --service=ssh
+  $lokkit --service=https
+  $lokkit --service=http
 
   # Allow connections to openshift-node-web-proxy
-  lokkit --nostart --port=8000:tcp
-  lokkit --nostart --port=8443:tcp
+  $lokkit --port=8000:tcp
+  $lokkit --port=8443:tcp
 
   chkconfig httpd on
   chkconfig network on
@@ -948,9 +950,9 @@ enable_services_on_broker()
   # will produce errors.  Anyway, we only need the configuration 
   # activated after Anaconda reboots, so --nostart makes sense.
 
-  lokkit --nostart --service=ssh
-  lokkit --nostart --service=https
-  lokkit --nostart --service=http
+  $lokkit --service=ssh
+  $lokkit --service=https
+  $lokkit --service=http
 
   chkconfig httpd on
   chkconfig network on
@@ -1281,8 +1283,8 @@ EOF
 
 
   # Allow connections to ActiveMQ.
-  lokkit --nostart --port=61613:tcp
-  allow_openwire && lokkit --nostart --port=61616:tcp
+  $lokkit --port=61613:tcp
+  allow_openwire && $lokkit --port=61616:tcp
 
   # Configure ActiveMQ to start on boot.
   chkconfig activemq on
@@ -1377,7 +1379,7 @@ EOF
   configure_hosts_dns
 
   # Configure named to start on boot.
-  lokkit --nostart --service=dns
+  $lokkit --service=dns
   chkconfig named on
 
   # Start named so we can perform some updates immediately.
@@ -1655,6 +1657,7 @@ fix_broker_routing()
 {
   cat <<EOF >> /var/lib/openshift/.httpd.d/nodes.txt
 __default__ REDIRECT:/console
+__default__/rsync_id_rsa.pub NOPROXY
 __default__/console TOHTTPS:127.0.0.1:8118/console
 __default__/broker TOHTTPS:127.0.0.1:8080/broker
 EOF
@@ -1680,14 +1683,13 @@ configure_access_keys_on_broker()
   # Generate a key pair for moving gears between nodes from the broker
   ssh-keygen -t rsa -b 2048 -P "" -f /root/.ssh/rsync_id_rsa
   cp /root/.ssh/rsync_id_rsa* /etc/openshift/
-  # the .pub key needs to go on nodes, but there is no good way
-  # to script that generically. Nodes should not have password-less
-  # access to brokers to copy the .pub key, but this can be performed
-  # manually:
-  #   # scp root@broker:/etc/openshift/rsync_id_rsa.pub /root/.ssh/
-  # the above step will ask for the root password of the broker machine
-  #   # cat /root/.ssh/rsync_id_rsa.pub >> /root/.ssh/authorized_keys
-  #   # rm /root/.ssh/rsync_id_rsa.pub
+  # the .pub key needs to go on nodes. So, we provide it via a standard
+  # location on httpd:
+  cp /root/.ssh/rsync_id_rsa.pub /var/www/html/
+  # The node install script can retrieve this or it can be performed manually:
+  #   # wget -q -O- --no-check-certificate https://${broker_hostname}/rsync_id_rsa.pub >> /root/.ssh/authorized_keys
+  # In order to enable this during the install, we turn on httpd.
+  service httpd start
 }
 
 configure_wildcard_ssl_cert_on_node()
@@ -1763,6 +1765,19 @@ configure_node()
 update_openshift_facts_on_node()
 {
   /etc/cron.minutely/openshift-facts
+}
+
+# So that the broker can ssh to nodes for moving gears, get the broker's
+# public key (if available) and add it to node's authorized keys.
+install_rsync_pub_key()
+{
+  mkdir -p /root/.ssh
+  chmod 700 /root/.ssh
+  # Get key hosted on broker machine
+  wget -q -O- --no-check-certificate "https://${broker_hostname}/rsync_id_rsa.pub" \
+    >> /root/.ssh/authorized_keys \
+    || echo "WARNING: could not install rsync_id_rsa.pub key; please do it manually."
+  chmod 644 /root/.ssh/authorized_keys
 }
 
 echo_installation_intentions()
@@ -2160,7 +2175,7 @@ set_defaults()
 init_message()
 {
   echo_installation_intentions
-#  configure_console_msg
+  [ "$environment" = ks ] && configure_console_msg
 }
 
 validate_preflight()
@@ -2265,11 +2280,11 @@ configure_openshift()
   node && configure_sshd_on_node
   broker && configure_controller
   broker && configure_remote_user_auth_plugin
-  broker && configure_access_keys_on_broker
   broker && configure_messaging_plugin
   broker && configure_dns_plugin
   broker && configure_httpd_auth
   broker && configure_broker_ssl_cert
+  broker && configure_access_keys_on_broker
   broker && configure_rhc
 
   node && configure_port_proxy
@@ -2279,6 +2294,7 @@ configure_openshift()
   node && update_openshift_facts_on_node
 
   node && broker && fix_broker_routing
+  node && install_rsync_pub_key
 
   echo "OpenShift: Completed configuring OpenShift."
 }
@@ -2304,13 +2320,20 @@ do_all_actions()
 
 ########################################################################
 
-# parse_kernel_cmdline is only needed for kickstart and not if this %post
-# section is extracted and executed on a running system.
-#parse_kernel_cmdline
+lokkit="lokkit" # normally...
 
-# parse_cmdline is only needed for shell scripts generated by extracting
-# this %post section.
-parse_cmdline "$@"
+environment=amz
+if [ "$environment" = ks ]; then
+  # parse_kernel_cmdline is only needed for kickstart and not if this %post
+  # section is extracted and executed on a running system.
+  parse_kernel_cmdline
+  # during a kickstart a live lokkit fails
+  lokkit="lokkit --nostart"
+else
+  # parse_cmdline is only needed for shell scripts generated by extracting
+  # this %post section.
+  parse_cmdline "$@"
+fi
 
 set_defaults
 
@@ -2322,7 +2345,6 @@ done
 
 
 chmod 600 /root/.ssh/named_rsa
-}
 
 # Keeps the broker from getting SSH warnings when running the client
 configure_permissive_ssh()
