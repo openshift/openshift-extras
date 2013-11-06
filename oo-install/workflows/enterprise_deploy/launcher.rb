@@ -26,6 +26,11 @@ end
 @target_node_hostname = ARGV[1]
 @target_node_ssh_host = nil
 
+@tmpdir = ENV['TMPDIR'] || '/tmp'
+if @tmpdir.end_with?('/')
+  @tmpdir = @tmpdir.chop
+end
+
 # This converts an ENV hash into a string of ENV settings
 def env_setup
   @env_map.each_pair.map{ |k,v| "#{k}=#{v}" }.join(' ')
@@ -67,6 +72,27 @@ def which(cmd)
     }
   end
   return nil
+end
+
+# Back-ported from:
+# http://www.ruby-doc.org/stdlib-1.9.3/libdoc/shellwords/rdoc/Shellwords.html
+# ...to support running the installer w/ Ruby 1.8.7
+def shellescape(str)
+  # An empty argument will be skipped, so return empty quotes.
+  return "''" if str.empty?
+
+  str = str.dup
+
+  # Treat multibyte characters as is.  It is caller's responsibility
+  # to encode the string in the right encoding for the shell
+  # environment.
+  str.gsub!(/([^A-Za-z0-9_\-.,:\/@\n])/, "\\\\\\1")
+
+  # A LF cannot be escaped with a backslash because a backslash + LF
+  # combo is regarded as line continuation and simply ignored.
+  str.gsub!(/\n/, "'\n'")
+
+  return str
 end
 
 # Default and baked-in config values for the openshift.sh deployment
@@ -219,8 +245,11 @@ end
 # Run the jobs
 @reboots = []
 @child_pids = []
+saw_deployment_error = false
 host_order.each do |ssh_host|
   user = @hosts[ssh_host]['user']
+  host = @hosts[ssh_host]['host']
+  hostfile = "oo_install_configure_#{host}.sh"
   @env_map['CONF_INSTALL_COMPONENTS'] = components_list(@hosts[ssh_host])
 
   # Only include the node config setting for hosts that will have a node installation
@@ -232,12 +261,50 @@ host_order.each do |ssh_host|
     @env_map.delete(@role_map['node'][0]['env_ip_addr'])
   end
 
-  if not ssh_host == 'localhost'
-    puts "Copying deployment script to target #{ssh_host}.\n"
-    system "#{@scp_cmd} #{File.dirname(__FILE__)}/openshift.sh #{user}@#{ssh_host}:~/"
+  # Write the openshift.sh settings to a launcher script and gratuitously escape everything
+  filetext = ''
+  @env_map.each_pair do |env,val|
+    filetext << "export #{env}=#{shellescape(val)}\n"
   end
-  puts "Running deployment\n"
+  filetext << "./openshift.sh |& tee -a ~/openshift-install.log && rm -rf $0 ./openshift.sh\n"
+  filetext << "exit"
 
+  # Save it out so we can copy it to the target
+  hostfilepath = "#{@tmpdir}/#{hostfile}"
+  if File.exists?(hostfilepath)
+    File.unlink(hostfilepath)
+  end
+  fh = File.new(hostfilepath, 'w')
+  fh.write(filetext)
+  fh.close
+
+  # Handle the config file copying and delete the original.
+  if not ssh_host == 'localhost'
+    puts "Copying deployment scripts to target #{ssh_host}.\n"
+    system "#{@scp_cmd} #{hostfilepath} #{user}@#{ssh_host}:~/"
+    if not $?.exitstatus == 0
+      puts "Could not copy deployment configuration file to remote host. Exiting."
+      saw_deployment_error = true
+      break
+    else
+      # Copy succeeded, remove original
+      File.unlink(hostfilepath)
+    end
+    system "#{@scp_cmd} #{File.dirname(__FILE__)}/openshift.sh #{user}@#{ssh_host}:~/"
+    if not $?.exitstatus == 0
+      puts "Could not copy deployment utility to remote host. Exiting."
+      saw_deployment_error = true
+      break
+    end
+  else
+    # localhost; relocate launcher file
+    puts "Placing deployment scripts in #{ENV['HOME']}"
+    system "mv #{hostfilepath} #{ENV['HOME']}"
+    system "cp #{File.dirname(__FILE__)}/openshift.sh #{ENV['HOME']}"
+    system "chmod u+x #{ENV['HOME']}/#{hostfile} #{ENV['HOME']}/openshift.sh"
+  end
+
+  # Set up the commands to reboot and verify this system
   reboot_info = [ssh_host, 'reboot', 'exit']
   if not user == 'root'
     [1,2].each do |idx|
@@ -251,27 +318,27 @@ host_order.each do |ssh_host|
   end
   @reboots << reboot_info
 
+  puts "Running deployment on #{host}\n"
+
   @child_pids << Process.fork do
     sudo = user == 'root' ? '' : 'sudo '
+    exit_code = 0
     if not ssh_host == 'localhost'
-      system "#{@ssh_cmd} #{user}@#{ssh_host} '#{sudo}chmod u+x ~/openshift.sh \&\& #{sudo}#{env_setup} ~/openshift.sh \|\& tee -a ~/openshift-install.log'"
+      system "#{@ssh_cmd} #{user}@#{ssh_host} '#{sudo}chmod u+x ~/#{hostfile} ~/openshift.sh \&\& #{sudo}~/#{hostfile}'"
     else
       # Local installation. Clean out the ENV.
       clear_env
 
-      # Ruby 1.8-ism; we have to jam the env settings into our own ENV
-      @env_map.each_pair do |env,val|
-        ENV[env] = val
-      end
-      system "bash -l -c '#{sudo}#{File.dirname(__FILE__)}/openshift.sh \|\& tee -a /root/openshift-install.log'"
-
+      # Run the launcher
+      system "bash -l -c '#{sudo}#{ENV['HOME']}/#{hostfile}'"
+      exit_code = $?.exitstatus
       # Now restore the original env
       restore_env
     end
     # Leave the fork
-    exit
+    exit exit_code
   end
-  puts "Installation completed for host #{@hosts[ssh_host]['host']}\n"
+  puts "Installation completed for host #{host}\n"
 end
 
 procs = Process.waitall
