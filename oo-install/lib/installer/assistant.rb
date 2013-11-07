@@ -603,21 +603,21 @@ module Installer
           if not host_instance.host.nil?
             q.default = host_instance.host
           end
-          q.validate = lambda { |p| is_valid_hostname?(p) }
-          q.responses[:not_valid] = "Enter a valid hostname (FQDN or 'localhost')"
+          q.validate = lambda { |p| is_valid_hostname?(p) and not p == 'localhost' }
+          q.responses[:not_valid] = "Enter a valid fully-qualified domain name. 'localhost' is not valid here."
         }.to_s
         # Get login info if necessary
-        if not host_instance.localhost?
-          loop do
-            host_instance.ssh_host = ask("Hostname / IP address for SSH access: ") { |q|
-              if not host_instance.ssh_host.nil?
-                q.default = host_instance.ssh_host
-              elsif not host_instance.host.nil?
-                q.default = host_instance.host
-              end
-              q.validate = lambda { |p| is_valid_hostname?(p) }
-              q.responses[:not_valid] = "Enter a valid hostname"
-            }.to_s
+        loop do
+          host_instance.ssh_host = ask("Hostname / IP address for SSH access (or 'localhost'): ") { |q|
+            if not host_instance.ssh_host.nil?
+              q.default = host_instance.ssh_host
+            elsif not host_instance.host.nil?
+              q.default = host_instance.host
+            end
+            q.validate = lambda { |p| is_valid_hostname?(p) }
+            q.responses[:not_valid] = "Enter a valid hostname or SSH alias. 'localhost' is valid here."
+          }.to_s
+          if not host_instance.localhost?
             host_instance.user = ask("Username for SSH access and installation: ") { |q|
               if not host_instance.user.nil?
                 q.default = host_instance.user
@@ -634,17 +634,17 @@ module Installer
             else
               say "\nCould not connect to #{host_instance.ssh_host} with user #{host_instance.user}. You must set up an SSH key pair and using ssh-agent is strongly recommended."
             end
+          else
+            # For localhost, run with what we already have
+            host_instance.user = `whoami`.chomp
+            ip_path = which('ip')
+            if ip_path.nil?
+              raise Installer::AssistantMissingUtilityException.new("Could not determine the location of the 'ip' utility for running 'ip addr list'. Exiting.")
+            end
+            host_instance.set_ip_exec_path(ip_path)
+            say "Using current user (#{host_instance.user}) for local installation."
+            break
           end
-        else
-          # For localhost, run with what we already have
-          host_instance.ssh_host = host_instance.host
-          host_instance.user = `whoami`.chomp
-          ip_path = which('ip')
-          if ip_path.nil?
-            raise Installer::AssistantMissingUtilityException.new("Could not determine the location of the 'ip' utility for running 'ip addr list'. Exiting.")
-          end
-          host_instance.set_ip_exec_path(ip_path)
-          say "Using current user (#{host_instance.user}) for local installation."
         end
         # Finally, set up the IP info for brokers and nodes.
         if host_instance.is_broker? or host_instance.is_node?

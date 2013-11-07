@@ -59,9 +59,9 @@ module Installer
     end
 
     def is_valid?(check=:basic)
-      if not is_valid_hostname?(host)
+      if not is_valid_hostname?(host) or host == 'localhost'
         return false if check == :basic
-        raise Installer::HostInstanceHostNameException.new("Host instance host name '#{host}' is invalid.")
+        raise Installer::HostInstanceHostNameException.new("Host instance host name '#{host}' is invalid. Note that 'localhost' is not a permitted value here.")
       end
       if not is_valid_hostname?(ssh_host)
         return false if check == :basic

@@ -155,6 +155,7 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
     if host_info['roles'].include?('broker')
       user = host_info['user']
       host = host_info['host']
+      ssh_host = host_info['ssh_host']
       # In order for the default htpasswd account to work, we must first create an htpasswd file.
       htpasswd_cmds = {
         :mkdir_openshift => 'mkdir -p /etc/openshift',
@@ -166,7 +167,7 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
         end
       end
       full_command = "#{htpasswd_cmds[:mkdir_openshift]} && #{htpasswd_cmds[:touch_htpasswd]}"
-      if not host == 'localhost'
+      if not ssh_host == 'localhost'
         full_command = "#{@ssh_cmd} #{user}@#{host} '#{full_command}'"
       end
       puts "Setting up htpasswd for default user account."
