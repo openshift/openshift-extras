@@ -438,28 +438,32 @@ module Installer
     end
 
     def ui_modify_dns
-      loop do
-        deployment.dns.app_domain = ask("\nWhat domain will be used for hosted applications? ") { |q|
-          if not deployment.dns.app_domain.nil?
-            q.default = deployment.dns.app_domain
-          end
-          q.validate = lambda { |p| is_valid_domain?(p) }
-          q.responses[:not_valid] = "Enter a valid domain"
-        }.to_s
-        deployment.dns.component_domain = ask("\nWhat domain will be used for OpenShift components? ") { |q|
-          if not deployment.dns.component_domain.nil?
-            q.default = deployment.dns.component_domain
-          end
-          q.validate = lambda { |p| is_valid_domain?(p) }
-          q.responses[:not_valid] = "Enter a valid domain"
-        }.to_s
-        if deployment.dns.app_domain == deployment.dns.component_domain
-          break if concur("\nYou are using the same domain name for your applications and your OpenShift components. This is not a recommended configuration. Do you wish to keep these settings?")
-        else
-          break
+      deployment.dns.app_domain = ask("\nWhat domain will be used for hosted applications? ") { |q|
+        if not deployment.dns.app_domain.nil?
+          q.default = deployment.dns.app_domain
         end
-      end
+        q.validate = lambda { |p| is_valid_domain?(p) }
+        q.responses[:not_valid] = "Enter a valid domain"
+      }.to_s
       deployment.dns.register_components = concur("\nDo you want DNS entries for your OpenShift component hosts to be registered with the OpenShift DNS service?")
+      if deployment.dns.register_components?
+        loop do
+          deployment.dns.component_domain = ask("\nWhat domain will be used for OpenShift components? ") { |q|
+            if not deployment.dns.component_domain.nil?
+              q.default = deployment.dns.component_domain
+            end
+            q.validate = lambda { |p| is_valid_domain?(p) }
+            q.responses[:not_valid] = "Enter a valid domain"
+          }.to_s
+          if deployment.dns.app_domain == deployment.dns.component_domain
+            break if concur("\nYou are using the same domain name for your applications and your OpenShift components. Do you wish to keep these settings?")
+          else
+            break
+          end
+        end
+      else
+        deployment.dns.component_domain = nil
+      end
       deployment.save_to_disk!
     end
 
@@ -751,8 +755,10 @@ module Installer
     def list_dns
       say "\nDNS Settings\n"
       say "  * App Domain: #{deployment.dns.app_domain || '[unset]'}"
-      say "  * Component Domain: #{deployment.dns.component_domain || '[unset]'}"
       say "  * Register OpenShift components with OpenShift DNS? #{deployment.dns.register_components? ? 'Yes' : 'No'}"
+      if not deployment.dns.component_domain.nil?
+        say "  * Component Domain: #{deployment.dns.component_domain}"
+      end
     end
 
     def list_role_host_map

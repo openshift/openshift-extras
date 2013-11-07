@@ -97,7 +97,7 @@ end
 # Default and baked-in config values for the openshift.sh deployment
 @env_map = { 'CONF_INSTALL_COMPONENTS' => 'all' }
 
-# These values will be passed on the command line
+# These values will be passed in the shim file
 @env_input_map = {
   'subscription_type' => ['CONF_INSTALL_METHOD'],
   'repos_base' => ['CONF_REPOS_BASE'],
@@ -147,6 +147,7 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
   config_hosts = config['Deployment']['Hosts']
   config_dns = config['Deployment']['DNS']
 
+  named_hosts = []
   config_hosts.each do |host_info|
     # Basic config file sanity check
     ['ssh_host','host','user','roles','ip_addr'].each do |attr|
@@ -159,7 +160,7 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
     # Map hosts by ssh alias
     @hosts[host_info['ssh_host']] = host_info
 
-    # Set up the OSE-related ENV variables except node settings
+    # Set up the OSE-related ENV variables
     host_info['roles'].each do |role|
       if not @seen_roles.has_key?(role)
         @seen_roles[role] = 1
@@ -167,6 +168,10 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
         puts "Error: The #{role} role has been assigned to multiple hosts. This is not currently supported. Exiting."
         exit 1
       end
+
+      # Throw this role:fqdn combo in the named_hosts list
+      named_hosts << "#{role}:#{host_info['host']}"
+
       if role == 'node'
         if @target_node_hostname == host_info['host']
           @target_node_ssh_host = host_info['ssh_host']
@@ -183,6 +188,17 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
     end
   end
   @env_map['CONF_DOMAIN'] = config_dns['app_domain']
+  if config_dns.has_key?('register_components') and config_dns['register_components'] == 'yes'
+    if not config_dns.has_key?('component_domain')
+      puts "Error: The config specifies registering OpenShift component hosts with OpenShift DNS, but no OpenShift component host domain has been specified. Exiting."
+      exit 1
+    end
+    @env_map['CONF_HOST_DOMAIN'] = config_dns['component_domain']
+    @env_map['CONF_NAMED_ENTRIES'] = named_hosts.join(',')
+  else
+    @env_map['CONF_HOST_DOMAIN'] = config_dns['app_domain']
+    @env_map['CONF_NAMED_ENTRIES'] = 'NONE'
+  end
 end
 
 if @hosts.empty?
