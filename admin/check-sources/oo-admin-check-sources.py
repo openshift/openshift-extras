@@ -338,7 +338,7 @@ class OpenShiftAdminCheckSources:
             return False
         return True
 
-    def verify_rhel_priorities(self, ose_repos, rhel6_repo):
+    def verify_rhel_priorities(self, ose_repos, rhel6_repos):
         """Check that the base Red Hat Enterprise Linux repositories are lower
         priority than the OpenShift repositories and fix or advise
         accordingly
@@ -346,20 +346,20 @@ class OpenShiftAdminCheckSources:
         """
         res = True
         ose_pri = self._limit_pri(ose_repos)
-        rhel_pri = self._get_pri(rhel6_repo)
+        # rhel_pri = self._get_pri(rhel6_repo)
+        rhel_pri = self._limit_pri(rhel6_repos, minpri=True)
         if rhel_pri <= ose_pri:
             for repoid in ose_repos:
                 self.resolved_repos[repoid] = OSE_PRIORITY
-                # self._set_pri(repoid, OSE_PRIORITY)
                 res = False
             ose_pri = OSE_PRIORITY
         if rhel_pri <= ose_pri or rhel_pri >= 99:
-            self.resolved_repos[rhel6_repo] = RHEL_PRIORITY
-            # self._set_pri(rhel6_repo, RHEL_PRIORITY)
+            for repoid in rhel6_repos:
+                self.resolved_repos[repoid] = RHEL_PRIORITY
             res = False
         return res
 
-    def verify_jboss_priorities(self, ose_repos, jboss_repos, rhel6_repo=None):
+    def verify_jboss_priorities(self, ose_repos, jboss_repos, rhel6_repos=None):
         """Check that the JBoss EAP and EWS repositories are lower priority
         than the base Red Hat Enterprise Linux repositories and fix or
         advise accordingly
@@ -369,16 +369,15 @@ class OpenShiftAdminCheckSources:
         min_pri = self._limit_pri(ose_repos)
         jboss_pri = self._limit_pri(jboss_repos, minpri=True)
         jboss_max_pri = self._limit_pri(jboss_repos)
-        if rhel6_repo:
-            min_pri = self._get_pri(rhel6_repo)
+        if rhel6_repos:
+            min_pri = self._limit_pri(rhel6_repos)
         if jboss_pri <= min_pri or jboss_max_pri >= 99:
-            if rhel6_repo:
-                self.resolved_repos[rhel6_repo] = RHEL_PRIORITY
-                # self._set_pri(rhel6_repo, RHEL_PRIORITY)
+            if rhel6_repos:
+                for repoid in rhel6_repos:
+                    self.resolved_repos[repoid] = RHEL_PRIORITY
             res = False
             for repoid in jboss_repos:
                 self.resolved_repos[repoid] = JBOSS_PRIORITY
-                # self._set_pri(repoid, JBOSS_PRIORITY)
                 res = False
         return res
 
@@ -394,10 +393,10 @@ class OpenShiftAdminCheckSources:
         jboss = self.blessed_repoids(enabled=True, required=True, product='jboss')
         rhel = self.blessed_repoids(enabled=True, product='rhel')
         if rhel:
-            res &= self.verify_rhel_priorities(ose_scl, rhel[0])
+            res &= self.verify_rhel_priorities(ose_scl, rhel)
         if jboss:
             if rhel:
-                res &= self.verify_jboss_priorities(ose_scl, jboss, rhel[0])
+                res &= self.verify_jboss_priorities(ose_scl, jboss, rhel)
             else:
                 res &= self.verify_jboss_priorities(ose_scl, jboss)
         # for repoid, pri in sorted(self.resolved_repos.items(), key=lambda (kk, vv): vv):
@@ -483,10 +482,10 @@ class OpenShiftAdminCheckSources:
         enabled_ose_scl_repos = self.blessed_repoids(enabled = True, required = True, product = 'ose')
         enabled_ose_scl_repos += self.blessed_repoids(enabled = True, required = True, product = 'rhscl')
         enabled_jboss_repos = self.blessed_repoids(enabled = True, required = True, product = 'jboss')
-        rhel6_repo = self.blessed_repoids(product='rhel')
-        if not rhel6_repo[0] in self.oscs.enabled_repoids():
-            rhel6_repo = []
-        required_repos = enabled_ose_scl_repos + rhel6_repo + enabled_jboss_repos
+        rhel6_repos = self.blessed_repoids(enabled = True, product='rhel')
+        # if not rhel6_repo[0] in self.oscs.enabled_repoids():
+        #     rhel6_repo = []
+        required_repos = enabled_ose_scl_repos + rhel6_repos + enabled_jboss_repos
         if not self._check_valid_pri(required_repos):
             return False
         for repoid in required_repos:
