@@ -152,10 +152,12 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
     # Basic config file sanity check
     ['ssh_host','host','user','roles','ip_addr'].each do |attr|
       next if not host_info[attr].nil?
-      next if not host_info['roles'].include?('broker') and not host_info['roles'].include?('node') and attr == 'ip_addr'
       puts "One of the hosts in the configuration is missing the '#{attr}' setting. Exiting."
       exit 1
     end
+
+    # Save the fqdn:ipaddr for potential named use
+    named_hosts << "#{host_info['host']}:#{host_info['ip_addr']}"
 
     # Map hosts by ssh alias
     @hosts[host_info['ssh_host']] = host_info
@@ -169,16 +171,15 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
         exit 1
       end
 
-      if role == 'node' and @target_node_hostname == host_info['host']
+      if role == 'node'
+        if @target_node_hostname == host_info['host']
           @target_node_ssh_host = host_info['ssh_host']
+        end
+        # Bail out if this is a node; we'll come back to nodes later.
+        break
       end
 
       @role_map[role].each do |ose_cfg|
-        # Throw this role:fqdn combo in the named_hosts list
-        named_hosts << "#{ose_cfg['component']}:#{host_info['host']}"
-
-        # Bail out if this is a node; we'll come back to nodes later.
-        break if role == 'node'
 
         # Get the rest of the OSE-role-specific settings
         @env_map[ose_cfg['env_hostname']] = host_info['host']
@@ -196,10 +197,10 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
       puts "Error: The config specifies registering OpenShift component hosts with OpenShift DNS, but no OpenShift component host domain has been specified. Exiting."
       exit 1
     end
-    @env_map['CONF_HOST_DOMAIN'] = config_dns['component_domain']
+    @env_map['CONF_HOSTS_DOMAIN'] = config_dns['component_domain']
     @env_map['CONF_NAMED_ENTRIES'] = named_hosts.join(',')
   else
-    @env_map['CONF_HOST_DOMAIN'] = config_dns['app_domain']
+    @env_map['CONF_HOSTS_DOMAIN'] = config_dns['app_domain']
     @env_map['CONF_NAMED_ENTRIES'] = 'NONE'
   end
 end
@@ -284,8 +285,8 @@ host_order.each do |ssh_host|
   @env_map.each_pair do |env,val|
     filetext << "export #{env}=#{shellescape(val)}\n"
   end
-  filetext << "./openshift.sh |& tee -a ~/openshift-install.log\n"
-  filetext << "rm -f ./openshift.sh ./#{hostfile}\n"
+  filetext << "~/openshift.sh |& tee -a ~/openshift-install.log\n"
+  filetext << "rm -f ~/openshift.sh ~/#{hostfile}\n"
   filetext << "exit\n"
 
   # Save it out so we can copy it to the target
