@@ -76,11 +76,6 @@ module Installer
       save_to_disk!
     end
 
-    def update_host_instance! host_instance
-      @hosts[@hosts.index{ |h| h.id == host_instance.id }] = host_instance
-      save_to_disk!
-    end
-
     def remove_host_instance! id
       hosts.delete_if{ |h| h.id == id }
       save_to_disk!

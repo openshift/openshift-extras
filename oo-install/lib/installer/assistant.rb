@@ -286,6 +286,7 @@ module Installer
             say "\nThe configuration file does not include some of the required settings for host instance #{host_instance.host}. Please provide them here.\n\n"
           end
           edit_host_instance host_instance
+          deployment.save_to_disk!
           resolved_issues = true
         end
         first = false
@@ -600,7 +601,7 @@ module Installer
           menu.prompt = "#{translate(:menu_prompt)} "
           menu.choice("Update it") {
             edit_host_instance host_instance
-            deployment.update_host_instance! host_instance
+            deployment.save_to_disk!
             say "Updated the #{rolename} host instance."
           }
           menu.choice("Delete it") {
@@ -613,7 +614,7 @@ module Installer
         if new_host
           deployment.add_host_instance! host_instance
         else
-          deployment.update_host_instance! host_instance
+          deployment.save_to_disk!
         end
       end
     end
@@ -669,51 +670,49 @@ module Installer
             break
           end
         end
-        # Finally, set up the IP info for brokers and nodes.
-        if host_instance.is_broker? or host_instance.is_node?
-          ip_addrs = host_instance.get_ip_addr_choices
-          case ip_addrs.length
-          when 0
-            say "Could not detect an IP address for this host."
-            manual_ip_info_for_host_instance(host_instance, ip_addrs)
-          when 1
-            say "Detected IP address #{ip_addrs[0][1]} at interface #{ip_addrs[0][0]} for this host."
-            question = "Do you want Nodes to use this IP information to reach this Broker?"
+        # Finally, set up the IP info
+        ip_addrs = host_instance.get_ip_addr_choices
+        case ip_addrs.length
+        when 0
+          say "Could not detect an IP address for this host."
+          manual_ip_info_for_host_instance(host_instance, ip_addrs)
+        when 1
+          say "Detected IP address #{ip_addrs[0][1]} at interface #{ip_addrs[0][0]} for this host."
+          question = "Do you want Nodes to use this IP information to reach this Broker?"
+          if host_instance.is_node?
+            question = "Do you want to use this as the public IP information for this Node?"
+          end
+          if concur(question, translate(:ip_config_help_text))
+            host_instance.ip_addr = ip_addrs[0][1]
             if host_instance.is_node?
-              question = "Do you want to use this as the public IP information for this Node?"
-            end
-            if concur(question, translate(:ip_config_help_text))
-              host_instance.ip_addr = ip_addrs[0][1]
-              if host_instance.is_node?
-                host_instance.ip_interface = ip_addrs[0][0]
-              end
-            else
-              manual_ip_info_for_host_instance(host_instance, ip_addrs)
+              host_instance.ip_interface = ip_addrs[0][0]
             end
           else
-            say "Detected multiple network interfaces for this host:"
-            ip_addrs.each do |info|
-              say "* #{info[1]} on interface #{info[0]}"
-            end
-            question = "Do you want Nodes to use one of these IP addresses to reach this Broker?"
-            if host_instance.is_node?
-              question = "Do you want to use one of these as the public IP information for this Node?"
-            end
-            if concur(question, translate(:ip_config_help_text))
-              choose do |menu|
-                menu.header = "The following network interfaces were found on this host. Choose the one that it uses for communication on the local subnet."
-                menu.prompt = "#{translate(:menu_prompt)} "
-                ip_addrs.each do |info|
-                  ip_interface = info[0]
-                  ip_addr = info[1]
-                  menu.choice("#{ip_addr} on interface #{ip_interface}") { host_instance.ip_addr = ip_addr; host_instance.ip_interface = ip_interface if host_instance.is_node? }
-                end
-                menu.hidden("?") { say "The current host instance has mutliple IP options. Select the one that it will use to connect to other OpenShift components." }
-                menu.hidden("q") { return_to_main_menu }
+            manual_ip_info_for_host_instance(host_instance, ip_addrs)
+          end
+        else
+          say "Detected multiple network interfaces for this host:"
+          ip_addrs.each do |info|
+            say "* #{info[1]} on interface #{info[0]}"
+          end
+          question = "Do you want Nodes to use one of these IP addresses to reach this Broker?"
+          if host_instance.is_node?
+            question = "Do you want to use one of these as the public IP information for this Node?"
+          end
+          if concur(question, translate(:ip_config_help_text))
+            choose do |menu|
+              menu.header = "The following network interfaces were found on this host. Choose the one that it uses for communication on the local subnet."
+              menu.prompt = "#{translate(:menu_prompt)} "
+              ip_addrs.each do |info|
+                ip_interface = info[0]
+                ip_addr = info[1]
+                menu.choice("#{ip_addr} on interface #{ip_interface}") { host_instance.ip_addr = ip_addr; host_instance.ip_interface = ip_interface if host_instance.is_node? }
               end
-            else
-              manual_ip_info_for_host_instance(host_instance, ip_addrs)
+              menu.hidden("?") { say "The current host instance has mutliple IP options. Select the one that it will use to connect to other OpenShift components." }
+              menu.hidden("q") { return_to_main_menu }
             end
+          else
+            manual_ip_info_for_host_instance(host_instance, ip_addrs)
           end
         end
         host_instance_is_valid = true

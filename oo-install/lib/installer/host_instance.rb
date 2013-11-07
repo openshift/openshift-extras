@@ -80,7 +80,7 @@ module Installer
         return false if check == :basic
         errors << Installer::HostInstanceDuplicateRoleException.new("Host instance '#{host}' has been assigned to the same role multiple times.")
       end
-      if (is_broker? or is_node?) and not is_valid_ip_addr?(ip_addr)
+      if not is_valid_ip_addr?(ip_addr)
         return false if check == :basic
         errors << Installer::HostInstanceIPAddressException.new("Host instance '#{host}' has an invalid ip address '#{ip_addr}'.")
       end
