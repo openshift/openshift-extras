@@ -2,9 +2,10 @@
 from collections import namedtuple
 from copy import copy
 from iniparse import INIConfig
+from iniparse.config import Undefined
 import re
 
-RepoTuple = namedtuple('RepoTuple', 'subscription, product, product_version, role, repoid, key_pkg')
+RepoTuple = namedtuple('RepoTuple', 'subscription, product, product_version, role, repoid, key_pkg, exclude')
 
 repo_ini = """# RHSM Common
 
@@ -14,6 +15,7 @@ product = rhel
 product_version = 1.2, 2.0
 role = base
 key_pkg = None
+exclude = tomcat6*
 
 [jb-ews-2-for-rhel-6-server-rpms]
 subscription = rhsm
@@ -21,6 +23,7 @@ product = jboss
 product_version = 1.2, 2.0
 role = node
 key_pkg = openshift-origin-cartridge-jbossews
+exclude = httpd, httpd-tools, mod_ssl
 
 [jb-eap-6-for-rhel-6-server-rpms]
 subscription = rhsm
@@ -28,6 +31,7 @@ product = jboss
 product_version = 1.2, 2.0
 role = node-eap
 key_pkg = openshift-origin-cartridge-jbosseap
+exclude = httpd, httpd-tools, mod_ssl
 
 [rhel-server-rhscl-6-rpms]
 subscription = rhsm
@@ -101,6 +105,7 @@ product = rhel
 product_version = 1.2, 2.0
 role = base
 key_pkg = None
+exclude = tomcat6*
 
 [jb-ews-2-x86_64-server-6-rpm]
 subscription = rhn
@@ -108,6 +113,7 @@ product = jboss
 product_version = 1.2, 2.0
 role = node
 key_pkg = openshift-origin-cartridge-jbossews
+exclude = httpd, httpd-tools, mod_ssl
 
 [jbappplatform-6-x86_64-server-6-rpm]
 subscription = rhn
@@ -115,6 +121,7 @@ product = jboss
 product_version = 1.2, 2.0
 role = node-eap
 key_pkg = openshift-origin-cartridge-jbosseap
+exclude = httpd, httpd-tools, mod_ssl
 
 [rhel-x86_64-server-6-rhscl-1]
 subscription = rhn
@@ -191,13 +198,25 @@ def _repo_tuple_match(repo, match_attr, match_val):
         return True
     return hasattr(attr, '__iter__') and match_val in attr
 
+def ini_defined(val):
+    return not isinstance(val, Undefined)
+
 def parse_multivalue(val):
-    if val:
-        rv = tuple(re.split(', ', val))
-        if len(rv) == 1:
-            return rv[0]
-        return rv
+    if ini_defined(val):
+        if val:
+            rv = tuple(re.split(', ', val))
+            if len(rv) == 1:
+                return rv[0]
+            return rv
+    else:
+        return None
     return val
+
+def parse_exclude(val):
+    tpl = parse_multivalue(val)
+    if tpl and not hasattr(tpl, '__iter__'):
+        return (tpl,)
+    return tpl
 
 class RepoDB:
     repositories = []
@@ -222,14 +241,16 @@ class RepoDB:
         self.populate_db()
 
     def populate_db(self):
-        for ii in list(self.cfg):
+        for repoid in list(self.cfg):
+            repocfg = self.cfg[repoid]
             rt = RepoTuple(
-                subscription =    parse_multivalue(self.cfg[ii]['subscription']),
-                product =         parse_multivalue(self.cfg[ii]['product']),
-                product_version = parse_multivalue(self.cfg[ii]['product_version']),
-                role =            parse_multivalue(self.cfg[ii]['role']),
-                repoid =          ii,
-                key_pkg =         parse_multivalue(self.cfg[ii]['key_pkg']))
+                subscription =    parse_multivalue(getattr(repocfg, 'subscription', None)),
+                product =         parse_multivalue(getattr(repocfg, 'product', None)),
+                product_version = parse_multivalue(getattr(repocfg, 'product_version', None)),
+                role =            parse_multivalue(getattr(repocfg, 'role', None)),
+                repoid =          repoid,
+                key_pkg =         parse_multivalue(getattr(repocfg, 'key_pkg', None)),
+                exclude =         parse_exclude(getattr(repocfg, 'exclude', None)))
             if not rt in self.repositories:
                 self.repositories.append(rt)
 

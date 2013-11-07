@@ -112,9 +112,9 @@ class OpenShiftCheckSources:
         # ff = open(RHNPLUGINCONF, 'w')
         # print >>ff, cfg
         # ff.close()
-        self._set_save_repo_attr(repo, 'priority', priority)
+        self.set_save_repo_attr(repo, 'priority', priority)
 
-    def _set_save_repo_attr(self, repo, attribute, value):
+    def set_save_repo_attr(self, repo, attribute, value):
         """Set the priority for the given RHN repo
 
         Arguments:
@@ -124,6 +124,7 @@ class OpenShiftCheckSources:
                      attribute to be updated (e.g. 'priority')
         value -- updated value for specified attribute
         """
+        repo = self._resolve_repoid(repo)
         repo.setAttribute(attribute, value)
         if self.repo_is_rhn(repo):
             self.backup_config(RHNPLUGINCONF)
@@ -138,7 +139,19 @@ class OpenShiftCheckSources:
             config.writeRawRepoFile(repo, only=[attribute])
         # self._init_yumbase()
 
+    def merge_excludes(self, repo, excludes):
+        """Take a list of packages (or globs) to exclude from repo and merge
+        them into the existing list of excludes, eliminating duplicates.
+        """
+        repo = self._resolve_repoid(repo)
+        try:
+            new_excl = list(set(repo.exclude + excludes))
+        except TypeError:
+            new_excl = list(set(repo.exclude + list(excludes)))
+        self.set_save_repo_attr(repo, 'exclude', new_excl)
+
     def repo_is_rhsm(self, repoid):
+
         """Given a YumRepository instance or a repoid, try to detect if it's from a subscription-manager managed source
 
         TODO: This will be UNRELIABLE in the next subscription-manager
@@ -191,7 +204,7 @@ class OpenShiftCheckSources:
             repo = self._resolve_repoid(repoid)
             if not repo.isEnabled():
                 repo.enable()
-            self._set_save_repo_attr(repo, 'enabled', True)
+            self.set_save_repo_attr(repo, 'enabled', True)
             return True
         except RepoError:
             return False
@@ -205,7 +218,7 @@ class OpenShiftCheckSources:
             repo = self._resolve_repoid(repoid)
             if repo.isEnabled():
                 repo.disable()
-            self._set_save_repo_attr(repo, 'enabled', False)
+            self.set_save_repo_attr(repo, 'enabled', False)
             return True
         except RepoError:
             return False

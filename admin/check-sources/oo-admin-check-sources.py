@@ -507,6 +507,47 @@ class OpenShiftAdminCheckSources:
         self._commit_resolved_pris()
         return res
 
+    def _set_exclude(self, repo):
+        if self.opts.fix:
+            self.logger.error('    %s: %s'%(repo.repoid, ' '.join(repo.exclude)))
+            self.oscs.merge_excludes(repo.repoid, list(repo.exclude))
+        else:
+            exc = ' '.join(repo.exclude)
+            if self.opts.subscription == RHN or self.opts.subscription == RHSM:
+                self.logger.error('Add the following line to the [%s] section:'%(repo.repoid))
+                self.logger.error('    exclude=%s'%exc)
+            else:
+                repofile = self.oscs.yb.repos.repos[repo.repoid].repofile
+                if repofile:
+                    self.logger.error('In file %s, Add the following line to the [%s] section'%(repofile, repo.repoid))
+                    self.logger.error('    exclude=%s'%exc)
+                else: # Man, I don't know
+                    self.logger.error("# yum-config-manager --setopt=%s.exclude=%d %s --save"%(repo.repoid, exc, repo.repoid))
+
+    def set_excludes(self):
+        """Set any excludes configured for the required repositories
+        """
+        need_exclude = [repo for repo in self.required_repos()
+                        if repo.exclude and repo.repoid in self.oscs.all_repoids()]
+        if need_exclude:
+            self.problem = True
+            if self.opts.fix:
+                self.logger.error('Setting package exclusions for the following repositories:')
+            else:
+                self.logger.error('The following repositories need package exclusions set:')
+                for ii in need_exclude:
+                    self.logger.error('    %s'%ii.repoid)
+                if self.opts.subscription == RHN:
+                    self.logger.error('Make the following modifications to /etc/yum/pluginconf.d/rhnplugin.conf')
+                elif self.opts.subscription == RHSM:
+                    self.logger.error('Make the following modifications to /etc/yum.repos.d/redhat.repo')
+                else:
+                    self.logger.error('Modify the repositories by running these commands:')
+            for repo in need_exclude:
+                self._set_exclude(repo)
+            return False
+        return True
+
     def guess_role(self):
         """Try to determine the system role by comparing installed packages to
         key packages
@@ -598,6 +639,8 @@ class OpenShiftAdminCheckSources:
             if not (self.verify_priorities() or self.opts.report_all):
                 return False
             if not (self.find_package_conflicts() or self.opts.report_all):
+                return False
+            if not (self.set_excludes() or self.opts.report_all):
                 return False
         else:
             self.logger.warning('Please specify at least one role for this system with the --role command')
