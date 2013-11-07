@@ -67,6 +67,7 @@ module Installer
       end
 
       def valid_attr? attr, value, check=:basic
+        errors = []
         if attr == :subscription_type
           begin
             subscription_info(value)
@@ -74,7 +75,7 @@ module Installer
             if check == :basic
               return false
             else
-              raise
+              errors << e
             end
           end
         elsif not attr == :subscription_type and not value.nil?
@@ -82,10 +83,11 @@ module Installer
           if (@repo_attrs.include?(attr) and not is_valid_url?(value)) or
              ([:rh_username, :rh_password, :sm_reg_pool, :sm_reg_pool_rhel, :rhn_reg_actkey].include?(attr) and not is_valid_string?(value))
             return false if check == :basic
-            raise Installer::SubscriptionSettingNotValidException.new("Subscription setting '#{attr.to_s}' has invalid value '#{value}'.")
+            errors << Installer::SubscriptionSettingNotValidException.new("Subscription setting '#{attr.to_s}' has invalid value '#{value}'.")
           end
         end
-        true
+        return true if check == :basic
+        errors
       end
 
       def valid_types_for_context
@@ -122,25 +124,31 @@ module Installer
         end
     end
 
-    def is_complete?
-      return false if subscription_type.nil?
-      if [:none,:yum].include?(subscription_type)
-        # These methods do not require other settings
-        return true
-      else
-        # These others require username and password
+    def is_valid?(check=:basic)
+      errors = []
+      if subscription_type.nil?
+        return false if check == :basic
+        errors << Installer::SubscriptionSettingMissingException.new("The subscription type value is missing for the configuration.")
+      end
+      if not [:none,:yum].include?(subscription_type)
+        # The other subscription types require username and password
         self.class.subscription_info(subscription_type)[:attrs].each_key do |attr|
           next if not [:rh_username,:rh_password].include?(attr)
-          return false if self.send(attr).nil?
+          if self.send(attr).nil?
+            return false if check == :basic
+            errors << Installer::SubscriptionSettingMissingException.new("The #{attr.to_s} value is missing, but it is required for supscription type #{subscription_type.to_s}.")
+          end
         end
       end
-      true
-    end
-
-    def is_valid?(check=:basic)
       self.class.object_attrs.each do |attr|
-        return false if not self.class.valid_attr?(attr, self.send(attr), check)
+        if check == :basic
+          return false if not self.class.valid_attr?(attr, self.send(attr), check)
+        else
+          errors.concat(self.class.valid_attr?(attr, self.send(attr), check))
+        end
       end
+      return true if check == :basic
+      errors
     end
 
     def to_hash

@@ -7,11 +7,13 @@ en:
   select_workflow: |-
     Select from the following installation scenarios.
     You can also type '?' for Help or 'q' to Quit."
-  info_wait_config_validation: >
-    Please wait while your deployment configuration is validated.
-  exit_incomplete_deployment: |-
-    Cannot perform unattended install; your deployment configuration is incomplete.
-    Rerun the workflow manually and try again.
+  info_wait_configuration_validation: >
+    Please wait while your oo-install configuration is validated.
+  info_deployment_validation: Validating deployment configuration...
+  info_workflow_validation: Validating workflow configuration...
+  info_subscription_validation: Validating subscription configuration...
+  info_good_to_go: looks good.
+  info_found_errors: 'validation failed:'
   info_force_run_deployment_setup: |-
     Your system deployment configuration is incomplete.
     The installer will guide you through the necessary configuration steps.
@@ -25,8 +27,8 @@ en:
   subscription_summary: >
     Here is subscription configuration that the installer will use for this deployment.
   invalid_port_number_response: "Enter a valid port number in the range 1 to 65535"
-  info_config_is_valid: "The deployment looks good. Checking workflow responses."
-  error_unattended_workflow_cfg: "The workflow configuration is not complete."
+  info_config_is_valid: "The deployment looks good."
+  error_unattended_workflow_cfg: "The validation attempt uncovered errors. Rerun oo-install manually to correct them."
   info_unattended_workflow_start: "Everything looks good. Launching workflow."
   warning_ssh_issues: >
     Warning: The following host(s) cannot be accessed without a user-specifed password.

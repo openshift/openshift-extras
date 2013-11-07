@@ -168,5 +168,29 @@ module Installer
     def non_deployment?
       @non_deployment
     end
+
+    def is_valid_config?(workflow_cfg, deployment, check=:basic)
+      errors = []
+      # The quick short-circuit; no questions = no validation
+      if questions.length == 0
+        return true if check == :basic
+        errors
+      end
+      if workflow_cfg.nil? or workflow_cfg.empty?
+        return false if check == :basic
+        errors << Installer::WorkflowConfigurationIncompleteException.new("The installer configuration is missing settings for the #{id} workflow.")
+      end
+      questions.each do |q|
+        if not workflow_cfg.has_key?(q.id)
+          return false if check == :basic
+          errors << Installer::WorkflowConfigurationIncompleteException.new("The installer configuration is missing a '#{q.id}' value for the #{id} workflow.")
+        else
+          return q.valid?(deployment, workflow_cfg[q.id], check) if check == :basic
+          errors.concat(q.valid?(deployment, workflow_cfg[q.id], check))
+        end
+      end
+      return true if check == :basic
+      errors
+    end
   end
 end

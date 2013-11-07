@@ -1,4 +1,6 @@
 require 'installer/helpers'
+require 'installer/host_instance'
+require 'installer/dns_config'
 
 module Installer
   class Deployment
@@ -41,7 +43,8 @@ module Installer
           hosts << Installer::HostInstance.new(host_instance)
         end
       end
-      set_dns(deployment.has_key?('DNS') ? deployment['DNS'] : {})
+      dns_config = deployment.has_key?('DNS') ? deployment['DNS'] : {}
+      @dns = Installer::DNSConfig.new(dns_config)
     end
 
     def brokers
@@ -110,33 +113,37 @@ module Installer
       save_to_disk!
     end
 
-    def is_complete?
-      self.class.list_map.values.each do |group|
-        if self.send(group).length == 0
-          return false
+    def is_valid?(check=:basic)
+      errors = []
+      # See if there's at least one of each role
+      self.class.list_map.each_pair do |role,group|
+        group_list = self.send(group)
+        if group_list.length == 0
+          return false if check == :basic
+          errors << Installer::DeploymentRoleMissingException.new("There must be at least one #{role.to_s} in the deployment configuration.")
+        elsif not group == :nodes and group_list.length > 1
+          return false if check == :basic
+          errors << Installer::DeploymentMultipleRoleHostsException.new("There cannot be more than one #{role.to_s} host in the deployment configuration.")
         end
       end
-      if not dns.has_key?('app_domain')
-        return false
-      end
-      true
-    end
-
-    def is_valid?(check=:basic)
-      # Check the host list
-      if hosts.select{ |h| h.is_valid?(check) == false }.length > 0
-        return false
-      end
-      [:broker, :mqserver, :dbserver].each do |role|
-        if not hosts.select{ |h| h.roles.include?(role) }.length == 1
+      # Check the host entries
+      if check == :basic
+        if hosts.select{ |h| h.is_valid?(check) == false }.length > 0
           return false
+        end
+      else
+        hosts.each do |host_instance|
+          errors.concat(host_instance.is_valid?(check))
         end
       end
       # Check the DNS setup
-      if not dns.has_key?('app_domain') or not is_valid_domain?(dns['app_domain'])
-        return false if check == :basic
+      if check == :basic
+        return false if not dns.is_valid?(check)
+      else
+        errors.concat(dns.is_valid?(check))
       end
-      true
+      return true if check == :basic
+      errors
     end
 
     def is_valid_role_list? role
@@ -148,16 +155,12 @@ module Installer
 
     def to_hash
       { 'Hosts' => hosts.map{ |h| h.to_hash },
-        'DNS' => dns,
+        'DNS' => dns.to_hash,
       }
     end
 
     def get_role_list role
       hosts.select{ |h| h.roles.include?(role) }
-    end
-
-    def set_dns dns
-      @dns = dns
     end
 
     private

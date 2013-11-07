@@ -1,4 +1,5 @@
 require 'highline'
+require 'installer/deployment'
 
 module Installer
   class Question
@@ -25,16 +26,6 @@ module Installer
             menu.choice(group.chop) { workflow_cfg[id] = role.to_s }
           end
         end
-      elsif type == 'rolelist'
-        legal_values = Installer::Deployment.roles.join(', ') + ', all'
-        qtext = [text, ' [', legal_values, ']'].join
-        workflow_cfg[id] = HighLine.ask(qtext) { |q|
-          if workflow_cfg.has_key?(id)
-            q.default = workflow_cfg[id]
-          end
-          q.validate = lambda { |p| is_valid_role_list?(p) }
-          q.responses[:not_valid] = "Provide a value or list of values from: #{legal_values}."
-        }
       elsif type.start_with?('rolehost')
         role = type.split(':')[1].to_sym
         choose do |menu|
@@ -43,22 +34,6 @@ module Installer
             menu.choice(host_instance.summarize) { workflow_cfg[id] = host_instance.host }
           end
         end
-      elsif type == 'remotehost'
-        workflow_cfg[id] = HighLine.ask(text) { |q|
-          if workflow_cfg.has_key?(id)
-            q.default = workflow_cfg[id]
-          end
-          q.validate = lambda { |p| is_valid_remotehost?(p) }
-          q.responses[:not_valid] = "Provide a value in the form <username>@<hostname>[:<ssh_port>]"
-        }
-      elsif type == 'mongodbhost'
-        workflow_cfg[id] = HighLine.ask(text) { |q|
-          if workflow_cfg.has_key?(id)
-            q.default = workflow_cfg[id]
-          end
-          q.validate = lambda { |p| is_valid_mongodbhost?(p) }
-          q.responses[:not_valid] = "Provide a value in the form [username:password@]host1[:port1][,host2[:port2],...[,hostN[:portN]]]"
-        }
       elsif type == 'Integer'
         workflow_cfg[id] = HighLine.ask(text, Integer) { |q|
           if workflow_cfg.has_key?(id)
@@ -80,18 +55,18 @@ module Installer
       end
     end
 
-    def valid? deployment, value
-      if type == 'remotehost'
-        return is_valid_remotehost?(value)
-      elsif type == 'mongodbhost'
-        return is_valid_mongodbhost?(value)
-      elsif type == 'role'
-        return false if not Installer::Deployment.role_map.keys.map{ |role| role.to_s }.include?(value)
-      elsif type.start_with?('rolehost')
-        role = type.split(':')[1].to_sym
-        return false if deployment.hosts.select{ |h| h.host == value and h.roles.include?(role) }.length == 0
+    def is_valid?(deployment, value, check=:basic)
+      errors = []
+      if (type == 'role' and not Installer::Deployment.role_map.has_key?(value.to_sym)) or
+        (type.start_with?('rolehost') and deployment.hosts.select{ |h| h.host == value and h.roles.include?(type.split(':')[1].to_sym) }.length == 0) or
+        (type == 'text' and not is_valid_string?(value)) or
+        (type == 'Integer' and not value.to_s.match(/\d+/)) or
+        (type == 'version' and not workflow.versions.include?(value))
+        return false if check == :basic
+        errors << Installer::WorkflowConfigValueException.new("The configuration for workflow '#{workflow.id}' contains an invalid value '#{value}' for configuration setting '#{id}'.")
       end
-      true
+      return true if check == :basic
+      errors
     end
   end
 end

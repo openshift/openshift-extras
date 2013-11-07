@@ -49,6 +49,18 @@ module Installer
     end
   end
 
+  class WorkflowConfigValueException < Exception
+    def initialize(message="A workflow configuration value is not valid.", code=1)
+      super(message, code)
+    end
+  end
+
+  class WorkflowConfigurationIncompleteException < Exception
+    def initialize(message="The workflow configuration is missing one or more settings.", code=1)
+      super(message, code)
+    end
+  end
+
   class WorkflowExecutableException < Exception
     def initialize(message="A workflow executable could not be found or is not system-executable.", code=1)
       super(message, code)
@@ -69,6 +81,30 @@ module Installer
 
   class DeploymentCheckFailedException < Exception
     def initialize(message="The deployment check was not successful. See above for specific issues.", code=1)
+      super(message, code)
+    end
+  end
+
+  class DeploymentRoleMissingException < Exception
+    def initialize(message="One of the deployment roles has not been assigned to any host instance.", code=1)
+      super(message, code)
+    end
+  end
+
+  class DeploymentMultipleRoleHostsException < Exception
+    def initialize(message="The installer currently does not support deployments with multiple instances of some roles.", code=1)
+      super(message, code)
+    end
+  end
+
+  class DNSConfigDomainInvalidException < Exception
+    def initialize(message="One of the domains specified in the DNS configuration is invalid.", code=1)
+      super(message, code)
+    end
+  end
+
+  class DNSConfigDomainMissingException < Exception
+    def initialize(message="A required DNS domain value is missing from the DNS configuration.", code=1)
       super(message, code)
     end
   end

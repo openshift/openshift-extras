@@ -31,36 +31,56 @@ module Installer
         ui_welcome_screen
       else
         # Check the Deployment
-        unless deployment.is_complete?
-          puts translate :exit_incomplete_deployment
-          return 1
-        end
-        puts translate :info_wait_config_validation
-        begin
-          deployment.is_valid?(:full)
-        rescue Exception => msg
-          say "\nThe deployment validity test returned an error:\n#{msg.inspect}\nUnattended deployment terminated.\n"
-          return 1
+        saw_errors = false
+        say translate(:info_wait_configuration_validation)
+        say "\n" + translate(:info_deployment_validation) + " "
+        errors = deployment.is_valid?(:full)
+        if errors.length > 0
+          saw_errors = true
+          say translate(:info_found_errors)
+          errors.each do |e|
+            say "\n* #{e.message}"
+          end
+        else
+          say translate(:info_good_to_go)
         end
 
         # Check the Workflow settings
-        puts translate(:info_config_is_valid)
         @workflow = Installer::Workflow.find(workflow_id)
         @workflow_cfg = config.get_workflow_cfg(workflow_id)
-        if not workflow_cfg_complete?
-          say translate :error_unattended_workflow_cfg
-          say translate :unattended_not_possible
-          return 1
+        if workflow.questions.length > 0
+          say "\n" + translate(:info_workflow_validation) + " "
+          errors = workflow.is_valid_config?(workflow_cfg, deployment, :full)
+          if errors.length > 0
+            saw_errors = true
+            say translate(:info_found_errors)
+            errors.each do |e|
+              say "\n* #{e.message}"
+            end
+          else
+            say translate(:info_good_to_go)
+          end
         end
 
         # Check the subscription info
         if workflow.check_subscription?
-          begin
-            merged_subscription.is_valid?(:full)
-          rescue Exception => msg
-            say "\nThe subscription settings check returned an error:\n#{msg.inspect}\nUnattended deployment terminated.\n"
-            return 1
+          say "\n" + translate(:info_subscription_validation) + " "
+          errors = merged_subscription.is_valid?(:full)
+          if errors.length > 0
+            saw_errors = true
+            say translate(:info_found_errors)
+            errors.each do |e|
+              say "\n* #{e.message}"
+            end
+          else
+            say translate(:info_good_to_go)
           end
+        end
+
+        # If the config has problems, time to bail out.
+        if saw_errors
+          say "\n" + translate(:error_unattended_workflow_cfg)
+          return 1
         end
 
         # Reach out to the remote hosts
@@ -76,20 +96,6 @@ module Installer
       0
     end
 
-    def workflow_cfg_complete?
-      if workflow.nil? or (workflow.questions.length > 0 and (workflow_cfg.nil? or workflow_cfg.empty?))
-        return false
-      end
-      workflow.questions.each do |q|
-        if not workflow_cfg.has_key?(q.id) or not q.valid?(deployment, workflow_cfg[q.id])
-          return false
-        end
-      end
-      if workflow.questions.length != workflow_cfg.keys.length
-        return false
-      end
-      true
-    end
 
     def save_subscription?
       @save_subscription
@@ -138,7 +144,7 @@ module Installer
 
       # Deployment check
       if workflow.check_deployment?
-        if not deployment.is_complete? or not deployment.is_valid?
+        if not deployment.is_valid?
           ui_show_deployment(translate(:info_force_run_deployment_setup))
           ui_edit_deployment
         else
@@ -155,7 +161,7 @@ module Installer
         msub = merged_subscription
         sub_question = "\nDo you want to make any changes to the subscription info in the configuration file?"
         sub_followup = "\nDo you want to go back and modify your subscription info settings in the configuration file?"
-        if not msub.is_complete? or not Installer::Subscription.valid_types_for_context.include?(msub.subscription_type)
+        if not msub.is_valid? or not Installer::Subscription.valid_types_for_context.include?(msub.subscription_type)
           ui_show_subscription(translate(:info_force_run_subscription_setup))
           puts "\n"
           @show_menu = true
@@ -254,7 +260,7 @@ module Installer
     def ui_edit_deployment
       # Force the configuration of anything that is missing
       resolved_issues = false
-      unless deployment.dns.keys.length > 0
+      if not deployment.dns.is_valid?
         resolved_issues = true
         say "\n#{translate(:info_force_run_dns_setup)}"
         ui_modify_dns
@@ -432,15 +438,32 @@ module Installer
     end
 
     def ui_modify_dns
-      new_dns = {}
-      new_dns['app_domain'] = ask("\nWhat domain will be used for hosted applications? ") { |q|
-        if deployment.dns.has_key?('app_domain')
-          q.default = deployment.dns['app_domain']
+      deployment.dns.app_domain = ask("\nWhat domain will be used for hosted applications? ") { |q|
+        if not deployment.dns.app_domain.nil?
+          q.default = deployment.dns.app_domain
         end
         q.validate = lambda { |p| is_valid_domain?(p) }
         q.responses[:not_valid] = "Enter a valid domain"
       }.to_s
-      deployment.set_dns new_dns
+      deployment.dns.register_components = concur("\nDo you want DNS entries for your OpenShift component hosts to be registered with the OpenShift DNS service?")
+      if deployment.dns.register_components?
+        loop do
+          deployment.dns.component_domain = ask("\nWhat domain will be used for OpenShift components? ") { |q|
+            if not deployment.dns.component_domain.nil?
+              q.default = deployment.dns.component_domain
+            end
+            q.validate = lambda { |p| is_valid_domain?(p) }
+            q.responses[:not_valid] = "Enter a valid domain"
+          }.to_s
+          if deployment.dns.app_domain == deployment.dns.component_domain
+            break if concur("\nYou are using the same domain name for your applications and your OpenShift components. Do you wish to keep these settings?")
+          else
+            break
+          end
+        end
+      else
+        deployment.dns.component_domain = nil
+      end
       deployment.save_to_disk!
     end
 
@@ -730,11 +753,11 @@ module Installer
     end
 
     def list_dns
-      puts "\nDNS Settings\n"
-      if deployment.dns.has_key?('app_domain')
-        puts "  * App Domain: #{deployment.dns['app_domain']}"
-      else
-        puts "  [Not set]"
+      say "\nDNS Settings\n"
+      say "  * App Domain: #{deployment.dns.app_domain || '[unset]'}"
+      say "  * Register OpenShift components with OpenShift DNS? #{deployment.dns.register_components? ? 'Yes' : 'No'}"
+      if not deployment.dns.component_domain.nil?
+        say "  * Component Domain: #{deployment.dns.component_domain}"
       end
     end
 
