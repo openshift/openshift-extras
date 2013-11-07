@@ -500,6 +500,8 @@ class OpenShiftAdminCheckSources:
             except KeyError as ke:
                 self.logger.error('Repository %s not enabled'%repoid)
                 res = False
+            except Errors.RepoError, e:
+                raise UnrecoverableYumError, e
         # for repoid, pri in self.resolved_repos.iteritems():
         #     if not old_resolved_repos.get(repoid, None) == pri:
         #         self._set_pri(repoid, pri)
