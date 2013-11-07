@@ -149,7 +149,7 @@ module Installer
           ui_edit_deployment
         else
           ui_show_deployment
-          if concur("\nDo you want to change the basic deployment info?", translate(:help_basic_deployment))
+          if concur("\nDo you want to change the deployment info?", translate(:help_basic_deployment))
             ui_edit_deployment
           end
         end
