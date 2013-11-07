@@ -22,8 +22,7 @@ end
 
 # If this is the add-a-node scenario, the node to be installed will
 # be passed via the command line
-@target_version = ARGV[0]
-@target_node_hostname = ARGV[1]
+@target_node_hostname = ARGV[0]
 @target_node_ssh_host = nil
 
 @tmpdir = ENV['TMPDIR'] || '/tmp'
@@ -266,8 +265,9 @@ host_order.each do |ssh_host|
   @env_map.each_pair do |env,val|
     filetext << "export #{env}=#{shellescape(val)}\n"
   end
-  filetext << "./openshift.sh |& tee -a ~/openshift-install.log && rm -rf $0 ./openshift.sh\n"
-  filetext << "exit"
+  filetext << "./openshift.sh |& tee -a ~/openshift-install.log\n"
+  filetext << "rm -f ./openshift.sh ./#{hostfile}\n"
+  filetext << "exit\n"
 
   # Save it out so we can copy it to the target
   hostfilepath = "#{@tmpdir}/#{hostfile}"
@@ -326,12 +326,16 @@ host_order.each do |ssh_host|
     if not ssh_host == 'localhost'
       system "#{@ssh_cmd} #{user}@#{ssh_host} '#{sudo}chmod u+x ~/#{hostfile} ~/openshift.sh \&\& #{sudo}~/#{hostfile}'"
     else
+      # Set up the command before we dump ENV
+      command = "bash -l -c '#{sudo}#{ENV['HOME']}/#{hostfile}'"
+
       # Local installation. Clean out the ENV.
       clear_env
 
       # Run the launcher
-      system "bash -l -c '#{sudo}#{ENV['HOME']}/#{hostfile}'"
+      system command
       exit_code = $?.exitstatus
+
       # Now restore the original env
       restore_env
     end
