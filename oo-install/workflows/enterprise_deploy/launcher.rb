@@ -169,19 +169,18 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
         exit 1
       end
 
-
-      if role == 'node'
-        if @target_node_hostname == host_info['host']
+      if role == 'node' and @target_node_hostname == host_info['host']
           @target_node_ssh_host = host_info['ssh_host']
-        end
-        # Throw this role:fqdn combo in the named_hosts list
-        named_hosts << "node:#{host_info['host']}"
-        # Skip other node-oriented config for now.
-        next
       end
+
       @role_map[role].each do |ose_cfg|
         # Throw this role:fqdn combo in the named_hosts list
         named_hosts << "#{ose_cfg['component']}:#{host_info['host']}"
+
+        # Bail out if this is a node; we'll come back to nodes later.
+        break if role == 'node'
+
+        # Get the rest of the OSE-role-specific settings
         @env_map[ose_cfg['env_hostname']] = host_info['host']
         if ose_cfg.has_key?('env_ip_addr')
           @env_map[ose_cfg['env_ip_addr']] = host_info['ip_addr']
@@ -189,6 +188,8 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
       end
     end
   end
+
+  # DNS settings
   @env_map['CONF_DOMAIN'] = config_dns['app_domain']
   if config_dns.has_key?('register_components') and config_dns['register_components'] == 'yes'
     if not config_dns.has_key?('component_domain')
