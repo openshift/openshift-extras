@@ -169,17 +169,19 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
         exit 1
       end
 
-      # Throw this role:fqdn combo in the named_hosts list
-      named_hosts << "#{role}:#{host_info['host']}"
 
       if role == 'node'
         if @target_node_hostname == host_info['host']
           @target_node_ssh_host = host_info['ssh_host']
         end
+        # Throw this role:fqdn combo in the named_hosts list
+        named_hosts << "node:#{host_info['host']}"
         # Skip other node-oriented config for now.
         next
       end
       @role_map[role].each do |ose_cfg|
+        # Throw this role:fqdn combo in the named_hosts list
+        named_hosts << "#{ose_cfg['component']}:#{host_info['host']}"
         @env_map[ose_cfg['env_hostname']] = host_info['host']
         if ose_cfg.has_key?('env_ip_addr')
           @env_map[ose_cfg['env_ip_addr']] = host_info['ip_addr']
