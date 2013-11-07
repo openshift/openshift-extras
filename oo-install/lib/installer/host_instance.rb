@@ -59,35 +59,37 @@ module Installer
     end
 
     def is_valid?(check=:basic)
+      errors = []
       if not is_valid_hostname?(host) or host == 'localhost'
         return false if check == :basic
-        raise Installer::HostInstanceHostNameException.new("Host instance host name '#{host}' is invalid. Note that 'localhost' is not a permitted value here.")
+        errors << Installer::HostInstanceHostNameException.new("Host instance host name '#{host}' is invalid. Note that 'localhost' is not a permitted value here.")
       end
       if not is_valid_hostname?(ssh_host)
         return false if check == :basic
-        raise Installer::HostInstanceHostNameException.new("Host instance SSH host name '#{host}' is invalid.")
+        errors << Installer::HostInstanceHostNameException.new("Host instance SSH host name '#{host}' is invalid.")
       end
       if not is_valid_username?(user) or (localhost? and not user == `whoami`.chomp)
         return false if check == :basic
-        raise Installer::HostInstanceUserNameException.new("Host instance '#{host}' has an invalid user name '#{user}'.")
+        errors << Installer::HostInstanceUserNameException.new("Host instance '#{host}' has an invalid user name '#{user}'.")
       end
       if roles.length == 0
         return false if check == :basic
-        raise Installer::HostInstanceUnassignedException.new("Host instance '#{host}' is not configured to any OpenShift roles.")
+        errors << Installer::HostInstanceUnassignedException.new("Host instance '#{host}' is not configured to any OpenShift roles.")
       end
       if not roles.length == roles.uniq.length
         return false if check == :basic
-        raise Installer::HostInstanceDuplicateRoleException.new("Host instance '#{host}' has been assigned to the same role multiple times.")
+        errors << Installer::HostInstanceDuplicateRoleException.new("Host instance '#{host}' has been assigned to the same role multiple times.")
       end
       if (is_broker? or is_node?) and not is_valid_ip_addr?(ip_addr)
         return false if check == :basic
-        raise Installer::HostInstanceIPAddressException.new("Host instance '#{host}' has an invalid ip address '#{ip_addr}'.")
+        errors << Installer::HostInstanceIPAddressException.new("Host instance '#{host}' has an invalid ip address '#{ip_addr}'.")
       end
       if [:origin, :origin_vm].include?(get_context) and is_node? and not is_valid_string?(ip_interface)
         return false if check == :basic
-        raise Installer::HostInstanceIPInterfaceException.new("Host instance '#{host}' has a blank or missing ip interface setting.")
+        errors << Installer::HostInstanceIPInterfaceException.new("Host instance '#{host}' has a blank or missing ip interface setting.")
       end
-      true
+      return true if check == :basic
+      errors
     end
 
     def add_role role
