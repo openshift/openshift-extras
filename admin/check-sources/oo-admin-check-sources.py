@@ -551,7 +551,7 @@ class OpenShiftAdminCheckSources:
         """
         if self.opts.oo_version:
             if not self.opts.oo_version in VALID_OO_VERSIONS:
-                self.logger.error('You have specified an invalid version: %s is not one of %s'%(self.opts.oo_version, self.valid_oo_versions))
+                self.logger.error('You have specified an invalid version: %s is not one of %s'%(self.opts.oo_version, VALID_OO_VERSIONS))
                 self.opt_parser.print_help()
                 return False
         return True
