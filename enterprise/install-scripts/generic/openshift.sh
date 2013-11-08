@@ -612,7 +612,7 @@ name=RHEL 6 base OS
 baseurl=${rhel_repo}
 enabled=1
 gpgcheck=0
-priority=2
+priority=20
 sslverify=false
 exclude=tomcat6*
 
@@ -629,7 +629,7 @@ name=RHEL 6 Optional
 baseurl=${rhel_optional_repo}
 enabled=1
 gpgcheck=0
-priority=2
+priority=20
 sslverify=false
 
 YUM
@@ -657,7 +657,7 @@ name=OpenShift Client
 baseurl=$(ose_yum_repo_url RHOSE-CLIENT-2.0)
 enabled=1
 gpgcheck=0
-priority=1
+priority=10
 sslverify=false
 
 YUM
@@ -671,7 +671,7 @@ name=OpenShift Infrastructure
 baseurl=$(ose_yum_repo_url RHOSE-INFRA-2.0)
 enabled=1
 gpgcheck=0
-priority=1
+priority=10
 sslverify=false
 
 YUM
@@ -685,7 +685,7 @@ name=OpenShift Node
 baseurl=$(ose_yum_repo_url RHOSE-NODE-2.0)
 enabled=1
 gpgcheck=0
-priority=1
+priority=10
 sslverify=false
 
 YUM
@@ -699,7 +699,7 @@ name=OpenShift JBossEAP
 baseurl=$(ose_yum_repo_url RHOSE-JBOSSEAP-2.0)
 enabled=1
 gpgcheck=0
-priority=1
+priority=10
 sslverify=false
 
 YUM
@@ -715,7 +715,7 @@ configure_jbosseap_repo()
 name=jbosseap
 baseurl=${jboss_repo_base}/jbeap/6/os
 enabled=1
-priority=3
+priority=30
 gpgcheck=0
 
 YUM
@@ -732,7 +732,7 @@ configure_jbossews_repo()
 name=jbossews
 baseurl=${jboss_repo_base}/jbews/2/os
 enabled=1
-priority=3
+priority=30
 gpgcheck=0
 
 YUM
@@ -748,7 +748,7 @@ configure_rhscl_repo()
 name=rhscl
 baseurl=${rhscl_repo_base}/rhscl/1/os/
 enabled=1
-priority=3
+priority=30
 gpgcheck=0
 
 YUM
@@ -779,11 +779,11 @@ configure_rhn_channels()
 {
   if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
     echo "Register with RHN using an activation key"
-    rhnreg_ks --force --activationkey=${CONF_RHN_REG_ACTKEY} --profilename="$profile_name" || abort_install
+    rhnreg_ks --force --activationkey="${CONF_RHN_REG_ACTKEY}" --profilename="$profile_name" || abort_install
   else
     echo "Register with RHN with username and password"
     set +x # don't log password
-    rhnreg_ks --force --profilename="$profile_name" --username ${CONF_RHN_USER} --password ${CONF_RHN_PASS} || abort_install
+    rhnreg_ks --force --profilename="$profile_name" --username "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
     set -x
   fi
 
@@ -791,21 +791,21 @@ configure_rhn_channels()
   RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
 
   # OSE packages are first priority
-  need_client_tools_repo && rhn_setopt rhel-x86_64-server-6-ose-2-rhc-beta priority=1
-  need_infra_repo && rhn_setopt rhel-x86_64-server-6-ose-2-infrastructure-beta priority=1
-  need_node_repo && rhn_setopt rhel-x86_64-server-6-ose-2-node-beta priority=1
-  need_jbosseap_repo && rhn_setopt rhel-x86_64-server-6-ose-2-jbosseap-beta priority=1
+  need_client_tools_repo && rhn_setopt rhel-x86_64-server-6-ose-2-rhc-beta priority=10
+  need_infra_repo && rhn_setopt rhel-x86_64-server-6-ose-2-infrastructure-beta priority=10
+  need_node_repo && rhn_setopt rhel-x86_64-server-6-ose-2-node-beta priority=10
+  need_jbosseap_repo && rhn_setopt rhel-x86_64-server-6-ose-2-jbosseap-beta priority=10
 
   # RHEL packages are second priority
-  rhn_setopt rhel-x86_64-server-6 priority=2 "exclude=tomcat6*"
+  rhn_setopt rhel-x86_64-server-6 priority=20 "exclude=tomcat6*"
   # While RHEL 6.5 is in beta, add that channel
-  rhn_setopt rhel-x86_64-server-6-beta priority=2 "exclude=tomcat6*"
+  rhn_setopt rhel-x86_64-server-6-beta priority=20 "exclude=tomcat6*"
 
   # JBoss packages are third priority -- and all else is lower
-  need_jbosseap_repo && rhn_setopt jbappplatform-6-x86_64-server-6-rpm priority=3
-  need_jbossews_repo && rhn_setopt jb-ews-2-x86_64-server-6-rpm priority=3
+  need_jbosseap_repo && rhn_setopt jbappplatform-6-x86_64-server-6-rpm priority=30
+  need_jbossews_repo && rhn_setopt jb-ews-2-x86_64-server-6-rpm priority=30
 
-  need_rhscl_repo && rhn_setopt rhel-x86_64-server-6-rhscl-1 priority=3
+  need_rhscl_repo && rhn_setopt rhel-x86_64-server-6-rhscl-1 priority=30
   need_optional_repo && rhn_setopt rhel-x86_64-server-optional-6
 }
 
@@ -826,11 +826,11 @@ configure_rhsm_channels()
 {
    echo "Register with RHSM"
    set +x # don't log password
-   subscription-manager register --force --username=$CONF_RHN_USER --password=$CONF_RHN_PASS --name "$profile_name" || abort_install
+   subscription-manager register --force --username="$CONF_RHN_USER" --password="$CONF_RHN_PASS" --name "$profile_name" || abort_install
    set -x
    for poolid in ${CONF_SM_REG_POOL//,/ }; do
      echo "Registering subscription from pool id $poolid"
-     subscription-manager attach --pool $poolid || abort_install
+     subscription-manager attach --pool "$poolid" || abort_install
    done
 
    # have yum sync new list of repos from rhsm before changing settings
@@ -847,28 +847,28 @@ configure_rhsm_channels()
 
 
    # configure the RHEL subscription
-   ycm_setopt rhel-6-server-rpms priority=2 "exclude=tomcat6*"
+   ycm_setopt rhel-6-server-rpms priority=20 "exclude=tomcat6*"
    need_optional_repo && ycm_setopt rhel-6-server-optional-rpms enabled=True
    # for the duration of the RHEL 6.5 beta need to enable that too
-   ycm_setopt rhel-6-server-beta-rpms priority=2 "exclude=tomcat6*"
+   ycm_setopt rhel-6-server-beta-rpms priority=20 "exclude=tomcat6*"
 
    # and the OpenShift subscription (beta until 2.0 is GA)
-   need_infra_repo && ycm_setopt rhel-6-server-ose-2-beta-infra-rpms priority=1
-   need_client_tools_repo && ycm_setopt rhel-6-server-ose-2-beta-rhc-rpms priority=1
-   need_node_repo && ycm_setopt rhel-6-server-ose-2-beta-node-rpms priority=1
-   need_jbosseap_cartridge_repo && ycm_setopt rhel-6-server-ose-2-beta-jbosseap-rpms priority=1
+   need_infra_repo && ycm_setopt rhel-6-server-ose-2-beta-infra-rpms priority=10
+   need_client_tools_repo && ycm_setopt rhel-6-server-ose-2-beta-rhc-rpms priority=10
+   need_node_repo && ycm_setopt rhel-6-server-ose-2-beta-node-rpms priority=10
+   need_jbosseap_cartridge_repo && ycm_setopt rhel-6-server-ose-2-beta-jbosseap-rpms priority=10
    # SCL now handles many dependencies
-   # need_rhscl_repo && ycm_setopt rhscl-1-for-rhel-6-server-rpms priority=2  #"should" be this
-   need_rhscl_repo && ycm_setopt rhel-server-rhscl-6-rpms priority=2      # for beta appears to be this
+   # need_rhscl_repo && ycm_setopt rhscl-1-for-rhel-6-server-rpms priority=20  #"should" be this
+   need_rhscl_repo && ycm_setopt rhel-server-rhscl-6-rpms priority=20      # for beta appears to be this
 
    # and JBoss subscriptions for the node
    if need_jbosseap_repo; then
-     ycm_setopt jb-eap-6-for-rhel-6-server-rpms priority=3
+     ycm_setopt jb-eap-6-for-rhel-6-server-rpms priority=30
      yum-config-manager $disable_plugin --disable jb-eap-5-for-rhel-6-server-rpms > /dev/null
    fi
 
    if need_jbossews_repo; then
-     ycm_setopt jb-ews-2-for-rhel-6-server-rpms priority=3
+     ycm_setopt jb-ews-2-for-rhel-6-server-rpms priority=30
      yum-config-manager $disable_plugin --disable jb-ews-1-for-rhel-6-server-rpms > /dev/null
    fi
 
@@ -1941,7 +1941,7 @@ add_host_to_zone()
 configure_hosts_dns()
 {
   add_host_to_zone "$named_hostname" "$named_ip_addr" # always define self
-  if [ -z $CONF_NAMED_ENTRIES ]; then
+  if [ -z "$CONF_NAMED_ENTRIES" ]; then
     # Add A records for any other components that are being installed locally.
     broker && add_host_to_zone "$broker_hostname" "$broker_ip_addr"
     node && add_host_to_zone "$node_hostname" "$node_ip_addr"
