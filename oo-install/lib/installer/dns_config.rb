@@ -9,7 +9,7 @@ module Installer
     def initialize dns_config
       @app_domain = dns_config['app_domain'] || 'example.com'
       @component_domain = dns_config['component_domain']
-      @register_components = dns_config['register_components'] == 'yes'
+      @register_components = dns_config['register_components']
     end
 
     def register_components?
@@ -21,6 +21,10 @@ module Installer
       if not is_valid_domain?(app_domain)
         return false if check == :basic
         errors << Installer::DNSConfigDomainInvalidException.new("The application DNS domain value '#{app_domain}' is invalid.")
+      end
+      if register_components.nil?
+        return false if check == :basic
+        errors << Installer::DNSConfigMissingSettingException.new("The DNS configuration is missing a value for the 'register_components' setting.")
       end
       if register_components? and component_domain.nil?
         return false if check == :basic

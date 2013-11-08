@@ -758,7 +758,15 @@ module Installer
     def list_dns
       say "\nDNS Settings\n"
       say "  * App Domain: #{deployment.dns.app_domain || '[unset]'}"
-      say "  * Register OpenShift components with OpenShift DNS? #{deployment.dns.register_components? ? 'Yes' : 'No'}"
+      say "  * Register OpenShift components with OpenShift DNS? "
+      case deployment.dns.register_components
+      when nil
+        say "[unset]"
+      when true
+        say "Yes"
+      when false
+        say "No"
+      end
       if not deployment.dns.component_domain.nil?
         say "  * Component Domain: #{deployment.dns.component_domain}"
       end
