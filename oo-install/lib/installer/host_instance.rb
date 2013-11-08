@@ -63,6 +63,10 @@ module Installer
       roles.length == 1 and roles[0] == :node
     end
 
+    def is_all_in_one?
+      roles.length == 4 and roles.include?(:broker) and roles.include?(:mqserver) and roles.include?(:dbserver) and roles.include?(:node)
+    end
+
     def is_node?
       roles.include?(:node)
     end
