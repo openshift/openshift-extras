@@ -29,17 +29,20 @@ module Installer
       end
     end
 
-    def has_valid_access?
+    def confirm_access
+      info = { :valid_access => true, :error => nil }
       begin
         result = ssh_exec!("command -v ip")
         if result[:exit_code] == 0
           @ip_exec_path = result[:stdout].chomp
-          return true
+        else
+          info[:valid_access] = false
         end
-        return false
       rescue Net::SSH::AuthenticationFailed, SocketError, Timeout::Error => e
-        return false
+        info[:valid_access] = false
+        info[:error] = e
       end
+      info
     end
 
     def root_user?
@@ -50,8 +53,14 @@ module Installer
       ssh_host == 'localhost'
     end
 
-    def is_broker?
-      roles.include?(:broker)
+    def is_basic_broker?
+      # Basic broker has three roles
+      roles.length == 3 and roles.include?(:broker) and roles.include?(:mqserver) and roles.include?(:dbserver)
+    end
+
+    def is_basic_node?
+      # This specifically checks for node hosts with no other roles. For general use, call 'is_node?' instead.
+      roles.length == 1 and roles[0] == :node
     end
 
     def is_node?

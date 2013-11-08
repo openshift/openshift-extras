@@ -141,6 +141,11 @@ module Installer
       errors
     end
 
+    def is_advanced?
+      hosts.select{ |h| not h.is_basic_broker? and not h.is_basic_node? }.length > 0
+    end
+
+
     def is_valid_role_list? role
       list = self.send(self.class.list_map[role])
       return false if list.length == 0

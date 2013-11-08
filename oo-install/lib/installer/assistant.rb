@@ -13,10 +13,10 @@ module Installer
     attr_reader :workflow_id, :target_version
     attr_accessor :config, :deployment, :cli_subscription, :cfg_subscription, :workflow, :workflow_cfg
 
-    def initialize config, workflow_id=nil, cli_subscription=nil, target_version=nil
+    def initialize config, deployment=nil, workflow_id=nil, cli_subscription=nil, target_version=nil
       @config = config
       @target_version = target_version
-      @deployment = config.get_deployment
+      @deployment = deployment || config.get_deployment
       @cfg_subscription = config.get_subscription
       @cli_subscription = cli_subscription
       @workflow_id = workflow_id
@@ -652,11 +652,15 @@ module Installer
               q.responses[:not_valid] = "Enter a valid linux username"
             }.to_s
             say "Validating #{host_instance.user}@#{host_instance.ssh_host}... "
-            if host_instance.has_valid_access?
+            ssh_access_info = host_instance.confirm_access
+            if ssh_access_info[:valid_access]
               say "looks good."
               break
             else
-              say "\nCould not connect to #{host_instance.ssh_host} with user #{host_instance.user}. You must set up an SSH key pair and using ssh-agent is strongly recommended."
+              say "\nCould not connect to #{host_instance.ssh_host} with user #{host_instance.user}."
+              if not ssh_access_info[:error].nil?
+                say "The SSH attempt yielded the following error:\n\"#{ssh_access_info[:error].message}\""
+              end
             end
           else
             # For localhost, run with what we already have
@@ -781,7 +785,7 @@ module Installer
         Installer::HostInstance.attrs.each do |attr|
           value = host_instance.send(attr)
           if value.nil?
-            if attr == :ip_addr and host_instance.is_broker? or host_instance.is_node?
+            if attr == :ip_addr
               value = "[unset]"
             elsif [:origin_vm,:origin].include?(get_context) and attr == :ip_interface and host_instance.is_node?
               value = "[unset]"
@@ -849,16 +853,17 @@ module Installer
         say "\nChecking #{host_instance.host}:"
         # Attempt SSH connection for remote hosts
         if not host_instance.localhost?
-          begin
-            host_instance.get_ssh_session
-          rescue Errno::ECONNREFUSED => e
-            say "* SSH connection refused; check SSH settings"
+          ssh_access_info = host_instance.confirm_access
+          if not ssh_access_info[:valid_access]
+            text = "* SSH connection could not be established"
+            if not ssh_access_info[:error].nil?
+              text << ":\n  \"#{ssh_access_info[:error].message}\""
+            else
+              text << "."
+            end
+            say text
             deployment_good = false
             # Don't bother to try the rest of the checks
-            next
-          rescue SocketError => e
-            say "* SSH connection could not be established; check SSH settings"
-            deployment_good = false
             next
           end
           say "* SSH connection succeeded"

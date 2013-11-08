@@ -88,9 +88,6 @@ end
 # Set the installer context
 set_context(installer_context)
 
-# Set the interface mode
-set_mode(options[:advanced_mode])
-
 # Set the debug level
 set_debug(options[:debug])
 
@@ -141,7 +138,7 @@ end
 
 # Try to instantiate the config object
 begin
-  config = Installer::Config.new(options[:config_file])
+  @config = Installer::Config.new(options[:config_file])
 rescue Errno::ENOENT => e
   if not options[:config_file].nil?
     puts "ERROR: The configuration file could not be created at '#{options[:config_file]}'.\nEnsure that the path exists and is writeable."
@@ -150,20 +147,31 @@ rescue Errno::ENOENT => e
   end
   exit 1
 end
-unless config.is_valid?
-  puts "Could not process config file at '#{config.file_path}'. Exiting."
+if not @config.is_valid?
+  puts "Could not process config file at '#{@config.file_path}'. Exiting."
   exit 1
 end
 
+# Have a quick look at the deployment.
+# We need to figure out if the deployment setup is forcing us to use advanced mode
+@deployment = @config.get_deployment
+if not options[:advanced_mode] and @deployment.is_advanced?
+  options[:advanced_mode] = true
+  puts "The detected deployment is an advanced-mode deployment.\nAutomatically switching to advanced mode."
+end
+# Now set the interface mode
+set_mode(options[:advanced_mode])
+
+
 # Instantiate the cli-provided subscription info in a subscription object
-cli_subscription = Installer::Subscription.new(config)
+cli_subscription = Installer::Subscription.new(@config)
 cli_subscription.subscription_type = options[:subscription_type]
 cli_subscription.rh_username = options[:rh_username]
 cli_subscription.rh_password = options[:rh_password]
 
 # Set up the assistant and get going
 begin
-  @assistant = Installer::Assistant.new(config, options[:workflow_id], cli_subscription, options[:version])
+  @assistant = Installer::Assistant.new(@config, @deployment, options[:workflow_id], cli_subscription, options[:version])
 rescue Installer::UnrecognizedContextException => e
   puts "\n#{e.message}"
   exit
