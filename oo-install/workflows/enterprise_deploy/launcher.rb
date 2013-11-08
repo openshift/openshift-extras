@@ -296,7 +296,7 @@ host_order.each do |ssh_host|
   # Handle the config file copying and delete the original.
   if not ssh_host == 'localhost'
     puts "Copying deployment scripts to target #{ssh_host}.\n"
-    system "#{@scp_cmd} #{hostfilepath} #{user}@#{ssh_host}:/tmp/"
+    system "#{@scp_cmd} #{hostfilepath} #{user}@#{ssh_host}:#{hostfilepath}"
     if not $?.exitstatus == 0
       puts "Could not copy deployment configuration file to remote host. Exiting."
       saw_deployment_error = true

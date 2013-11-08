@@ -904,7 +904,11 @@ module Installer
           if host_instance.localhost?
             cmd_result[:exit_code] = which(util).nil? ? 1 : 0
           else
-            cmd_result = host_instance.exec_on_host!("command -v #{util}")
+            command = "command -v #{util}"
+            if not host_instance.root_user?
+              command = "sudo #{command}"
+            end
+            cmd_result = host_instance.exec_on_host!(command)
           end
           if not cmd_result[:exit_code] == 0
             say "* Could not locate #{util}... "
@@ -929,12 +933,12 @@ module Installer
                 say "could not locate sudo"
                 deployment_good = false
               else
-                sudo_cmd_result = host_instance.exec_on_host!("#{sudo_result[:stdout]} #{util} --version")
+                sudo_cmd_result = host_instance.exec_on_host!("sudo -l #{util}")
                 if not sudo_cmd_result[:exit_code] == 0
-                  say "could not invoke '#{util} --version' with sudo"
+                  say "cannot not invoke '#{util}' with sudo"
                   deployment_good = false
                 else
-                  say "invoked '#{util} --version' with sudo"
+                  say "can invoke '#{util}' with sudo"
                 end
               end
             else

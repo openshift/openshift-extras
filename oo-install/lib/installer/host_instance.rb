@@ -31,8 +31,12 @@ module Installer
 
     def confirm_access
       info = { :valid_access => true, :error => nil }
+      command = "command -v ip"
+      if not root_user?
+        command = "sudo #{command}"
+      end
       begin
-        result = ssh_exec!("command -v ip")
+        result = ssh_exec!(command)
         if result[:exit_code] == 0
           @ip_exec_path = result[:stdout].chomp
         else
@@ -181,24 +185,30 @@ module Installer
       exit_code = nil
       exit_signal = nil
       ssh.open_channel do |channel|
-        channel.exec(command) do |ch, success|
-          unless success
-            abort "FAILED: couldn't execute command (ssh.channel.exec)"
-          end
-          channel.on_data do |ch,data|
-            stdout_data+=data
-          end
+        channel.request_pty do |ch, pty_success|
+          if pty_success
+            channel.exec(command) do |ch, success|
+              unless success
+                abort "FAILED: couldn't execute command (ssh.channel.exec)"
+              end
+              channel.on_data do |ch,data|
+                stdout_data+=data
+              end
 
-          channel.on_extended_data do |ch,type,data|
-            stderr_data+=data
-          end
+              channel.on_extended_data do |ch,type,data|
+                stderr_data+=data
+              end
 
-          channel.on_request("exit-status") do |ch,data|
-            exit_code = data.read_long
-          end
+              channel.on_request("exit-status") do |ch,data|
+                exit_code = data.read_long
+              end
 
-          channel.on_request("exit-signal") do |ch, data|
-            exit_signal = data.read_long
+              channel.on_request("exit-signal") do |ch, data|
+                exit_signal = data.read_long
+              end
+            end
+          else
+            abort "FAILED: couldn't establish shell"
           end
         end
       end
