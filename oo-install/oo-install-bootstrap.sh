@@ -20,7 +20,7 @@ then
   echo "Reusing existing installer assets."
 else
   echo "Downloading oo-install package..."
-  curl -o ${TMPDIR}INSTALLPKGNAME.zip http://oo-install.rhcloud.com/VERPATHINSTALLPKGNAME.zip
+  curl -o ${TMPDIR}INSTALLPKGNAME.zip http://oo-install.rhcloud.com/INSTALLVERPATHINSTALLPKGNAME.zip
 fi
 
 echo "Extracting oo-install to temporary directory..."
@@ -39,7 +39,7 @@ for i in `ls $GEM_PATH`
 do
   RUBYLIB="${RUBYLIB}:${GEM_PATH}${i}/lib/"
 done
-GEM_PATH=$GEMPATH RUBYLIB=$RUBYLIB sh -c "${TMPDIR}INSTALLPKGNAME/bin/oo-install $@"
+GEM_PATH=$GEMPATH RUBYLIB=$RUBYLIB OO_INSTALL_CONTEXT=INSTALLCONTEXT sh -c "${TMPDIR}INSTALLPKGNAME/bin/oo-install $@"
 
 if [ $OO_INSTALL_KEEP_ASSETS == 'true' ]
 then

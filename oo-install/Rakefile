@@ -21,9 +21,15 @@ task :package do
   builds = [
     { :version => nil,
       :wget => nil,
+      :context => :origin,
+    },
+    { :version => 'ose',
+      :wget => nil,
+      :context => :ose,
     },
     { :version => 'ose-2.0b',
       :wget => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
+      :context => :ose,
     },
   ]
 
@@ -31,10 +37,11 @@ task :package do
     pkgname = 'oo-install-'
     pkgurl = ''
     pkgdir = @package_dir
+    context = build[:context].to_s
     if not build[:version].nil?
       pkgname << build[:version] + '-'
       pkgurl = build[:version] + '\/'
-      pkgdir << "/" + build[:version]
+      pkgdir = @package_dir + "/" + build[:version]
       Dir.mkdir(pkgdir)
     end
     pkgname << pkgtime
@@ -61,7 +68,8 @@ task :package do
     # Copy the bootstrap file to the package dir
     system 'cp', 'oo-install-bootstrap.sh', "#{pkgdir}/index.html"
     system "sed -i .bak 's/INSTALLPKGNAME/#{pkgname}/g' #{pkgdir}/index.html"
-    system "sed -i .bak 's/VERPATH/#{pkgurl}/' #{pkgdir}/index.html"
+    system "sed -i .bak 's/INSTALLVERPATH/#{pkgurl}/' #{pkgdir}/index.html"
+    system "sed -i .bak 's/INSTALLCONTEXT/#{context}/' #{pkgdir}/index.html"
     system 'rm', "#{pkgdir}/index.html.bak"
   end
 

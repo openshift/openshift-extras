@@ -58,11 +58,6 @@ def which(cmd)
   return nil
 end
 
-@tmpdir = ENV['TMPDIR'] || '/tmp'
-if @tmpdir.end_with?('/')
-  @tmpdir = @tmpdir.chop
-end
-
 # If this is the add-a-node scenario, the node to be installed will
 # be passed via the command line
 @target_node_hostname = ARGV[0]
@@ -261,8 +256,8 @@ host_order.each do |ssh_host|
     :check => 'puppet module list',
     :install => 'puppet module install openshift/openshift_origin',
     :yum_clean => 'yum clean all',
-    :apply => "puppet apply --verbose ~/#{hostfile}",
-    :clear => "rm ~/#{hostfile}",
+    :apply => "puppet apply --verbose /tmp/#{hostfile}",
+    :clear => "rm /tmp/#{hostfile}",
     :reboot => 'reboot',
     :reachable => 'exit',
   }
@@ -345,7 +340,7 @@ host_order.each do |ssh_host|
   filetext << "}\n"
 
   # Write it out so we can copy it to the target
-  hostfilepath = "#{@tmpdir}/#{hostfile}"
+  hostfilepath = "/tmp/#{hostfile}"
   if File.exists?(hostfilepath)
     File.unlink(hostfilepath)
   end
@@ -356,7 +351,7 @@ host_order.each do |ssh_host|
   # Handle the config file copying and delete the original.
   if not ssh_host == 'localhost'
     puts "Copying Puppet configuration script to target #{ssh_host}.\n"
-    system "#{@scp_cmd} #{hostfilepath} #{user}@#{ssh_host}:~/"
+    system "#{@scp_cmd} #{hostfilepath} #{user}@#{ssh_host}:/tmp/"
     if not $?.exitstatus == 0
       puts "Could not copy Puppet config to remote host. Exiting."
       saw_deployment_error = true
@@ -365,10 +360,6 @@ host_order.each do |ssh_host|
       # Copy succeeded, remove original
       File.unlink(hostfilepath)
     end
-  else
-    # localhost; relocate .pp file
-    puts "Moving Puppet configuration to #{ENV['HOME']}"
-    system "mv #{hostfilepath} #{ENV['HOME']}"
   end
 
   puts "\nRunning Puppet deployment\n\n"

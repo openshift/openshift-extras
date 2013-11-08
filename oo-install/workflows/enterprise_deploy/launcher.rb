@@ -25,11 +25,6 @@ end
 @target_node_hostname = ARGV[0]
 @target_node_ssh_host = nil
 
-@tmpdir = ENV['TMPDIR'] || '/tmp'
-if @tmpdir.end_with?('/')
-  @tmpdir = @tmpdir.chop
-end
-
 # This converts an ENV hash into a string of ENV settings
 def env_setup
   @env_map.each_pair.map{ |k,v| "#{k}=#{v}" }.join(' ')
@@ -285,12 +280,12 @@ host_order.each do |ssh_host|
   @env_map.each_pair do |env,val|
     filetext << "export #{env}=#{shellescape(val)}\n"
   end
-  filetext << "~/openshift.sh |& tee -a ~/openshift-install.log\n"
-  filetext << "rm -f ~/openshift.sh ~/#{hostfile}\n"
+  filetext << "/tmp/openshift.sh |& tee -a /tmp/openshift-install.log\n"
+  filetext << "rm -f /tmp/openshift.sh /tmp/#{hostfile}\n"
   filetext << "exit\n"
 
   # Save it out so we can copy it to the target
-  hostfilepath = "#{@tmpdir}/#{hostfile}"
+  hostfilepath = "/tmp/#{hostfile}"
   if File.exists?(hostfilepath)
     File.unlink(hostfilepath)
   end
@@ -301,7 +296,7 @@ host_order.each do |ssh_host|
   # Handle the config file copying and delete the original.
   if not ssh_host == 'localhost'
     puts "Copying deployment scripts to target #{ssh_host}.\n"
-    system "#{@scp_cmd} #{hostfilepath} #{user}@#{ssh_host}:~/"
+    system "#{@scp_cmd} #{hostfilepath} #{user}@#{ssh_host}:/tmp/"
     if not $?.exitstatus == 0
       puts "Could not copy deployment configuration file to remote host. Exiting."
       saw_deployment_error = true
@@ -310,18 +305,16 @@ host_order.each do |ssh_host|
       # Copy succeeded, remove original
       File.unlink(hostfilepath)
     end
-    system "#{@scp_cmd} #{File.dirname(__FILE__)}/openshift.sh #{user}@#{ssh_host}:~/"
+    system "#{@scp_cmd} #{File.dirname(__FILE__)}/openshift.sh #{user}@#{ssh_host}:/tmp/"
     if not $?.exitstatus == 0
-      puts "Could not copy deployment utility to remote host. Exiting."
+      puts "Could not copy deployment utility to /tmp on remote host. Exiting."
       saw_deployment_error = true
       break
     end
   else
     # localhost; relocate launcher file
-    puts "Placing deployment scripts in #{ENV['HOME']}"
-    system "mv #{hostfilepath} #{ENV['HOME']}"
-    system "cp #{File.dirname(__FILE__)}/openshift.sh #{ENV['HOME']}"
-    system "chmod u+x #{ENV['HOME']}/#{hostfile} #{ENV['HOME']}/openshift.sh"
+    system "cp #{File.dirname(__FILE__)}/openshift.sh /tmp/"
+    system "chmod u+x #{hostfilepath} /tmp/openshift.sh"
   end
 
   # Set up the commands to reboot and verify this system
@@ -344,10 +337,10 @@ host_order.each do |ssh_host|
     sudo = user == 'root' ? '' : 'sudo '
     exit_code = 0
     if not ssh_host == 'localhost'
-      system "#{@ssh_cmd} #{user}@#{ssh_host} '#{sudo}chmod u+x ~/#{hostfile} ~/openshift.sh \&\& #{sudo}~/#{hostfile}'"
+      system "#{@ssh_cmd} #{user}@#{ssh_host} '#{sudo}chmod u+x /tmp/#{hostfile} /tmp/openshift.sh \&\& #{sudo}/tmp/#{hostfile}'"
     else
       # Set up the command before we dump ENV
-      command = "bash -l -c '#{sudo}#{ENV['HOME']}/#{hostfile}'"
+      command = "bash -l -c '#{sudo}/tmp/#{hostfile}'"
 
       # Local installation. Clean out the ENV.
       clear_env
