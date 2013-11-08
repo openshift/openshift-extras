@@ -758,11 +758,11 @@ configure_rhn_channels()
 {
   if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
     echo "Register with RHN using an activation key"
-    rhnreg_ks --force --activationkey=${CONF_RHN_REG_ACTKEY} --profilename="$profile_name" || abort_install
+    rhnreg_ks --force --activationkey="${CONF_RHN_REG_ACTKEY}" --profilename="$profile_name" || abort_install
   else
     echo "Register with RHN with username and password"
     set +x # don't log password
-    rhnreg_ks --force --profilename="$profile_name" --username ${CONF_RHN_USER} --password ${CONF_RHN_PASS} || abort_install
+    rhnreg_ks --force --profilename="$profile_name" --username "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
     set -x
   fi
 
@@ -807,11 +807,11 @@ configure_rhsm_channels()
 {
    echo "Register with RHSM"
    set +x # don't log password
-   subscription-manager register --force --username=$CONF_RHN_USER --password=$CONF_RHN_PASS --name "$profile_name" || abort_install
+   subscription-manager register --force --username="$CONF_RHN_USER" --password="$CONF_RHN_PASS" --name "$profile_name" || abort_install
    set -x
    for poolid in ${CONF_SM_REG_POOL//,/ }; do
      echo "Registering subscription from pool id $poolid"
-     subscription-manager attach --pool $poolid || abort_install
+     subscription-manager attach --pool "$poolid" || abort_install
    done
 
    # have yum sync new list of repos from rhsm before changing settings
@@ -1925,7 +1925,7 @@ add_host_to_zone()
 configure_hosts_dns()
 {
   add_host_to_zone "$named_hostname" "$named_ip_addr" # always define self
-  if [ -z $CONF_NAMED_ENTRIES ]; then
+  if [ -z "$CONF_NAMED_ENTRIES" ]; then
     # Add A records for any other components that are being installed locally.
     broker && add_host_to_zone "$broker_hostname" "$broker_ip_addr"
     node && add_host_to_zone "$node_hostname" "$node_ip_addr"
