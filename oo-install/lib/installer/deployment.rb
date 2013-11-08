@@ -142,7 +142,7 @@ module Installer
     end
 
     def is_advanced?
-      hosts.select{ |h| not h.is_basic_broker? and not h.is_basic_node? }.length > 0
+      hosts.select{ |h| not h.is_basic_broker? and not h.is_basic_node? and not h.is_all_in_one? }.length > 0
     end
 
 
