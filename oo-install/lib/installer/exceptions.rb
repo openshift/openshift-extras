@@ -109,6 +109,12 @@ module Installer
     end
   end
 
+  class DNSConfigMissingSettingException < Exception
+    def initialize(message="A required setting is missing from the DNS configuration.", code=1)
+      super(message, code)
+    end
+  end
+
   class SSHNotAvailableException < Exception
     def initialize(message="An ssh client could not be found on this system. Correct this and rerun the installer.", code=1)
       super(message, code)
