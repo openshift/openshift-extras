@@ -31,12 +31,8 @@ module Installer
 
     def confirm_access
       info = { :valid_access => true, :error => nil }
-      command = "command -v ip"
-      if not root_user?
-        command = "sudo #{command}"
-      end
       begin
-        result = ssh_exec!(command)
+        result = ssh_exec!(prepare_command("command -v ip"))
         if result[:exit_code] == 0
           @ip_exec_path = result[:stdout].chomp
         else
@@ -47,6 +43,17 @@ module Installer
         info[:error] = e
       end
       info
+    end
+
+    def can_sudo_execute? util
+      command = "sudo -l #{util}"
+      sudo_check_result = {}
+      if localhost?
+        sudo_check_result = local_exec!(command)
+      else
+        sudo_check_result = ssh_exec!(command)
+      end
+      sudo_check_result[:exit_code] == 0
     end
 
     def root_user?
@@ -168,9 +175,9 @@ module Installer
 
     def exec_on_host!(command)
       if localhost?
-        local_exec!(command)
+        local_exec!(prepare_command(command))
       else
-        ssh_exec!(command)
+        ssh_exec!(prepare_command(command))
       end
     end
 
@@ -191,6 +198,7 @@ module Installer
               unless success
                 abort "FAILED: couldn't execute command (ssh.channel.exec)"
               end
+
               channel.on_data do |ch,data|
                 stdout_data+=data
               end
@@ -245,6 +253,18 @@ module Installer
 
     def set_ip_exec_path(path)
       @ip_exec_path = path
+    end
+
+    def prepare_command command
+      formatted = String.new(command)
+      if not root_user?
+        if not localhost?
+          formatted = "sudo sh -c \'#{command}\'"
+        else
+          formatted = "sudo sh -c '#{command}'"
+        end
+      end
+      formatted
     end
 
     private

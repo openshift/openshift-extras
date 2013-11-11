@@ -13,8 +13,8 @@ else
   @config_file = ENV['HOME'] + '/.openshift/oo-install-cfg.yml'
 end
 
-@ssh_cmd = 'ssh -t'
-@scp_cmd = 'scp'
+@ssh_cmd = 'ssh -t -q'
+@scp_cmd = 'scp -q'
 if ENV.has_key?('OO_INSTALL_DEBUG') and ENV['OO_INSTALL_DEBUG'] == 'true'
   @ssh_cmd = 'ssh -t -v'
   @scp_cmd = 'scp -v'
@@ -275,7 +275,6 @@ host_order.each do |ssh_host|
       end
     end
   end
-  puts "COMMANDS: #{commands.inspect}"
   @reboots << [ssh_host, commands[:reboot], commands[:reachable]]
 
   # Figure out the DNS key before we write the puppet config file

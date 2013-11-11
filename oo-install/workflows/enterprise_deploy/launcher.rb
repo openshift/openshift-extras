@@ -301,9 +301,6 @@ host_order.each do |ssh_host|
       puts "Could not copy deployment configuration file to remote host. Exiting."
       saw_deployment_error = true
       break
-    else
-      # Copy succeeded, remove original
-      File.unlink(hostfilepath)
     end
     system "#{@scp_cmd} #{File.dirname(__FILE__)}/openshift.sh #{user}@#{ssh_host}:/tmp/"
     if not $?.exitstatus == 0
@@ -352,6 +349,12 @@ host_order.each do |ssh_host|
       # Now restore the original env
       restore_env
     end
+
+    # Now we can safely remove the config file
+    if File.exists?(hostfilepath)
+      File.unlink(hostfilepath)
+    end
+
     # Leave the fork
     exit exit_code
   end

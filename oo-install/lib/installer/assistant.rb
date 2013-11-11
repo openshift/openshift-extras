@@ -904,11 +904,7 @@ module Installer
           if host_instance.localhost?
             cmd_result[:exit_code] = which(util).nil? ? 1 : 0
           else
-            command = "command -v #{util}"
-            if not host_instance.root_user?
-              command = "sudo #{command}"
-            end
-            cmd_result = host_instance.exec_on_host!(command)
+            cmd_result = host_instance.exec_on_host!("command -v #{util}")
           end
           if not cmd_result[:exit_code] == 0
             say "* Could not locate #{util}... "
@@ -922,24 +918,11 @@ module Installer
           else
             if not host_instance.root_user?
               say "* Located #{util}... "
-              sudo_result = {}
-              if host_instance.localhost?
-                sudo_result[:stdout] = which('sudo')
-                sudo_result[:exit_code] = sudo_result[:stdout].nil? ? 1 : 0
-              else
-                sudo_result = host_instance.exec_on_host!("command -v sudo")
-              end
-              if not sudo_result[:exit_code] == 0
-                say "could not locate sudo"
+              if not host_instance.can_sudo_execute?(util)
+                say "cannot not invoke '#{util}' with sudo"
                 deployment_good = false
               else
-                sudo_cmd_result = host_instance.exec_on_host!("sudo -l #{util}")
-                if not sudo_cmd_result[:exit_code] == 0
-                  say "cannot not invoke '#{util}' with sudo"
-                  deployment_good = false
-                else
-                  say "can invoke '#{util}' with sudo"
-                end
+                say "can invoke '#{util}' with sudo"
               end
             else
               say "* Located #{util}"
