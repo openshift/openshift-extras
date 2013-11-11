@@ -5,7 +5,8 @@ from iniparse import INIConfig
 from iniparse.config import Undefined
 import re
 
-RepoTuple = namedtuple('RepoTuple', 'subscription, product, product_version, role, repoid, key_pkg, exclude')
+RepoTuple = namedtuple('RepoTuple', 'subscription, product, product_version, '
+                       'role, repoid, key_pkg, exclude')
 
 repo_ini = """# RHSM Common
 
@@ -204,10 +205,10 @@ def ini_defined(val):
 def parse_multivalue(val):
     if ini_defined(val):
         if val:
-            rv = tuple(re.split(', ', val))
-            if len(rv) == 1:
-                return rv[0]
-            return rv
+            res = tuple(re.split(', ', val))
+            if len(res) == 1:
+                return res[0]
+            return res
     else:
         return None
     return val
@@ -243,30 +244,43 @@ class RepoDB:
     def populate_db(self):
         for repoid in list(self.cfg):
             repocfg = self.cfg[repoid]
-            rt = RepoTuple(
-                subscription =    parse_multivalue(getattr(repocfg, 'subscription', None)),
-                product =         parse_multivalue(getattr(repocfg, 'product', None)),
-                product_version = parse_multivalue(getattr(repocfg, 'product_version', None)),
-                role =            parse_multivalue(getattr(repocfg, 'role', None)),
-                repoid =          repoid,
-                key_pkg =         parse_multivalue(getattr(repocfg, 'key_pkg', None)),
-                exclude =         parse_exclude(getattr(repocfg, 'exclude', None)))
-            if not rt in self.repositories:
-                self.repositories.append(rt)
+            rtpl = RepoTuple( subscription =
+                              parse_multivalue(getattr(repocfg,
+                                                       'subscription', None)),
+                              product =
+                              parse_multivalue(getattr(repocfg, 'product',
+                                                       None)),
+                              product_version =
+                              parse_multivalue(getattr(repocfg,
+                                                       'product_version',
+                                                       None)),
+                              role =
+                              parse_multivalue(getattr(repocfg, 'role', None)),
+                              repoid = repoid,
+                              key_pkg =
+                              parse_multivalue(getattr(repocfg, 'key_pkg',
+                                                       None)),
+                              exclude =
+                              parse_exclude(getattr(repocfg, 'exclude', None)))
+            if not rtpl in self.repositories:
+                self.repositories.append(rtpl)
 
     def find_repos(self, **kwargs):
-        """Return (and cache) tuple of RepoTuples that match the criteria specified
+        """Return (and cache) tuple of RepoTuples that match the criteria
+        specified
         """
         if len(self.repo_cache) > 512:
             # Try to keep the repo_cache from growing infinitely
-            # (Guessing 512 is too big is cheaper than calculating the actual mem footprint)
+            # (Guessing 512 is too big is cheaper than calculating the actual
+            # mem footprint)
             self.repo_cache = {}
         hkey = tuple(sorted(kwargs.items()))
         if None == self.repo_cache.get(hkey, None):
             repos = copy(self.repositories)
-            for kk, vv in kwargs.items():
-                # print kk, vv
-                repos = [repo for repo in repos if _repo_tuple_match(repo, kk, vv)]
+            for key, val in kwargs.items():
+                # print key, val
+                repos = [repo for repo in repos if
+                         _repo_tuple_match(repo, key, val)]
                 # print repos
                 if not repos:
                     break
@@ -294,27 +308,33 @@ class RepoDB:
 
 
 if __name__ == '__main__':
-    rd = RepoDB()
+    rdb = RepoDB()
     print "find_repos(subscription = 'rhsm'):"
-    for xx in rd.find_repos(subscription = 'rhsm'):
+    for xx in rdb.find_repos(subscription = 'rhsm'):
         print xx
     print ""
     print "find_repos(product_version = '1.2'):"
-    for xx in rd.find_repos(product_version = '1.2'):
+    for xx in rdb.find_repos(product_version = '1.2'):
         print xx
     print ""
     print "find_repos(product_version = '1.2', role = 'node'):"
-    for xx in rd.find_repos(product_version = '1.2', role = 'node'):
+    for xx in rdb.find_repos(product_version = '1.2', role = 'node'):
         print xx
     print ""
     print "find_repos_by_repoid('rhel-x86_64-server-6-ose-2.0-infrastructure'):"
-    for xx in rd.find_repos_by_repoid('rhel-x86_64-server-6-ose-2.0-infrastructure'):
+    for xx in \
+        rdb.find_repos_by_repoid('rhel-x86_64-server-6-ose-2.0-infrastructure'):
         print xx
     print ""
-    print "find_repos_by_repoid(['rhel-x86_64-server-6-ose-2.0-infrastructure', 'jbappplatform-6-x86_64-server-6-rpm']):"
-    for xx in rd.find_repos_by_repoid(['rhel-x86_64-server-6-ose-2.0-infrastructure', 'jbappplatform-6-x86_64-server-6-rpm']):
+    print ("find_repos_by_repoid(['rhel-x86_64-server-6-ose-2.0-infrastructure'"
+           ", 'jbappplatform-6-x86_64-server-6-rpm']):")
+    for xx in \
+        rdb.find_repos_by_repoid(['rhel-x86_64-server-6-ose-2.0-infrastructure',
+                                  'jbappplatform-6-x86_64-server-6-rpm']):
         print xx
     print ""
-    print "find_repoids(subscription = 'rhn', role = 'node-eap', product_version = '1.2'):"
-    for xx in rd.find_repoids(subscription = 'rhn', role = 'node-eap', product_version = '1.2'):
+    print ("find_repoids(subscription = 'rhn', role = 'node-eap', "
+           "product_version = '1.2'):")
+    for xx in rdb.find_repoids(subscription='rhn', role='node-eap',
+                               product_version='1.2'):
         print xx

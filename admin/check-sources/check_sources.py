@@ -11,7 +11,6 @@ import shutil
 sys.path.insert(0,'/usr/share/yum-cli')
 from utils import YumUtilBase
 from iniparse import INIConfig
-from collections import namedtuple
 from optparse import OptionParser
 
 NAME = 'oo-admin-check-sources'
@@ -23,29 +22,25 @@ class OpenShiftCheckSources:
     conf_backups = {}
 
     def __init__(self, name = NAME, ver = VERSION, usage = USAGE):
-        self._init_yumbase(name, ver, usage)
-        try:
-            import rhnplugin
-            self.imported_rhnplugin = True
-        except ImportError:
-            self.imported_rhnplugin = False
-        # self.opts = self.yb.doUtilConfigSetup()
+        self.yum_base = self._init_yumbase(name, ver, usage)
 
     def _init_yumbase(self, name = NAME, ver = VERSION, usage = USAGE):
-        self.yb = YumUtilBase(name, ver, usage)
-        self.yb.preconf.disableplugin = []
-        self.yb.preconf.quiet = True
-        self.yb.preconf.debuglevel = -1
-        self.yb.preconf.errorlevel = -1
-        self.yb.preconf.plugin_types = (plugins.TYPE_CORE, plugins.TYPE_INTERACTIVE)
-        op = OptionParser()
-        self.yb.preconf.optparser = op
-        self.yb.conf.cache = os.geteuid() != 0
-        self.yb.conf.disable_excludes = []
-        opts, args = op.parse_args([])
+        yum_base = YumUtilBase(name, ver, usage)
+        yum_base.preconf.disableplugin = []
+        yum_base.preconf.quiet = True
+        yum_base.preconf.debuglevel = -1
+        yum_base.preconf.errorlevel = -1
+        yum_base.preconf.plugin_types = (plugins.TYPE_CORE,
+                                        plugins.TYPE_INTERACTIVE)
+        opt_prsr = OptionParser()
+        yum_base.preconf.optparser = opt_prsr
+        yum_base.conf.cache = os.geteuid() != 0
+        yum_base.conf.disable_excludes = []
+        opts, args = opt_prsr.parse_args([])
         # The yum security plugin will crap pants if the plugin
         # cmdline isn't set up:
-        self.yb.plugins.setCmdLine(opts, args)
+        yum_base.plugins.setCmdLine(opts, args)
+        return yum_base
 
     def _yb_no_pri(self):
         npyb = YumUtilBase(NAME, VERSION, USAGE)
@@ -53,11 +48,11 @@ class OpenShiftCheckSources:
         npyb.preconf.quiet = True
         npyb.preconf.debuglevel = -1
         npyb.preconf.errorlevel = -1
-        op = OptionParser()
-        npyb.preconf.optparser = op
+        opt_prsr = OptionParser()
+        npyb.preconf.optparser = opt_prsr
         npyb.conf.cache = os.geteuid() != 0
         npyb.conf.disable_excludes = ['all']
-        opts, args = op.parse_args([])
+        opts, args = opt_prsr.parse_args([])
         npyb.plugins.setCmdLine(opts, args)
         return npyb
 
@@ -70,24 +65,27 @@ class OpenShiftCheckSources:
         backup_filepath = self.conf_backups.get(filepath)
         if backup_filepath:
             return backup_filepath
-        backup_filepath = '%s.backup_%s'%(filepath, time.strftime('%Y%m%d-%H%M%S'))
+        backup_filepath = ('%s.backup_%s' %
+                           (filepath, time.strftime('%Y%m%d-%H%M%S')))
         self.conf_backups[filepath] = backup_filepath
         shutil.copy2(filepath, backup_filepath)
         return backup_filepath
 
     def _resolve_repoid(self, repoid):
         try:
-            repo = self.yb.repos.getRepo(repoid)
+            repo = self.yum_base.repos.getRepo(repoid)
         except AttributeError:
             repo = repoid
         return repo
 
     def repo_priority(self, repoid):
-        """Return the configured priority for the repository identified by repoid
+        """Return the configured priority for the repository identified
+        by repoid
 
         Arguments:
         repoid -- can be a string with the repository id or an object
                   of type yum.yumRepo.YumRepository
+
         """
         repo = self._resolve_repoid(repoid)
         try:
@@ -131,17 +129,18 @@ class OpenShiftCheckSources:
             cfg = INIConfig(file(RHNPLUGINCONF))
             repocfg = getattr(cfg, repo.id)
             setattr(repocfg, attribute, value)
-            ff = open(RHNPLUGINCONF, 'w')
-            print >>ff, cfg
-            ff.close()
+            cfg_file = open(RHNPLUGINCONF, 'w')
+            print >> cfg_file, cfg
+            cfg_file.close()
         else:
             self.backup_config(repo.repofile)
             config.writeRawRepoFile(repo, only=[attribute])
-        # self._init_yumbase()
 
     def merge_excludes(self, repo, excludes):
         """Take a list of packages (or globs) to exclude from repo and merge
-        them into the existing list of excludes, eliminating duplicates.
+        them into the existing list of excludes, eliminating
+        duplicates.
+
         """
         repo = self._resolve_repoid(repo)
         try:
@@ -152,22 +151,26 @@ class OpenShiftCheckSources:
 
     def repo_is_rhsm(self, repoid):
 
-        """Given a YumRepository instance or a repoid, try to detect if it's from a subscription-manager managed source
+        """Given a YumRepository instance or a repoid, try to detect if it's
+        from a subscription-manager managed source
 
         TODO: This will be UNRELIABLE in the next subscription-manager
         iteration - The is_managed function from here should be used
         instead:
         https://github.com/candlepin/subscription-manager/blob/awood/content-override/src/subscription_manager/repolib.py#L46
+
         """
         repo = self._resolve_repoid(repoid)
-        return getattr(repo, 'repofile', None) == '///etc/yum.repos.d/redhat.repo'
+        return (getattr(repo, 'repofile', None) ==
+                '///etc/yum.repos.d/redhat.repo')
 
     def repo_is_rhn(self, repoid):
-        """Given a YumRepository instance or a repoid, try to detect if it's from an RHN Classic subscription
+        """Given a YumRepository instance or a repoid, try to detect if it's
+        from an RHN Classic subscription
         """
         repo = self._resolve_repoid(repoid)
-        # return '%s'%repo.__class__ == "<class 'rhnplugin.RhnRepo'>" # THIS IS A SERIOUSLY UNHEALTHY HACK?!
-        return repo.__class__.__module__ == 'rhnplugin' # This is a slightly less unhealthy hack
+        # This is a slightly less unhealthy hack
+        return repo.__class__.__module__ == 'rhnplugin'
 
     def set_repo_priority(self, repoid, priority):
         """Assign the given priority to the repository identified by repoid,
@@ -232,9 +235,9 @@ class OpenShiftCheckSources:
         """
         repos = None
         if enabled:
-            repos = self.yb.repos.listEnabled()
+            repos = self.yum_base.repos.listEnabled()
         else:
-            repos = self.yb.repos.repos.values()
+            repos = self.yum_base.repos.repos.values()
         return sorted(repos, key=self.repo_priority)
 
     def repoids(self, repos=None):
@@ -250,7 +253,7 @@ class OpenShiftCheckSources:
 
     def all_repos(self):
         """Returns a list of all configured repositories"""
-        return self.yb.repos.repos.values()
+        return self.yum_base.repos.repos.values()
 
     def all_repoids(self):
         """Returns a list of repoids for all currently enabled repositories"""
@@ -258,7 +261,7 @@ class OpenShiftCheckSources:
 
     def enabled_repos(self):
         """Returns a list of all currently enabled repositories"""
-        return self.yb.repos.listEnabled()
+        return self.yum_base.repos.listEnabled()
 
     def enabled_repoids(self):
         """Returns a list of repoids for all currently enabled repositories"""
@@ -266,7 +269,8 @@ class OpenShiftCheckSources:
 
     def disabled_repos(self):
         """Returns a list of all currently disabled repositories"""
-        return [repo for repo in self.yb.repos.repos.values() if not repo.isEnabled()]
+        return [repo for repo in self.yum_base.repos.repos.values() if not
+                repo.isEnabled()]
 
     def disabled_repoids(self):
         """Returns a list of repoids for all currently disabled repositories"""
@@ -284,7 +288,7 @@ class OpenShiftCheckSources:
         if 'from_repo' in pkg.yumdb_info:
             return pkg.yumdb_info.from_repo
         else:
-            apkgs = self.yb.pkgSack.searchPkgTuple(pkg.pkgtup)
+            apkgs = self.yum_base.pkgSack.searchPkgTuple(pkg.pkgtup)
             try:
                 pkg = apkgs[0]
                 return pkg.repoid
@@ -304,18 +308,18 @@ class OpenShiftCheckSources:
         """
         if disable_priorities:
             return self._yb_no_pri().pkgSack.searchNames(pkg_names)
-        return self.yb.pkgSack.searchNames(pkg_names)
+        return self.yum_base.pkgSack.searchNames(pkg_names)
 
     def packages_for_repo(self, repoid, disable_priorities=False):
         """Return the list of all packages provided by a given repoid
         """
         if disable_priorities:
             return self._yb_no_pri().pkgSack.returnPackages(repoid=repoid)
-        return self.yb.pkgSack.returnPackages(repoid=repoid)
+        return self.yum_base.pkgSack.returnPackages(repoid=repoid)
 
     def package_available(self, name):
-        sg = self.yb.searchGenerator(['name'], [name])
-        return next((pkg for pkg in sg if pkg[0].name == name), None)
+        srch_gen = self.yum_base.searchGenerator(['name'], [name])
+        return next((pkg for pkg in srch_gen if pkg[0].name == name), None)
 
     def verify_package(self, name, version=None, release=None, source=None):
         """Verifies that the named package matches the provided criteria
@@ -330,7 +334,8 @@ class OpenShiftCheckSources:
         source -- the repoid of the repository expected to provide the
                   package
         """
-        pkgs = self.yb.doPackageLists(pkgnarrow='installed', patterns=[name])
+        pkgs = self.yum_base.doPackageLists(pkgnarrow='installed',
+                                            patterns=[name])
         pkg_list = pkgs.installed
         try:
             pkg = pkg_list[0]
@@ -350,7 +355,8 @@ def main():
     ver   = '0.1'
     usage = 'testutil [options] [args]'
     oscs  = OpenShiftCheckSources(name, ver, usage)
-    print "oscs.order_repos_by_priority: %s"%oscs.order_repos_by_priority()
+    print ("oscs.order_repos_by_priority: %s" %
+           oscs.order_repos_by_priority())
 
 if __name__ == '__main__':
     main()
