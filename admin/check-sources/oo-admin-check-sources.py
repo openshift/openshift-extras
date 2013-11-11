@@ -31,10 +31,11 @@ def flatten(llist):
     Works on this: [1, 2, [3], [4, 5]] but won't handle [1, 2, [3], [4, [5]]]
     """
     try:
-        return [item for sublist in llist for item in sublist]
+        return list(set([item for sublist in llist for item in sublist]))
     except TypeError:
         newlist = flatten(filter(lambda xx: hasattr(xx, '__iter__'), llist))
-        return newlist + filter(lambda xx: not hasattr(xx, '__iter__'), llist)
+        return list(set(newlist + 
+                        filter(lambda xx: not hasattr(xx, '__iter__'), llist)))
 
 class UnrecoverableYumError(Exception):
     pass
