@@ -13,35 +13,22 @@ JBOSS_PRIORITY = 30
 OTHER_PRIORITY = 40
 
 UNKNOWN, RHSM, RHN = ('unknown', 'rhsm', 'rhn')
-
-SUBS_NAME = {'unknown': '',
-                     'rhsm': 'Red Hat Subscription Manager',
-                     'rhn': 'RHN Classic or RHN Satellite'}
+SUBS_NAME = {'unknown': '', 'rhsm': 'Red Hat Subscription Manager',
+             'rhn': 'RHN Classic or RHN Satellite'}
 VALID_SUBS = SUBS_NAME.keys()[1:]
-
 ATTACH_ENTITLEMENTS_URL = 'https://access.redhat.com/site/articles/522923'
-
 VALID_OO_VERSIONS = ['1.2', '2.0']
-
 VALID_ROLES = ['node', 'broker', 'client', 'node-eap']
 
-def flatten(llist):
-    """Cheap and easy flatten - only works up to two degrees of nesting.
-
-    Works on this: [1, 2, [3], [4, 5]] but won't handle [1, 2, [3], [4, [5]]]
+def flatten_uniq(llist):
+    """Flatten nested iterables and filter result for uniqueness
     """
-    try:
-        return list(set([item for sublist in llist for item in sublist]))
-    except TypeError:
-        newlist = flatten(filter(lambda xx: hasattr(xx, '__iter__'), llist))
-        return list(set(newlist + 
-                        filter(lambda xx: not hasattr(xx, '__iter__'), llist)))
+    return list(set(chain.from_iterable(llist)))
 
 class UnrecoverableYumError(Exception):
     pass
 
 class OpenShiftAdminCheckSources:
-
     pri_header = False
     pri_resolve_header = False
     problem = False
@@ -84,7 +71,7 @@ class OpenShiftAdminCheckSources:
         roles = self.opts.role + ['base']
         sub = self.opts.subscription
         o_ver = self.opts.oo_version
-        return flatten([self.rdb.find_repos(subscription=sub,
+        return flatten_uniq([self.rdb.find_repos(subscription=sub,
                                             role=role,
                                             product_version=o_ver)
                         for role in roles])
@@ -147,13 +134,13 @@ class OpenShiftAdminCheckSources:
 
     def _sub(self, subscription):
         self.opts.subscription = subscription
-        self.logger.info('Detected OpenShift Enterprise repository'
+        self.logger.info('Detected OpenShift Enterprise repository '
                          'subscription managed by %s.' %
                          SUBS_NAME[self.opts.subscription])
 
     def _oo_ver(self, version):
         self.opts.oo_version = version
-        self.logger.info('Detected installed OpenShift Enterprise'
+        self.logger.info('Detected installed OpenShift Enterprise '
                          'version %s' % self.opts.oo_version)
 
     def _sub_ver(self, subscription, version = None):
@@ -258,7 +245,7 @@ class OpenShiftAdminCheckSources:
 
     def check_version_conflict(self):
         """Determine if repositories for multiple versions of OpenShift have
-        been wrongly enabled, and advice or fix accordingly.
+        been wrongly enabled, and advise or fix accordingly.
         """
         matches = self.rdb.find_repos_by_repoid(self.oscs.enabled_repoids())
         conflicts = filter(lambda repo:
@@ -623,12 +610,17 @@ class OpenShiftAdminCheckSources:
                                       '--setopt=%s.exclude=%d %s --save' %
                                       (repo.repoid, exc, repo.repoid))
 
+    def _excludes_needed(self, repo):
+        if repo.exclude and repo.repoid in self.oscs.all_repoids():
+            cur_excl = self.oscs.repo_for_repoid(repo.repoid).exclude
+            # see if current set exclusions are (improper) superset of repo.exclude
+            return not (set(cur_excl) >= set(repo.exclude))
+
     def set_excludes(self):
         """Set any excludes configured for the required repositories
         """
         need_exclude = [repo for repo in self.required_repos() if
-                        repo.exclude and repo.repoid in
-                        self.oscs.all_repoids()]
+                        self._excludes_needed(repo)]
         if need_exclude:
             self.problem = True
             if self.opts.fix:
