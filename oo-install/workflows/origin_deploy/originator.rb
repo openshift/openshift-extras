@@ -13,10 +13,10 @@ else
   @config_file = ENV['HOME'] + '/.openshift/oo-install-cfg.yml'
 end
 
-@ssh_cmd = 'ssh'
-@scp_cmd = 'scp'
+@ssh_cmd = 'ssh -t -q'
+@scp_cmd = 'scp -q'
 if ENV.has_key?('OO_INSTALL_DEBUG') and ENV['OO_INSTALL_DEBUG'] == 'true'
-  @ssh_cmd = 'ssh -v'
+  @ssh_cmd = 'ssh -t -v'
   @scp_cmd = 'scp -v'
 end
 
@@ -263,16 +263,18 @@ host_order.each do |ssh_host|
   }
   # Modify the commands with sudo & ssh as necessary for this target host
   commands.keys.each do |action|
-    if not user == 'root' and not [:clear].include?(action)
-      commands[action] = "sudo #{commands[action]}"
-    end
     if not ssh_host == 'localhost'
-      commands[action] = "#{@ssh_cmd} #{user}@#{ssh_host} '#{commands[action]}'"
+      if not user == 'root'
+        commands[action] = "sudo sh -c '#{commands[action]}'"
+      end
+      commands[action] = "#{@ssh_cmd} #{user}@#{ssh_host} \"#{commands[action]}\""
     else
       commands[action] = "bash -l -c '#{commands[action]}'"
+      if not user == 'root'
+        commands[action] = "sudo #{commands[action]}"
+      end
     end
   end
-
   @reboots << [ssh_host, commands[:reboot], commands[:reachable]]
 
   # Figure out the DNS key before we write the puppet config file
@@ -351,14 +353,11 @@ host_order.each do |ssh_host|
   # Handle the config file copying and delete the original.
   if not ssh_host == 'localhost'
     puts "Copying Puppet configuration script to target #{ssh_host}.\n"
-    system "#{@scp_cmd} #{hostfilepath} #{user}@#{ssh_host}:/tmp/"
+    system "#{@scp_cmd} #{hostfilepath} #{user}@#{ssh_host}:#{hostfilepath}"
     if not $?.exitstatus == 0
       puts "Could not copy Puppet config to remote host. Exiting."
       saw_deployment_error = true
       break
-    else
-      # Copy succeeded, remove original
-      File.unlink(hostfilepath)
     end
   end
 
@@ -397,6 +396,10 @@ host_order.each do |ssh_host|
     end
     if saw_deployment_error
       puts "Warning: There were errors duing the deployment on host '#{host}'."
+    end
+    # Delete the local copy of the puppet script if it is still present
+    if File.exists?(hostfilepath)
+      File.unlink(hostfilepath)
     end
     # Bail out of the fork
     exit
