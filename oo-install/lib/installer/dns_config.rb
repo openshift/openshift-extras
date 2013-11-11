@@ -9,7 +9,7 @@ module Installer
     def initialize dns_config
       @app_domain = dns_config['app_domain'] || 'example.com'
       @component_domain = dns_config['component_domain']
-      @register_components = dns_config['register_components']
+      @register_components = dns_config['register_components'] == 'yes'
     end
 
     def register_components?
