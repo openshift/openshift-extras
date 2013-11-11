@@ -125,6 +125,8 @@ class OpenShiftCheckSources:
         repo = self._resolve_repoid(repo)
         repo.setAttribute(attribute, value)
         if self.repo_is_rhn(repo):
+            if hasattr(value, '__iter__'):
+                value = ' '.join(value)
             self.backup_config(RHNPLUGINCONF)
             cfg = INIConfig(file(RHNPLUGINCONF))
             repocfg = getattr(cfg, repo.id)
@@ -135,6 +137,11 @@ class OpenShiftCheckSources:
         else:
             self.backup_config(repo.repofile)
             config.writeRawRepoFile(repo, only=[attribute])
+
+    def repo_for_repoid(self, repoid):
+        """Return the YumRepository matching the given repoid
+        """
+        return self.yum_base.repos.repos[repoid]
 
     def merge_excludes(self, repo, excludes):
         """Take a list of packages (or globs) to exclude from repo and merge
@@ -150,7 +157,6 @@ class OpenShiftCheckSources:
         self.set_save_repo_attr(repo, 'exclude', new_excl)
 
     def repo_is_rhsm(self, repoid):
-
         """Given a YumRepository instance or a repoid, try to detect if it's
         from a subscription-manager managed source
 
