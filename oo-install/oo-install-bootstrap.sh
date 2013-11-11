@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Grab command-line arguments
-args=("$@")
+cmdlnargs="$@"
 
 : ${OO_INSTALL_KEEP_ASSETS:="false"}
 : ${TMPDIR:=/tmp}
@@ -39,7 +39,7 @@ for i in `ls $GEM_PATH`
 do
   RUBYLIB="${RUBYLIB}:${GEM_PATH}${i}/lib/"
 done
-GEM_PATH=$GEMPATH RUBYLIB=$RUBYLIB OO_INSTALL_CONTEXT=INSTALLCONTEXT sh -c "${TMPDIR}INSTALLPKGNAME/bin/oo-install $@"
+GEM_PATH=$GEMPATH RUBYLIB=$RUBYLIB OO_INSTALL_CONTEXT=INSTALLCONTEXT sh -c "${TMPDIR}INSTALLPKGNAME/bin/oo-install ${cmdlnargs}"
 
 if [ $OO_INSTALL_KEEP_ASSETS == 'true' ]
 then
