@@ -409,7 +409,8 @@ class OpenShiftAdminCheckSources:
                 self.resolved_repos[repoid] = OSE_PRIORITY
                 res = False
             ose_pri = OSE_PRIORITY
-        if rhel_pri <= ose_pri or rhel_pri >= 99:
+        # Fix the rhel repos if any of them are at 99
+        if rhel_pri <= ose_pri or self._limit_pri(rhel6_repos) >= 99:
             for repoid in rhel6_repos:
                 self.resolved_repos[repoid] = RHEL_PRIORITY
             res = False
