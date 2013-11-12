@@ -2,7 +2,7 @@
 
 import sys
 import repo_db
-from check_sources import OpenShiftCheckSources
+from check_sources import CheckSources
 from itertools import chain
 from yum import Errors
 import logging
@@ -28,7 +28,7 @@ def flatten_uniq(llist):
 class UnrecoverableYumError(Exception):
     pass
 
-class OpenShiftAdminCheckSources:
+class OpenShiftYumValidator(object):
     pri_header = False
     pri_resolve_header = False
     problem = False
@@ -39,7 +39,7 @@ class OpenShiftAdminCheckSources:
         self.opts = opts
         self.opt_parser = opt_parser
         self._setup_logger()
-        self.oscs = OpenShiftCheckSources()
+        self.oscs = CheckSources()
         if not self.opts.subscription:
             self.opts.subscription = UNKNOWN
         else:
@@ -780,7 +780,8 @@ class OpenShiftAdminCheckSources:
             if not self.opts.fix and self.problem:
                 self.logger.info('Please re-run this tool after making '
                                  'any recommended repairs to this system')
-            return not self.problem
+            if self.problem:
+                return 1
         except UnrecoverableYumError, e:
             self.logger.critical('An unrecoverable error prevents further '
                                  'checks from being run. Re-run this tool '
@@ -788,8 +789,10 @@ class OpenShiftAdminCheckSources:
             print ''
             self.logger.critical(e)
             return 255
+        return 0
 
-if __name__ == "__main__":
+
+def validate_yum():
     ROLE_HELP = 'OpenShift component role(s) this system will fulfill.'
     OO_VERSION_HELP = 'Version of OpenShift Enterprise in use on this system.'
     SUBSCRIPTION_HELP = ('Subscription management system which provides the '
@@ -866,7 +869,8 @@ if __name__ == "__main__":
         #                       help=USER_REPOS_HELP)
         (opts, args) = opt_parser.parse_args()
     opts.user_repos_only = True
-    oacs = OpenShiftAdminCheckSources(opts, opt_parser)
-    if not oacs.main():
-        sys.exit(1)
-    sys.exit(0)
+    yum_vdtr = OpenShiftYumValidator(opts, opt_parser)
+    sys.exit(yum_vdtr.main())
+
+if __name__ == "__main__":
+    validate_yum()
