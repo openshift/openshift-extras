@@ -1,5 +1,11 @@
 #!/usr/bin/python -tt
 
+"""This module provides a wrapper class for YumBase - CheckSources -
+which provides useful methods for querying and manipulating Yum
+repositories
+
+"""
+
 import sys
 import os
 # import yum
@@ -20,6 +26,10 @@ RHNPLUGINCONF = '/etc/yum/pluginconf.d/rhnplugin.conf'
 
 # TODO Should subclass YumBase?
 class CheckSources(object):
+    """This class provides tools for interacting with a system's Yum
+    repositories and configuration
+
+    """
     conf_backups = {}
 
     def __init__(self, name = NAME, ver = VERSION, usage = USAGE):

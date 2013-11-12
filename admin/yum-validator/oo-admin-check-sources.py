@@ -1,1 +1,1 @@
-oo_admin_yum_validator.py
+oo-admin-yum-validator
