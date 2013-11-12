@@ -18,7 +18,8 @@ VERSION = '0.1'
 USAGE = 'Apply a thin layer to scalp and sing'
 RHNPLUGINCONF = '/etc/yum/pluginconf.d/rhnplugin.conf'
 
-class OpenShiftCheckSources:
+# TODO Should subclass YumBase?
+class CheckSources(object):
     conf_backups = {}
 
     def __init__(self, name = NAME, ver = VERSION, usage = USAGE):
@@ -360,7 +361,7 @@ def main():
     name  = 'testutil'
     ver   = '0.1'
     usage = 'testutil [options] [args]'
-    oscs  = OpenShiftCheckSources(name, ver, usage)
+    oscs  = CheckSources(name, ver, usage)
     print ("oscs.order_repos_by_priority: %s" %
            oscs.order_repos_by_priority())
 
