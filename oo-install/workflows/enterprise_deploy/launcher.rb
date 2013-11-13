@@ -239,7 +239,6 @@ host_order.each do |ssh_host|
 end
 
 # Run the jobs
-@reboots = []
 @child_pids = []
 saw_deployment_error = false
 host_order.each do |ssh_host|
@@ -296,20 +295,6 @@ host_order.each do |ssh_host|
     system "chmod u+x #{hostfilepath} /tmp/openshift.sh"
   end
 
-  # Set up the commands to reboot and verify this system
-  reboot_info = [ssh_host, 'reboot', 'exit']
-  if not user == 'root'
-    [1,2].each do |idx|
-      reboot_info[idx] = "sudo #{reboot_info[idx]}"
-    end
-  end
-  if not ssh_host == 'localhost'
-    [1,2].each do |idx|
-      reboot_info[idx] = "#{@ssh_cmd} #{user}@#{ssh_host} '#{reboot_info[idx]}'"
-    end
-  end
-  @reboots << reboot_info
-
   puts "Running deployment on #{host}\n"
 
   @child_pids << Process.fork do
@@ -345,34 +330,7 @@ end
 
 procs = Process.waitall
 
-puts "Rebooting systems to complete installation."
-@reboots.each do |info|
-  ssh_host = info[0]
-  reboot = info[1]
-  responsive = info[2]
-  # We don't start the next reboot until the previous syetm is available.
-  if not system(reboot) and not $?.exitstatus == 255
-    puts "Attempted to run '#{reboot}' against #{ssh_host} but was unsuccessful. You must manually reboot the hosts in this OpenShift deployment to complete the installation process."
-    exit
-  else
-    retries = 5
-    loop do
-      # Try the system every 15 seconds until it is reachable or we hit our limit
-      sleep 15
-      print "\nAttempting to contact #{ssh_host}... "
-      if not system(responsive)
-        puts "not responding yet; trying again in 15 seconds.\n\n"
-        retries = retries - 1
-      else
-        puts "succeeded.\n\n"
-        break
-      end
-      if retries < 0
-        puts "\nWarning: Could not reconect to #{ssh_host} after several retries. Moving on to next host, but there may be issues with your deployment.\n\n"
-        break
-      end
-    end
-  end
-end
+# on total success...
+puts "Please reboot installed systems to complete deployment."
 
 exit
