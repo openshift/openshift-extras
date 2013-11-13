@@ -7,11 +7,7 @@ SOCKET_IP_ADDR = 3
 VALID_IP_ADDR_RE = Regexp.new('^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
 
 # Check ENV for an alternate config file location.
-if ENV.has_key?('OO_INSTALL_CONFIG_FILE')
-  @config_file = ENV['OO_INSTALL_CONFIG_FILE']
-else
-  @config_file = ENV['HOME'] + '/.openshift/oo-install-cfg.yml'
-end
+@config_file = ENV['OO_INSTALL_CONFIG_FILE'] || ENV['HOME'] + '/.openshift/oo-install-cfg.yml'
 
 @ssh_cmd = 'ssh'
 @scp_cmd = 'scp'
@@ -25,13 +21,8 @@ end
 @target_node_hostname = ARGV[0]
 @target_node_ssh_host = nil
 
-# This converts an ENV hash into a string of ENV settings
-def env_setup
-  @env_map.each_pair.map{ |k,v| "#{k}=#{v}" }.join(' ')
-end
-
 def env_backup
-  @env_backup ||= ENV.to_hash
+  @env_backup ||= ENV.clone
 end
 
 def clear_env
@@ -103,7 +94,6 @@ end
   'rh_username' => ['CONF_SM_REG_NAME','CONF_RHN_REG_NAME'],
   'rh_password' => ['CONF_SM_REG_PASS','CONF_RHN_REG_PASS'],
   'sm_reg_pool' => ['CONF_SM_REG_POOL'],
-  'sm_reg_pool_rhel' => ['CONF_SM_REG_POOL_RHEL'],
   'rhn_reg_actkey' => ['CONF_RHN_REG_ACTKEY'],
 }
 
@@ -111,9 +101,7 @@ end
 @env_input_map.each_pair do |input,target_list|
   env_key = "OO_INSTALL_#{input.upcase}"
   if ENV.has_key?(env_key)
-    target_list.each do |target|
-      @env_map[target] = ENV[env_key]
-    end
+    target_list.each { |target| @env_map[target] = ENV[env_key] }
   end
 end
 
@@ -145,7 +133,7 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
   named_hosts = []
   config_hosts.each do |host_info|
     # Basic config file sanity check
-    ['ssh_host','host','user','roles','ip_addr'].each do |attr|
+    %w[ ssh_host host user roles ip_addr ].each do |attr|
       next if not host_info[attr].nil?
       puts "One of the hosts in the configuration is missing the '#{attr}' setting. Exiting."
       exit 1
@@ -227,19 +215,13 @@ end
 # Set the installation order
 host_order = []
 @utility_install_order.each do |order_role|
-  if not order_role == 'node' and not @target_node_ssh_host.nil?
-    next
-  end
+  next if not order_role == 'node' and not @target_node_ssh_host.nil?
   @hosts.each_pair do |ssh_host,host_info|
     host_info['roles'].each do |host_role|
       @role_map[host_role].each do |ose_info|
         if ose_info['component'] == order_role
-          if not @target_node_ssh_host.nil? and not @target_node_ssh_host == ssh_host
-            next
-          end
-          if not host_order.include?(ssh_host)
-            host_order << ssh_host
-          end
+          next if not @target_node_ssh_host.nil? and not @target_node_ssh_host == ssh_host
+          host_order << ssh_host unless host_order.include?(ssh_host)
         end
       end
     end

@@ -5,7 +5,7 @@ module Installer
     include Installer::Helpers
 
     @repo_attrs = [:repos_base, :jboss_repo_base, :jenkins_repo_base, :scl_repo, :os_repo, :os_optional_repo]
-    @object_attrs = [:subscription_type, :rh_username, :rh_password, :sm_reg_pool, :sm_reg_pool_rhel, :rhn_reg_actkey].concat(@repo_attrs)
+    @object_attrs = [:subscription_type, :rh_username, :rh_password, :sm_reg_pool, :rhn_reg_actkey].concat(@repo_attrs)
 
     attr_reader :config, :type
     attr_accessor *@object_attrs
@@ -46,8 +46,7 @@ module Installer
             :attrs => {
               :rh_username => 'Red Hat Login username',
               :rh_password => 'Red Hat Login password',
-              :sm_reg_pool => 'Pool ID for OpenShift subscription',
-              :sm_reg_pool_rhel => 'Pool ID for RHEL subscription',
+              :sm_reg_pool => 'Pool ID(s) to subscribe',
             },
             :attr_order => [:rh_username,:rh_password,:sm_reg_pool],
           }
@@ -81,7 +80,7 @@ module Installer
         elsif not attr == :subscription_type and not value.nil?
           # We have to be pretty flexible here, so we basically just format-check the non-nil values.
           if (@repo_attrs.include?(attr) and not is_valid_url?(value)) or
-             ([:rh_username, :rh_password, :sm_reg_pool, :sm_reg_pool_rhel, :rhn_reg_actkey].include?(attr) and not is_valid_string?(value))
+             ([:rh_username, :rh_password, :sm_reg_pool, :rhn_reg_actkey].include?(attr) and not is_valid_string?(value))
             return false if check == :basic
             errors << Installer::SubscriptionSettingNotValidException.new("Subscription setting '#{attr.to_s}' has invalid value '#{value}'.")
           end
