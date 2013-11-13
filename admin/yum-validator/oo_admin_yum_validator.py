@@ -248,10 +248,10 @@ class OpenShiftYumValidator(object):
         been wrongly enabled, and advise or fix accordingly.
         """
         matches = self.rdb.find_repos_by_repoid(self.oscs.enabled_repoids())
-        conflicts = filter(lambda repo:
-                           not hasattr(repo.product_version, '__iter__') and
-                           not (repo.product_version == self.opts.oo_version),
-                           matches)
+        conflicts = [repo for repo in matches if
+                     (not hasattr(repo.product_version, '__iter__') and
+                      not (repo.product_version == self.opts.oo_version) or
+                      not (repo.subscription == self.opts.subscription))]
         if conflicts:
             self.problem = True
             if self.opts.fix:
