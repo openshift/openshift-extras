@@ -1,8 +1,13 @@
 #!/usr/bin/python -tt
 
+"""This implements the OpenShift-specific logic for validating Yum
+repositories
+
+"""
+
 import sys
-import repo_db
-from check_sources import CheckSources
+from yumvalidator import repo_db
+from yumvalidator.check_sources import CheckSources
 from itertools import chain
 from yum import Errors
 import logging
@@ -26,9 +31,14 @@ def flatten_uniq(llist):
     return list(set(chain.from_iterable(llist)))
 
 class UnrecoverableYumError(Exception):
+    """The Yum API is giving up, and so should we"""
     pass
 
 class OpenShiftYumValidator(object):
+    """This class encapsulates OpenShift-specific yum validator logic
+
+    """
+
     pri_header = False
     pri_resolve_header = False
     problem = False
@@ -782,12 +792,12 @@ class OpenShiftYumValidator(object):
                                  'any recommended repairs to this system')
             if self.problem:
                 return 1
-        except UnrecoverableYumError, e:
+        except UnrecoverableYumError, uryum_err:
             self.logger.critical('An unrecoverable error prevents further '
                                  'checks from being run. Re-run this tool '
                                  'after the problem has been repaired:')
             print ''
-            self.logger.critical(e)
+            self.logger.critical(uryum_err)
             return 255
         return 0
 
@@ -869,7 +879,11 @@ def validate_yum():
         #                       help=USER_REPOS_HELP)
         (opts, args) = opt_parser.parse_args()
     opts.user_repos_only = True
-    yum_vdtr = OpenShiftYumValidator(opts, opt_parser)
+    try:
+        yum_vdtr = OpenShiftYumValidator(opts, opt_parser)
+    except repo_db.RepoDBError as repo_err:
+        sys.stderr.write("{0}\n".format(repo_err))
+        sys.exit(1)
     sys.exit(yum_vdtr.main())
 
 if __name__ == "__main__":

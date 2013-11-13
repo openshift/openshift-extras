@@ -1,196 +1,28 @@
 #!/usr/bin/python -tt
+
+"""This provides a quick 'n dirty database for yum-validator tools
+(e.g. oo-admin-yum-validator). Here "blessed" repositories can be
+defined along with useful metadata, defined in the RepoTuple
+namedtuple object. These repository definitions can be queried through
+the RepoDB object.
+
+"""
+
 from collections import namedtuple
 from copy import copy
 from iniparse import INIConfig
 from iniparse.config import Undefined
 import re
+import os.path
 
 RepoTuple = namedtuple('RepoTuple', 'subscription, product, product_version, '
                        'role, repoid, key_pkg, exclude')
 
-repo_ini = """# RHSM Common
+DEFAULT_FILES = ['/etc/yum-validator/repos.ini', './etc/repos.ini']
 
-[rhel-6-server-rpms]
-subscription = rhsm
-product = rhel
-product_version = 1.2, 2.0
-role = base
-key_pkg = None
-exclude = tomcat6*
-
-[jb-ews-2-for-rhel-6-server-rpms]
-subscription = rhsm
-product = jboss
-product_version = 1.2, 2.0
-role = node
-key_pkg = openshift-origin-cartridge-jbossews
-exclude = httpd, httpd-tools, mod_ssl
-
-[jb-eap-6-for-rhel-6-server-rpms]
-subscription = rhsm
-product = jboss
-product_version = 1.2, 2.0
-role = node-eap
-key_pkg = openshift-origin-cartridge-jbosseap
-exclude = httpd, httpd-tools, mod_ssl
-
-[rhel-server-rhscl-6-rpms]
-subscription = rhsm
-product = rhscl
-product_version = 1.2, 2.0
-role = node, broker
-key_pkg = ruby193
-# RHSM 1.2 repos
-
-[rhel-server-ose-1.2-node-6-rpms]
-subscription = rhsm
-product = ose
-product_version = 1.2
-role = node
-key_pkg = rubygem-openshift-origin-node
-
-[rhel-server-ose-1.2-infra-6-rpms]
-subscription = rhsm
-product = ose
-product_version = 1.2
-role = broker
-key_pkg = openshift-origin-broker
-
-[rhel-server-ose-1.2-rhc-6-rpms]
-subscription = rhsm
-product = ose
-product_version = 1.2
-role = client
-key_pkg = rhc
-
-[rhel-server-ose-1.2-jbosseap-6-rpms]
-subscription = rhsm
-product = ose
-product_version = 1.2
-role = node-eap
-key_pkg = openshift-origin-cartridge-jbosseap
-# RHSM 2.0 repos
-
-[rhel-6-server-ose-2.0-node-rpms]
-subscription = rhsm
-product = ose
-product_version = 2.0
-role = node
-key_pkg = rubygem-openshift-origin-node
-
-[rhel-6-server-ose-2.0-infra-rpms]
-subscription = rhsm
-product = ose
-product_version = 2.0
-role = broker
-key_pkg = openshift-origin-broker
-
-[rhel-6-server-ose-2.0-rhc-rpms]
-subscription = rhsm
-product = ose
-product_version = 2.0
-role = client
-key_pkg = rhc
-
-[rhel-6-server-ose-2.0-jbosseap-rpms]
-subscription = rhsm
-product = ose
-product_version = 2.0
-role = node-eap
-key_pkg = openshift-origin-cartridge-jbosseap
-# RHN Common
-
-[rhel-x86_64-server-6]
-subscription = rhn
-product = rhel
-product_version = 1.2, 2.0
-role = base
-key_pkg = None
-exclude = tomcat6*
-
-[jb-ews-2-x86_64-server-6-rpm]
-subscription = rhn
-product = jboss
-product_version = 1.2, 2.0
-role = node
-key_pkg = openshift-origin-cartridge-jbossews
-exclude = httpd, httpd-tools, mod_ssl
-
-[jbappplatform-6-x86_64-server-6-rpm]
-subscription = rhn
-product = jboss
-product_version = 1.2, 2.0
-role = node-eap
-key_pkg = openshift-origin-cartridge-jbosseap
-exclude = httpd, httpd-tools, mod_ssl
-
-[rhel-x86_64-server-6-rhscl-1]
-subscription = rhn
-product = rhscl
-product_version = 1.2, 2.0
-role = node, broker
-key_pkg = ruby193
-# RHN 1.2 repos
-
-[rhel-x86_64-server-6-ose-1.2-node]
-subscription = rhn
-product = ose
-product_version = 1.2
-role = node
-key_pkg = rubygem-openshift-origin-node
-
-[rhel-x86_64-server-6-ose-1.2-infrastructure]
-subscription = rhn
-product = ose
-product_version = 1.2
-role = broker
-key_pkg = openshift-origin-broker
-
-[rhel-x86_64-server-6-ose-1.2-rhc]
-subscription = rhn
-product = ose
-product_version = 1.2
-role = client
-key_pkg = rhc
-
-[rhel-x86_64-server-6-ose-1.2-jbosseap]
-subscription = rhn
-product = ose
-product_version = 1.2
-role = node-eap
-key_pkg = openshift-origin-cartridge-jbosseap
-# RHN 2.0 repos
-
-[rhel-x86_64-server-6-ose-2.0-node]
-subscription = rhn
-product = ose
-product_version = 2.0
-role = node
-key_pkg = rubygem-openshift-origin-node
-
-[rhel-x86_64-server-6-ose-2.0-infrastructure]
-subscription = rhn
-product = ose
-product_version = 2.0
-role = broker
-key_pkg = openshift-origin-broker
-
-[rhel-x86_64-server-6-ose-2.0-rhc]
-subscription = rhn
-product = ose
-product_version = 2.0
-role = client
-key_pkg = rhc
-
-[rhel-x86_64-server-6-ose-2.0-jbosseap]
-subscription = rhn
-product = ose
-product_version = 2.0
-role = node-eap
-key_pkg = openshift-origin-cartridge-jbosseap
-"""
-
-repo_cache = {}
+class RepoDBError(Exception):
+    """The RepoDB object couldn't be instantiated for some reason"""
+    pass
 
 def _repo_tuple_match(repo, match_attr, match_val):
     # Could do this on one line, but this is more readable
@@ -220,6 +52,10 @@ def parse_exclude(val):
     return tpl
 
 class RepoDB:
+    """Provides an interface for loading and querying a dataset which
+    defines one or more repositories as RepoTuple objects.
+
+    """
     repositories = []
     repo_cache = {}
 
@@ -237,8 +73,24 @@ class RepoDB:
         self.populate_db()
 
     def _load_defaults(self):
-        from cStringIO import StringIO
-        self.cfg = INIConfig(StringIO(repo_ini))
+        err_msg = ""
+        cfg_file = None
+        for cfg_filename in DEFAULT_FILES:
+            if os.path.isfile(cfg_filename):
+                try:
+                    cfg_file = open(cfg_filename, 'r')
+                except IOError as io_err:
+                    if err_msg:
+                        err_msg += "\n"
+                    err_msg += "({0})".format(io_err)
+        if not cfg_file:
+            if not err_msg:
+                paths = ', '.join([os.path.abspath(fname) 
+                                   for fname in DEFAULT_FILES])
+                err_msg = ('Default repository data file could not be '
+                           'found in these locations: %s' % paths)
+            raise RepoDBError(err_msg)
+        self.cfg = INIConfig(cfg_file)
         self.populate_db()
 
     def populate_db(self):
