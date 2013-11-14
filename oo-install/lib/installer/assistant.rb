@@ -224,10 +224,22 @@ module Installer
 
     def ui_create_deployment
       say "It looks like you are running oo-install for the first time on a new system. The installer will guide you through the process of defining your OpenShift deployment."
+      has_running_broker = concur("\nFirst things first: do you already have a running Broker?")
+      if has_running_broker
+        say "\nOkay. We will collect information about your Broker in a moment."
+      else
+        say "\nOkay. We will gather information to install a Broker in a moment."
+      end
+      say "Before we do that, we need to collect some information about your OpenShift DNS configuration."
+      # Now grab the DNS config
+      ui_modify_dns(has_running_broker)
+      say "\nThat's all of the DNS information that we need right now. Next, we need to gather information about the hosts in your OpenShift deployment."
       Installer::Deployment.display_order.each do |role|
         role_item = Installer::Deployment.role_map[role].chop
-        say "\n#{role_item} configuration"
-        instance_exists = concur("Do you already have a running #{role_item}?")
+        puts "\n" + horizontal_rule
+        say "#{role_item} Configuration"
+        puts horizontal_rule
+        instance_exists = role == :broker ? has_running_broker : concur("Do you already have a running #{role_item}?")
         if instance_exists
           say "\nOkay. I'm going to need you to tell me about the host where the #{role_item} is installed."
         else
@@ -259,15 +271,22 @@ module Installer
           end
         end
         if create_new_host
-          say "\nOkay, please provide information about the #{role_item} host."
+          say "\nOkay, please provide information about the #{role_item} host." if deployment.hosts.length > 0
           ui_edit_host_instance(nil, role)
         end
         if role == Installer::Deployment.display_order.last
-          say "\nThat's everything we need to know right now for the #{role_item}. Moving on to repository subscriptions."
+          say "\nThat's everything we need to know right now for the #{role_item}."
         else
           say "\nThat's everything we need to know right now for the #{role_item}. Moving on to the next role."
         end
       end
+
+      # In basic mode, the mqserver and dbserver host lists are cloned from the broker list
+      if not advanced_mode?
+        deployment.set_basic_hosts!
+      end
+
+      say "\nLastly we need to set up information about where you will be getting your software packages from."
     end
 
     def ui_edit_workflow
@@ -488,26 +507,29 @@ module Installer
       end
     end
 
-    def ui_modify_dns
-      deployment.dns.app_domain = ask("\nWhat domain will be used for hosted applications? ") { |q|
+    def ui_modify_dns(has_running_broker=false)
+      question_text = has_running_broker ? 'What domain is being used for applications that are hosted by the OpenShift deployment?' : 'What domain do you want to use for applications that are hosted by this OpenShift deployment?'
+      deployment.dns.app_domain = ask("\n#{question_text} ") { |q|
         if not deployment.dns.app_domain.nil?
           q.default = deployment.dns.app_domain
         end
         q.validate = lambda { |p| is_valid_domain?(p) }
         q.responses[:not_valid] = "Enter a valid domain"
       }.to_s
-      deployment.dns.register_components = concur("\nDo you want DNS entries for your OpenShift component hosts to be registered with the OpenShift DNS service?")
+      question_text = has_running_broker ? 'Does the OpenShift DNS server include records for the OpenShift hosts themselves? Enter \'n\' if you don\'t know.' : 'Do you want to register DNS entries for your OpenShift hosts with the same OpenShift DNS service that will be managing DNS records for the hosted applications?'
+      deployment.dns.register_components = concur("\n#{question_text}")
       if deployment.dns.register_components?
         loop do
-          deployment.dns.component_domain = ask("\nWhat domain will be used for OpenShift components? ") { |q|
+          question_text = has_running_broker ? 'What domain do the OpenShift hosts reside in? ' : 'What domain do you want to use for the OpenShift hosts?'
+          deployment.dns.component_domain = ask("\n#{question_text} ") { |q|
             if not deployment.dns.component_domain.nil?
               q.default = deployment.dns.component_domain
             end
             q.validate = lambda { |p| is_valid_domain?(p) }
             q.responses[:not_valid] = "Enter a valid domain"
           }.to_s
-          if deployment.dns.app_domain == deployment.dns.component_domain
-            break if concur("\nYou are using the same domain name for your applications and your OpenShift components. Do you wish to keep these settings?")
+          if not has_running_broker and deployment.dns.app_domain == deployment.dns.component_domain
+            break if concur("\nYou have specified the same domain for your applications and your OpenShift components. Do you wish to keep these settings?")
           else
             break
           end
@@ -671,14 +693,31 @@ module Installer
     def edit_host_instance host_instance
       host_instance_is_valid = false
       while not host_instance_is_valid
-        # Get the FQDN
-        host_instance.host = ask("Hostname (the FQDN that other OpenShift hosts will use to connect to the host that you are describing): ") { |q|
-          if not host_instance.host.nil?
-            q.default = host_instance.host
+        first_pass = true
+        loop do
+          # Get the FQDN
+          question_text = first_pass ? 'Hostname (the FQDN that other OpenShift hosts will use to connect to the host that you are describing):' : "\nPlease enter a valid hostname:"
+          first_pass = false
+          host_instance.host = ask("#{question_text} ") { |q|
+            if not host_instance.host.nil?
+              q.default = host_instance.host
+            end
+            q.validate = lambda { |p| is_valid_hostname?(p) and not p == 'localhost' }
+            q.responses[:not_valid] = "Enter a valid fully-qualified domain name. 'localhost' is not valid here."
+          }.to_s
+          if not deployment.dns.component_domain.nil?
+            if not host_instance.host.match(/\./)
+              say "Appending component domain '#{deployment.dns.component_domain}' to hostname."
+              host_instance.host = host_instance.host + "." + deployment.dns.component_domain
+              break
+            elsif not host_instance.host.match(/#{deployment.dns.component_domain}$/)
+              say "\nThe hostname #{host_instance.host} is not part of the domain that was specified for OpenShift hosts (#{deployment.dns.component_domain})."
+              host_instance.host = nil
+            end
+          else
+            break
           end
-          q.validate = lambda { |p| is_valid_hostname?(p) and not p == 'localhost' }
-          q.responses[:not_valid] = "Enter a valid fully-qualified domain name. 'localhost' is not valid here."
-        }.to_s
+        end
         # Get login info if necessary
         proceed_though_unreachable = false
         loop do
