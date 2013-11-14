@@ -38,7 +38,7 @@ module Installer
     def initialize config, deployment
       @config = config
       @hosts = []
-      if deployment.has_key?('Hosts')
+      if deployment.has_key?('Hosts') and not deployment['Hosts'].nil? and deployment['Hosts'].length > 0
         deployment['Hosts'].each do |host_instance|
           hosts << Installer::HostInstance.new(host_instance)
         end

@@ -144,7 +144,9 @@ module Installer
 
       # Deployment check
       if workflow.check_deployment?
-        if not deployment.is_valid?
+        if deployment.hosts.length == 0
+          ui_create_deployment
+        elsif not deployment.is_valid?
           ui_show_deployment(translate(:info_force_run_deployment_setup))
           ui_edit_deployment
         else
@@ -218,6 +220,54 @@ module Installer
       # Hand it off to the workflow executable
       workflow.executable.run workflow_cfg, merged_subscription, config.file_path
       raise Installer::AssistantWorkflowCompletedException.new
+    end
+
+    def ui_create_deployment
+      say "It looks like you are running oo-install for the first time on a new system. The installer will guide you through the process of defining your OpenShift deployment."
+      Installer::Deployment.display_order.each do |role|
+        role_item = Installer::Deployment.role_map[role].chop
+        say "\n#{role_item} configuration"
+        instance_exists = concur("Do you already have a running #{role_item}?")
+        if instance_exists
+          say "\nOkay. I'm going to need you to tell me about the host where the #{role_item} is installed."
+        else
+          say "\nOkay. I'm going to need you to tell me about the host where you want to install the #{role_item}."
+        end
+        create_new_host = true
+        if deployment.hosts.length > 0
+          hosts_choice_help = "You have the option of installing more than one OpenShift role on a given host. If you would prefer to install the #{role_item} on a host that you haven't described yet, answer 'n' and you will be asked to provide details for that host instance."
+          say "\nYou have already desribed the following host system(s):"
+          deployment.hosts.each do |host_instance|
+            say "* #{host_instance.summarize}"
+          end
+          if deployment.hosts.length == 1
+            if concur("\nDo you want to assign the #{role_item} role to #{deployment.hosts[0].host}?", hosts_choice_help)
+              say "\nOkay. Adding the #{role_item} role to #{deployment.hosts[0].host}."
+              deployment.hosts[0].add_role(role)
+              create_new_host = false
+            end
+          else
+            if concur("\nDo you want to assign the #{role_item} role to one of the hosts that you've already described?", hosts_choice_help)
+              create_new_host = false
+              choose do |menu|
+                menu.header = "\nWhich host would you like to assign this role to?"
+                deployment.hosts.each do |host_instance|
+                  menu.choice(host_instance.summarize) { say "Okay. Adding the #{role_item} role to #{host_instance.host}"; host_instance.add_role(role) }
+                end
+              end
+            end
+          end
+        end
+        if create_new_host
+          say "\nOkay, please provide information about the #{role_item} host."
+          ui_edit_host_instance(nil, role)
+        end
+        if role == Installer::Deployment.display_order.last
+          say "\nThat's everything we need to know right now for the #{role_item}. Moving on to repository subscriptions."
+        else
+          say "\nThat's everything we need to know right now for the #{role_item}. Moving on to the next role."
+        end
+      end
     end
 
     def ui_edit_workflow
@@ -585,12 +635,11 @@ module Installer
       true
     end
 
-    def ui_edit_host_instance(host_instance=nil, role_focus=nil, role_count=0)
+    def ui_edit_host_instance(host_instance=nil, role_focus=nil, role_count=0, is_installed=false)
       puts "\n"
       new_host = host_instance.nil?
       if new_host
-        host_instance = Installer::HostInstance.new({}, role_focus)
-        say "Adding a new host for the #{role_focus.to_s} role"
+        host_instance = Installer::HostInstance.new({}, role_focus, is_installed)
       else
         say "Modifying host #{host_instance.host}"
       end
@@ -623,7 +672,7 @@ module Installer
       host_instance_is_valid = false
       while not host_instance_is_valid
         # Get the FQDN
-        host_instance.host = ask("Hostname (for other OpenShift components in the same subnet): ") { |q|
+        host_instance.host = ask("Hostname (the FQDN that other OpenShift hosts will use to connect to the host that you are describing): ") { |q|
           if not host_instance.host.nil?
             q.default = host_instance.host
           end
@@ -631,18 +680,19 @@ module Installer
           q.responses[:not_valid] = "Enter a valid fully-qualified domain name. 'localhost' is not valid here."
         }.to_s
         # Get login info if necessary
+        proceed_though_unreachable = false
         loop do
-          host_instance.ssh_host = ask("Hostname / IP address for SSH access (or 'localhost'): ") { |q|
+          host_instance.ssh_host = ask("\nHostname / IP address for SSH access to #{host_instance.host} from the host where you are running oo-install. You can say 'localhost' if you are running oo-install from the system that you are describing: ") { |q|
             if not host_instance.ssh_host.nil?
               q.default = host_instance.ssh_host
             elsif not host_instance.host.nil?
               q.default = host_instance.host
             end
-            q.validate = lambda { |p| is_valid_hostname?(p) }
-            q.responses[:not_valid] = "Enter a valid hostname or SSH alias. 'localhost' is valid here."
+            q.validate = lambda { |p| is_valid_hostname?(p) or is_valid_ip_addr?(p) }
+            q.responses[:not_valid] = "Enter a valid hostname, SSH alias or IP address. 'localhost' is valid here."
           }.to_s
           if not host_instance.localhost?
-            host_instance.user = ask("Username for SSH access and installation: ") { |q|
+            host_instance.user = ask("\nUsername for SSH access to #{host_instance.ssh_host}: ") { |q|
               if not host_instance.user.nil?
                 q.default = host_instance.user
               elsif get_context == :ose
@@ -651,7 +701,7 @@ module Installer
               q.validate = lambda { |p| is_valid_username?(p) }
               q.responses[:not_valid] = "Enter a valid linux username"
             }.to_s
-            say "Validating #{host_instance.user}@#{host_instance.ssh_host}... "
+            say "\nValidating #{host_instance.user}@#{host_instance.ssh_host}... "
             ssh_access_info = host_instance.confirm_access
             if ssh_access_info[:valid_access]
               say "looks good."
@@ -660,6 +710,10 @@ module Installer
               say "\nCould not connect to #{host_instance.ssh_host} with user #{host_instance.user}."
               if not ssh_access_info[:error].nil?
                 say "The SSH attempt yielded the following error:\n\"#{ssh_access_info[:error].message}\""
+              end
+              if concur("\nDo you want to use this host configuration even though #{host_instance.host} could not be contacted?")
+                proceed_though_unreachable = true
+                break
               end
             end
           else
@@ -675,48 +729,52 @@ module Installer
           end
         end
         # Finally, set up the IP info
-        ip_addrs = host_instance.get_ip_addr_choices
-        case ip_addrs.length
-        when 0
-          say "Could not detect an IP address for this host."
-          manual_ip_info_for_host_instance(host_instance, ip_addrs)
-        when 1
-          say "Detected IP address #{ip_addrs[0][1]} at interface #{ip_addrs[0][0]} for this host."
-          question = "Do you want Nodes to use this IP information to reach this Broker?"
-          if host_instance.is_node?
-            question = "Do you want to use this as the public IP information for this Node?"
-          end
-          if concur(question, translate(:ip_config_help_text))
-            host_instance.ip_addr = ip_addrs[0][1]
-            if host_instance.is_node?
-              host_instance.ip_interface = ip_addrs[0][0]
-            end
-          else
-            manual_ip_info_for_host_instance(host_instance, ip_addrs)
-          end
+        if proceed_though_unreachable
+          manual_ip_info_for_host_instance(host_instance, [])
         else
-          say "Detected multiple network interfaces for this host:"
-          ip_addrs.each do |info|
-            say "* #{info[1]} on interface #{info[0]}"
-          end
-          question = "Do you want Nodes to use one of these IP addresses to reach this Broker?"
-          if host_instance.is_node?
-            question = "Do you want to use one of these as the public IP information for this Node?"
-          end
-          if concur(question, translate(:ip_config_help_text))
-            choose do |menu|
-              menu.header = "The following network interfaces were found on this host. Choose the one that it uses for communication on the local subnet."
-              menu.prompt = "#{translate(:menu_prompt)} "
-              ip_addrs.each do |info|
-                ip_interface = info[0]
-                ip_addr = info[1]
-                menu.choice("#{ip_addr} on interface #{ip_interface}") { host_instance.ip_addr = ip_addr; host_instance.ip_interface = ip_interface if host_instance.is_node? }
+          ip_addrs = host_instance.get_ip_addr_choices
+          case ip_addrs.length
+          when 0
+            say "Could not detect an IP address for this host."
+            manual_ip_info_for_host_instance(host_instance, ip_addrs)
+          when 1
+            say "\nDetected IP address #{ip_addrs[0][1]} at interface #{ip_addrs[0][0]} for this host."
+            question = "Do you want Nodes to use this IP information to reach this Broker?"
+            if host_instance.is_node?
+              question = "Do you want to use this as the public IP information for this Node?"
+            end
+            if concur(question, translate(:ip_config_help_text))
+              host_instance.ip_addr = ip_addrs[0][1]
+              if host_instance.is_node?
+                host_instance.ip_interface = ip_addrs[0][0]
               end
-              menu.hidden("?") { say "The current host instance has mutliple IP options. Select the one that it will use to connect to other OpenShift components." }
-              menu.hidden("q") { return_to_main_menu }
+            else
+              manual_ip_info_for_host_instance(host_instance, ip_addrs)
             end
           else
-            manual_ip_info_for_host_instance(host_instance, ip_addrs)
+            say "\nDetected multiple network interfaces for this host:"
+            ip_addrs.each do |info|
+              say "* #{info[1]} on interface #{info[0]}"
+            end
+            question = "Do you want Nodes to use one of these IP addresses to reach this Broker?"
+            if host_instance.is_node?
+              question = "Do you want to use one of these as the public IP information for this Node?"
+            end
+            if concur(question, translate(:ip_config_help_text))
+              choose do |menu|
+                menu.header = "The following network interfaces were found on this host. Choose the one that it uses for communication on the local subnet."
+                menu.prompt = "#{translate(:menu_prompt)} "
+                ip_addrs.each do |info|
+                  ip_interface = info[0]
+                  ip_addr = info[1]
+                  menu.choice("#{ip_addr} on interface #{ip_interface}") { host_instance.ip_addr = ip_addr; host_instance.ip_interface = ip_interface if host_instance.is_node? }
+                end
+                menu.hidden("?") { say "The current host instance has mutliple IP options. Select the one that it will use to connect to other OpenShift components." }
+                menu.hidden("q") { return_to_main_menu }
+              end
+            else
+              manual_ip_info_for_host_instance(host_instance, ip_addrs)
+            end
           end
         end
         host_instance_is_valid = true
@@ -838,7 +896,6 @@ module Installer
         q.validate = lambda { |p| [?y,?n,?q].include?(p.downcase[0]) }
         q.responses[:not_valid] = full_help
         q.responses[:ask_on_error] = :question
-        q.character = true
       }
       case response
       when 'y'
