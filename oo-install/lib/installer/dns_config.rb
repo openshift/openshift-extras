@@ -9,7 +9,7 @@ module Installer
     def initialize dns_config
       @app_domain = dns_config['app_domain'] || 'example.com'
       @component_domain = dns_config['component_domain']
-      @register_components = dns_config['register_components'] == 'yes'
+      @register_components = dns_config.has_key?('register_components') and dns_config['register_components'].downcase == 'y'
     end
 
     def register_components?
@@ -41,7 +41,7 @@ module Installer
     def to_hash
       output = {
         'app_domain' => app_domain,
-        'register_components' => (register_components? ? 'yes' : 'no'),
+        'register_components' => (register_components? ? 'Y' : 'N'),
       }
       if not component_domain.nil?
         output['component_domain'] = component_domain

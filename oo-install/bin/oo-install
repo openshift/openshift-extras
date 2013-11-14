@@ -32,7 +32,6 @@ options = {
   :debug => false,
 }
 
-
 # Parse the command line options
 p = OptionParser.new do |opts|
   opts.banner = "Usage: oo-install [args]"

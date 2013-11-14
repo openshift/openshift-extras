@@ -4,15 +4,15 @@ module Installer
   class HostInstance
     include Installer::Helpers
 
-    attr_accessor :id, :host, :ip_addr, :ip_interface, :ssh_host, :user, :roles
+    attr_accessor :host, :ip_addr, :ip_interface, :ssh_host, :user, :roles, :is_installed
 
     def self.attrs
       %w{host roles ssh_host user ip_addr ip_interface}.map{ |a| a.to_sym }
     end
 
-    def initialize(item={}, init_role=nil)
-      @id = self.__id__
+    def initialize(item={}, init_role=nil, is_installed=false)
       @roles = []
+      @is_installed = is_installed
       self.class.attrs.each do |attr|
         value = attr == :roles ? [] : nil
         if item.has_key?(attr.to_s)
@@ -43,6 +43,13 @@ module Installer
         info[:error] = e
       end
       info
+    end
+
+    def confirm_installed
+    end
+
+    def is_installed?
+      @is_installed
     end
 
     def can_sudo_execute? util
