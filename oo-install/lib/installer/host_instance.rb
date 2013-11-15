@@ -4,21 +4,15 @@ module Installer
   class HostInstance
     include Installer::Helpers
 
-    attr_accessor :host, :ip_addr, :ip_interface, :ssh_host, :user, :roles, :state
+    attr_accessor :host, :ip_addr, :ip_interface, :ssh_host, :user, :roles, :install_status
 
     def self.attrs
-      %w{host roles ssh_host user ip_addr ip_interface, state}.map{ |a| a.to_sym }
+      %w{host roles ssh_host user ip_addr ip_interface install_status}.map{ |a| a.to_sym }
     end
 
-    def initialize(item={}, init_role=nil, is_installed=false)
+    def initialize(item={}, init_role=nil)
       @roles = []
-      if item.has_key?('state')
-        @state = item['state'].to_sym
-      elsif is_installed
-        @state = :completed
-      else
-        @state = :new
-      end
+      @install_status = item.has_key?('state') ? item['state'].to_sym : :new
       self.class.attrs.each do |attr|
         value = attr == :roles ? [] : nil
         if item.has_key?(attr.to_s)
@@ -51,27 +45,24 @@ module Installer
       info
     end
 
-    def confirm_installed
-    end
-
     def is_new?
-      @state == :new
+      @install_status == :new
     end
 
     def is_installing?
-      not [:new,:completed,:validated,:failed].include?(@state)
+      not [:new,:completed,:validated,:failed].include?(@install_status)
     end
 
     def is_failed?
-      @state == :failed
+      @install_status == :failed
     end
 
     def is_installed?
-      @state == :completed
+      @install_status == :completed
     end
 
     def is_install_validated?
-      @state == :validated
+      @install_status == :validated
     end
 
     def can_sudo_execute? util
@@ -171,14 +162,16 @@ module Installer
 
     def to_hash
       output = {}
+      puts "ATTRS: #{self.class.attrs.inspect}"
       self.class.attrs.each do |attr|
         next if self.send(attr).nil?
-        if attr == :state
-          output[attr.to_s] = self.send(attr).to_s
+        if attr == :install_status
+          output['state'] = self.send(attr).to_s
         else
           output[attr.to_s] = attr == :roles ? self.send(attr).map{ |r| r.to_s } : self.send(attr)
         end
       end
+      puts "OUT: #{output.inspect}\nSTATE: #{@install_status.inspect}"
       output
     end
 

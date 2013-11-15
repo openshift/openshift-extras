@@ -245,7 +245,7 @@ module Installer
         else
           say "\nOkay. I'm going to need you to tell me about the host where you want to install the #{role_item}."
         end
-        create_new_host = true
+        create_host_instance = true
         if deployment.hosts.length > 0
           hosts_choice_help = "You have the option of installing more than one OpenShift role on a given host. If you would prefer to install the #{role_item} on a host that you haven't described yet, answer 'n' and you will be asked to provide details for that host instance."
           say "\nYou have already desribed the following host system(s):"
@@ -256,11 +256,11 @@ module Installer
             if concur("\nDo you want to assign the #{role_item} role to #{deployment.hosts[0].host}?", hosts_choice_help)
               say "\nOkay. Adding the #{role_item} role to #{deployment.hosts[0].host}."
               deployment.hosts[0].add_role(role)
-              create_new_host = false
+              create_host_instance = false
             end
           else
             if concur("\nDo you want to assign the #{role_item} role to one of the hosts that you've already described?", hosts_choice_help)
-              create_new_host = false
+              create_host_instance = false
               choose do |menu|
                 menu.header = "\nWhich host would you like to assign this role to?"
                 deployment.hosts.each do |host_instance|
@@ -270,9 +270,9 @@ module Installer
             end
           end
         end
-        if create_new_host
+        if create_host_instance
           say "\nOkay, please provide information about the #{role_item} host." if deployment.hosts.length > 0
-          ui_edit_host_instance(nil, role)
+          ui_edit_host_instance(nil, role, 0, instance_exists)
         end
         if role == Installer::Deployment.display_order.last
           say "\nThat's everything we need to know right now for the #{role_item}."
@@ -661,7 +661,8 @@ module Installer
       puts "\n"
       new_host = host_instance.nil?
       if new_host
-        host_instance = Installer::HostInstance.new({}, role_focus, is_installed)
+        host_instance = Installer::HostInstance.new({}, role_focus)
+        host_instance.install_status = is_installed ? :completed : :new
       else
         say "Modifying host #{host_instance.host}"
       end
