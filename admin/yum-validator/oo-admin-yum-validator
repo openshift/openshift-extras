@@ -765,10 +765,19 @@ class OpenShiftYumValidator(object):
         if not (self.check_missing_repos() or self.opts.report_all):
             return False
         if self.opts.role:
-            if not (self.verify_yum_plugin_priorities() or
-                    self.opts.report_all):
-                self.logger.warning('Skipping yum priorities verification')
-                return False
+            if not self.verify_yum_plugin_priorities():
+                if not self.opts.report_all:
+                    self.logger.warning('Skipping yum priorities verification')
+                    return False
+                else:
+                    print ""
+                    self.logger.warning('PLEASE NOTE: '
+                                        'The yum-plugin-priorities package is '
+                                        'not installed, so any information '
+                                        'reported by this tool regarding '
+                                        'repository priorities may not be '
+                                        'accurate.')
+                    print ""
             if not (self.verify_priorities() or self.opts.report_all):
                 return False
             if not (self.find_package_conflicts() or self.opts.report_all):
