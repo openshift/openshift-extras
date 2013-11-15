@@ -4,15 +4,21 @@ module Installer
   class HostInstance
     include Installer::Helpers
 
-    attr_accessor :host, :ip_addr, :ip_interface, :ssh_host, :user, :roles, :is_installed
+    attr_accessor :host, :ip_addr, :ip_interface, :ssh_host, :user, :roles, :state
 
     def self.attrs
-      %w{host roles ssh_host user ip_addr ip_interface}.map{ |a| a.to_sym }
+      %w{host roles ssh_host user ip_addr ip_interface, state}.map{ |a| a.to_sym }
     end
 
     def initialize(item={}, init_role=nil, is_installed=false)
       @roles = []
-      @is_installed = is_installed
+      if item.has_key?('state')
+        @state = item['state'].to_sym
+      elsif is_installed
+        @state = :completed
+      else
+        @state = :new
+      end
       self.class.attrs.each do |attr|
         value = attr == :roles ? [] : nil
         if item.has_key?(attr.to_s)
@@ -48,8 +54,24 @@ module Installer
     def confirm_installed
     end
 
+    def is_new?
+      @state == :new
+    end
+
+    def is_installing?
+      not [:new,:completed,:validated,:failed].include?(@state)
+    end
+
+    def is_failed?
+      @state == :failed
+    end
+
     def is_installed?
-      @is_installed
+      @state == :completed
+    end
+
+    def is_install_validated?
+      @state == :validated
     end
 
     def can_sudo_execute? util
@@ -151,7 +173,11 @@ module Installer
       output = {}
       self.class.attrs.each do |attr|
         next if self.send(attr).nil?
-        output[attr.to_s] = attr == :roles ? self.send(attr).map{ |r| r.to_s } : self.send(attr)
+        if attr == :state
+          output[attr.to_s] = self.send(attr).to_s
+        else
+          output[attr.to_s] = attr == :roles ? self.send(attr).map{ |r| r.to_s } : self.send(attr)
+        end
       end
       output
     end
