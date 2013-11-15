@@ -738,6 +738,12 @@ class OpenShiftYumValidator(object):
                 self.logger.warning('If this system will be providing the '
                                     'JBossEAP cartridge, re-run this '
                                     'command with the --role=node-eap argument')
+            if 'broker' in self.opts.role and not 'client' in self.opts.role:
+                self.opts.role.append('client')
+                self.logger.info('Please note: --role=broker implicitly '
+                                 'enables --role=client to ensure /usr/bin/rhc '
+                                 'is available for testing and '
+                                 'troubleshooting.')
 
     def run_checks(self):
         if not self.validate_roles():
