@@ -1,17 +1,27 @@
 #!/usr/bin/env ruby
 
 require 'yaml'
+require 'tempfile'
 require 'net/ssh'
 
-SOCKET_IP_ADDR = 3
-VALID_IP_ADDR_RE = Regexp.new('^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
+COMPONENT_INSTALL_ORDER = %w[ named datastore activemq broker node ]
+# steps/states/actions are arrays with corresponding indices
+INSTALL_STEPS = %w[ . prepare install configure ]
+INSTALL_STATES = %w[ new prepared installed completed validated broken ]
+INSTALL_ACTIONS = %w[ .
+                      init_message,validate_preflight,configure_repos
+                      install_rpms
+                      configure_host,configure_openshift
+                    ]
+STEP_SUCCESS_MSG = <<"MSGS".split "\n"
+.
+OpenShift: Completed configuring repos.
+OpenShift: Completed installing RPMs.
+OpenShift: Completed configuring OpenShift.
+MSGS
 
 # Check ENV for an alternate config file location.
-if ENV.has_key?('OO_INSTALL_CONFIG_FILE')
-  @config_file = ENV['OO_INSTALL_CONFIG_FILE']
-else
-  @config_file = ENV['HOME'] + '/.openshift/oo-install-cfg.yml'
-end
+@config_file = ENV['OO_INSTALL_CONFIG_FILE'] || ENV['HOME'] + '/.openshift/oo-install-cfg.yml'
 
 @ssh_cmd = 'ssh'
 @scp_cmd = 'scp'
@@ -25,13 +35,8 @@ end
 @target_node_hostname = ARGV[0]
 @target_node_ssh_host = nil
 
-# This converts an ENV hash into a string of ENV settings
-def env_setup
-  @env_map.each_pair.map{ |k,v| "#{k}=#{v}" }.join(' ')
-end
-
 def env_backup
-  @env_backup ||= ENV.to_hash
+  @env_backup ||= ENV.clone
 end
 
 def clear_env
@@ -89,6 +94,169 @@ def shellescape(str)
   return str
 end
 
+def state_already?(host, state)
+  INSTALL_STATES.index(state) <= INSTALL_STATES.index(host['state'] || 'new')
+end
+def save_and_exit(code = 0)
+  File.open(@config_file, 'w') {|file| file.write @config.to_yaml}
+  exit code
+end
+
+# copied from http://stackoverflow.com/a/1076445/262768 and modified
+def fork_and_run(job, &block)
+  # run a job in forked child and retrieve the results into the job object.
+  r, w = IO.pipe
+
+  pid = fork do
+    r.close
+    result = block.call
+    Marshal.dump(result, w)
+    exit!(0) # skips exit handlers.
+  end
+
+  w.close
+  job[:result] = r
+end
+
+def read_fork_result(job)
+  return Hash.new unless job.is_a?(Hash) && (r = job[:result])
+  return r unless r.is_a? IO
+  job[:result] = Marshal.load(r) || Hash.new
+end
+
+def wait_and_report(jobs, step) # bails if any fail
+  Process.waitall
+  succeeded = jobs.select {|job| read_fork_result(job)[:success]}
+  failed = jobs - succeeded
+  unless succeeded.empty?
+    puts "\nInstall step '#{step}' succeeded for:"
+    succeeded.each do |host|
+      puts "  * #{host['ssh_host']}"
+      host.delete :result
+      host['state']=INSTALL_STATES[INSTALL_STEPS.index step]
+    end
+  end
+  unless failed.empty?
+    puts "\n---------------------------------------"
+    puts "Install step '#{step}' FAILED for:"
+    failed.each do |host|
+      puts "  * #{host['ssh_host']} (#{host['host']})"
+      puts host[:result][:message]
+      host.delete :result
+    end
+    puts "It is safe to run this deployment again after problem resolution."
+    puts "--------------------------------------------"
+    save_and_exit 1
+  end
+end
+
+def run_on_host(host, step)
+  puts "Running '#{step}' step on #{host['ssh_host']} (#{host['host']})\n"
+
+  ssh_target = "#{host['user']}@#{host['ssh_host']}"
+  ssh_path = "#{host['user']}@#{host['ssh_host']}:/tmp"
+  hostfile = "oo_install_configure_#{host['ssh_host']}.sh"
+  logfile = "/tmp/openshift-deploy-#{step}.log"
+  sudo = host['user'] == 'root' ? '' : 'sudo -- '
+
+  @env_map['CONF_INSTALL_COMPONENTS'] = components_list(host)
+  @env_map['CONF_ACTIONS'] = INSTALL_ACTIONS[INSTALL_STEPS.index step]
+  # Only include the node config setting for hosts that will have a node installation
+  if host['roles'].include?('node')
+    @env_map[@role_map['node'][0]['env_hostname']] = host['host']
+    @env_map[@role_map['node'][0]['env_ip_addr']] = host['ip_addr']
+  else
+    @env_map.delete(@role_map['node'][0]['env_hostname'])
+    @env_map.delete(@role_map['node'][0]['env_ip_addr'])
+  end
+
+  # Write the openshift.sh settings (safely escaped) to a wrapper script
+  filetext = @env_map.map { |env,val| "export #{env}=#{shellescape(val)}\n" }.join ""
+  filetext << "rm -f $0\n" unless ENV['OO_KEEP_DEPLOY_FILES']
+  # note: since we are cutting WAY down on output with grep, line-buffer it.
+  filetext << "/tmp/openshift.sh |& tee -a #{logfile} | stdbuf -oL -eL grep -i '^OpenShift:'\n"
+  filetext << "rm -f /tmp/openshift.sh\n" unless ENV['OO_KEEP_DEPLOY_FILES']
+  filetext << "exit\n"
+  # Save it out so we can copy it to the target
+  localfile = Tempfile.new('oo-install-wrapper')
+  localfile.write(filetext)
+  localfile.close
+
+  # Copy the files and run the install
+  if host['ssh_host'] == 'localhost'
+    # relocate launcher file
+    system "cp #{File.dirname(__FILE__)}/openshift.sh /tmp/"
+    system "chmod u+x #{localfile.path} /tmp/openshift.sh"
+
+    puts "Executing deployment script on localhost (#{host['host']}).\n"
+    puts "  You can watch the full log with:\n"
+    puts "  #{sudo}tail -f #{logfile}"
+    # Local installation. Clean out the ENV.
+    clear_env
+    # Run the launcher
+    output = ""
+    IO.popen("bash -l -c '#{sudo}#{localfile.path}' 2>&1") do |pipe|
+      pipe.each { |line| output += line; puts line }
+    end
+    output = ``
+    success = $?.success?
+    # Now restore the original env
+    restore_env
+    success or return {
+      :success => false,
+      :recoverable => step != 'configure',
+      :message => "Please examine #{logfile} on #{host['ssh_host']} to troubleshoot."
+    }
+  else
+    puts "Copying deployment scripts to target #{host['ssh_host']}.\n"
+    bail = proc do |output|
+      localfile.delete # ensure it's gone before bailing
+      return {
+        :success => false,
+        :recoverable => true,
+        :message => "Could not copy deployment files to remote host:\n#{output}\n"
+      }
+    end
+    # first openshift.sh
+    output = `#{@scp_cmd} #{File.dirname(__FILE__)}/openshift.sh #{ssh_path} 2>&1`
+    $?.success? or bail.call output
+    # then the wrapper script
+    output = `#{@scp_cmd} #{localfile.path} #{ssh_path}/#{hostfile} 2>&1`
+    $?.success? or bail.call output
+    localfile.delete # ensure it's gone before proceeding.
+    # now run it
+    puts "Executing deployment script on #{host['ssh_host']} (#{host['host']}).\n"
+    puts "  You can watch the full log with:\n"
+    puts "  #{@ssh_cmd} #{ssh_target} '#{sudo}tail -f #{logfile}'"
+    output = ""
+    IO.popen("#{@ssh_cmd} #{ssh_target} '#{sudo}chmod u+x /tmp/#{hostfile} /tmp/openshift.sh \&\& #{sudo}/tmp/#{hostfile}' 2>&1") do |pipe|
+      pipe.each { |line| output += line; puts line }
+    end
+    $?.success? or return {
+      :success => false,
+      # At this point, two ssh commands just succeeded. It's possible, but unlikely
+      # that the third one fails before connecting and issuing the command.
+      # So, assume that ssh failed in the middle of executing.
+      :recoverable => step != 'configure', # which is only a problem for 'configure'
+      :message => "Execution of deployment script on remote host failed:\n#{output}\n"
+    }
+    output.split("\n").include?(STEP_SUCCESS_MSG[INSTALL_STEPS.index step]) or return {
+      :success => false,
+      :recoverable => step != 'configure',
+      :message => "Please examine #{logfile} on #{host['ssh_host']} to troubleshoot."
+    }
+  end
+
+  return {
+    :success => true,
+    :message => "Step '#{step}' succeeded for host #{host['ssh_host']}\n"
+  }
+end
+
+
+##############################################################################
+
+
 # Default and baked-in config values for the openshift.sh deployment
 @env_map = { 'CONF_INSTALL_COMPONENTS' => 'all' }
 
@@ -100,10 +268,9 @@ end
   'jboss_repo_base' => ['CONF_JBOSS_REPO_BASE'],
   'os_optional_repo' => ['CONF_RHEL_OPTIONAL_REPO'],
   'scl_repo' => ['CONF_RHSCL_REPO_BASE'],
-  'rh_username' => ['CONF_SM_REG_NAME','CONF_RHN_REG_NAME'],
-  'rh_password' => ['CONF_SM_REG_PASS','CONF_RHN_REG_PASS'],
+  'rh_username' => ['CONF_RHN_USER'],
+  'rh_password' => ['CONF_RHN_PASS'],
   'sm_reg_pool' => ['CONF_SM_REG_POOL'],
-  'sm_reg_pool_rhel' => ['CONF_SM_REG_POOL_RHEL'],
   'rhn_reg_actkey' => ['CONF_RHN_REG_ACTKEY'],
 }
 
@@ -111,13 +278,9 @@ end
 @env_input_map.each_pair do |input,target_list|
   env_key = "OO_INSTALL_#{input.upcase}"
   if ENV.has_key?(env_key)
-    target_list.each do |target|
-      @env_map[target] = ENV[env_key]
-    end
+    target_list.each { |target| @env_map[target] = ENV[env_key] }
   end
 end
-
-@utility_install_order = ['named','datastore','activemq','broker','node']
 
 # Maps openshift.sh roles to oo-install deployment components
 @role_map =
@@ -134,18 +297,18 @@ end
 @hosts = {}
 
 # Grab the config file contents
-config = YAML.load_file(@config_file)
+@config = YAML.load_file(@config_file)
 
 # Set values from deployment configuration
 @seen_roles = {}
-if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and config['Deployment'].has_key?('DNS')
-  config_hosts = config['Deployment']['Hosts']
-  config_dns = config['Deployment']['DNS']
+if @config.has_key?('Deployment') and @config['Deployment'].has_key?('Hosts') and @config['Deployment'].has_key?('DNS')
+  config_hosts = @config['Deployment']['Hosts']
+  config_dns = @config['Deployment']['DNS']
 
   named_hosts = []
   config_hosts.each do |host_info|
     # Basic config file sanity check
-    ['ssh_host','host','user','roles','ip_addr'].each do |attr|
+    %w[ ssh_host host user roles ip_addr ].each do |attr|
       next if not host_info[attr].nil?
       puts "One of the hosts in the configuration is missing the '#{attr}' setting. Exiting."
       exit 1
@@ -187,7 +350,7 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
 
   # DNS settings
   @env_map['CONF_DOMAIN'] = config_dns['app_domain']
-  if config_dns.has_key?('register_components') and config_dns['register_components'] == 'yes'
+  if 'Y' == config_dns['register_components']
     if not config_dns.has_key?('component_domain')
       puts "Error: The config specifies registering OpenShift component hosts with OpenShift DNS, but no OpenShift component host domain has been specified. Exiting."
       exit 1
@@ -226,20 +389,14 @@ end
 
 # Set the installation order
 host_order = []
-@utility_install_order.each do |order_role|
-  if not order_role == 'node' and not @target_node_ssh_host.nil?
-    next
-  end
+COMPONENT_INSTALL_ORDER.each do |order_role|
+  next if not order_role == 'node' and not @target_node_ssh_host.nil?
   @hosts.each_pair do |ssh_host,host_info|
     host_info['roles'].each do |host_role|
       @role_map[host_role].each do |ose_info|
         if ose_info['component'] == order_role
-          if not @target_node_ssh_host.nil? and not @target_node_ssh_host == ssh_host
-            next
-          end
-          if not host_order.include?(ssh_host)
-            host_order << ssh_host
-          end
+          next if @target_node_ssh_host and @target_node_ssh_host != ssh_host
+          host_order << host_info unless host_order.include?(host_info)
         end
       end
     end
@@ -252,145 +409,50 @@ if @target_node_ssh_host.nil?
 else
   puts "Preparing to add this node to an OpenShift Enterprise system:\n"
 end
-host_order.each do |ssh_host|
-  puts "  * #{ssh_host}: #{@hosts[ssh_host]['roles'].join(', ')}\n"
+host_order.each do |host|
+  puts "  * #{host['ssh_host']}: #{host['roles'].join ', '}\n"
 end
 
-# Run the jobs
-@reboots = []
-@child_pids = []
-saw_deployment_error = false
-host_order.each do |ssh_host|
-  user = @hosts[ssh_host]['user']
-  host = @hosts[ssh_host]['host']
-  hostfile = "oo_install_configure_#{host}.sh"
-  @env_map['CONF_INSTALL_COMPONENTS'] = components_list(@hosts[ssh_host])
+# Run the prepare step in parallel
+jobs = host_order.select {|host| !state_already? host, 'prepared' }.each do |host|
+  fork_and_run(host) do
+    run_on_host host, 'prepare'
+  end
+end
+wait_and_report(jobs, 'prepare') # bails if any fail
 
-  # Only include the node config setting for hosts that will have a node installation
-  if @hosts[ssh_host]['roles'].include?('node')
-    @env_map[@role_map['node'][0]['env_hostname']] = @hosts[ssh_host]['host']
-    @env_map[@role_map['node'][0]['env_ip_addr']] = @hosts[ssh_host]['ip_addr']
+# Run the install step in parallel
+jobs = host_order.select {|host| !state_already? host, 'installed' }.each do |host|
+  fork_and_run(host) do
+    run_on_host host, 'install'
+  end
+end
+wait_and_report(jobs, 'install') # bails if any fail
+
+# Run the configure step in series
+host_order.select {|host| !state_already? host, 'completed' }.each do |host|
+  result = run_on_host host, 'configure'
+  puts result[:message]
+  if result[:success]
+    host['state'] = 'completed'
   else
-    @env_map.delete(@role_map['node'][0]['env_hostname'])
-    @env_map.delete(@role_map['node'][0]['env_ip_addr'])
-  end
-
-  # Write the openshift.sh settings to a launcher script and gratuitously escape everything
-  filetext = ''
-  @env_map.each_pair do |env,val|
-    filetext << "export #{env}=#{shellescape(val)}\n"
-  end
-  filetext << "/tmp/openshift.sh |& tee -a /tmp/openshift-install.log\n"
-  filetext << "rm -f /tmp/openshift.sh /tmp/#{hostfile}\n"
-  filetext << "exit\n"
-
-  # Save it out so we can copy it to the target
-  hostfilepath = "/tmp/#{hostfile}"
-  if File.exists?(hostfilepath)
-    File.unlink(hostfilepath)
-  end
-  fh = File.new(hostfilepath, 'w')
-  fh.write(filetext)
-  fh.close
-
-  # Handle the config file copying and delete the original.
-  if not ssh_host == 'localhost'
-    puts "Copying deployment scripts to target #{ssh_host}.\n"
-    system "#{@scp_cmd} #{hostfilepath} #{user}@#{ssh_host}:#{hostfilepath}"
-    if not $?.exitstatus == 0
-      puts "Could not copy deployment configuration file to remote host. Exiting."
-      saw_deployment_error = true
-      break
-    end
-    system "#{@scp_cmd} #{File.dirname(__FILE__)}/openshift.sh #{user}@#{ssh_host}:/tmp/"
-    if not $?.exitstatus == 0
-      puts "Could not copy deployment utility to /tmp on remote host. Exiting."
-      saw_deployment_error = true
-      break
-    end
-  else
-    # localhost; relocate launcher file
-    system "cp #{File.dirname(__FILE__)}/openshift.sh /tmp/"
-    system "chmod u+x #{hostfilepath} /tmp/openshift.sh"
-  end
-
-  # Set up the commands to reboot and verify this system
-  reboot_info = [ssh_host, 'reboot', 'exit']
-  if not user == 'root'
-    [1,2].each do |idx|
-      reboot_info[idx] = "sudo #{reboot_info[idx]}"
-    end
-  end
-  if not ssh_host == 'localhost'
-    [1,2].each do |idx|
-      reboot_info[idx] = "#{@ssh_cmd} #{user}@#{ssh_host} '#{reboot_info[idx]}'"
-    end
-  end
-  @reboots << reboot_info
-
-  puts "Running deployment on #{host}\n"
-
-  @child_pids << Process.fork do
-    sudo = user == 'root' ? '' : 'sudo '
-    exit_code = 0
-    if not ssh_host == 'localhost'
-      system "#{@ssh_cmd} #{user}@#{ssh_host} '#{sudo}chmod u+x /tmp/#{hostfile} /tmp/openshift.sh \&\& #{sudo}/tmp/#{hostfile}'"
+    puts "\n---------------------------------------"
+    puts "Install step '#{step}' FAILED for:"
+    puts "  * #{host['ssh_host']} (#{host['host']})"
+    if result[:recoverable]
+      puts "It is safe to run this deployment again after problem resolution."
     else
-      # Set up the command before we dump ENV
-      command = "bash -l -c '#{sudo}/tmp/#{hostfile}'"
-
-      # Local installation. Clean out the ENV.
-      clear_env
-
-      # Run the launcher
-      system command
-      exit_code = $?.exitstatus
-
-      # Now restore the original env
-      restore_env
+      puts "It is NOT safe to run this deployment again."
+      puts "The 'configure' step is unlikely to work correctly after it has failed."
+      puts "Sorry; this host probably cannot be recovered."
+      host['state'] = 'broken'
     end
-
-    # Now we can safely remove the config file
-    if File.exists?(hostfilepath)
-      File.unlink(hostfilepath)
-    end
-
-    # Leave the fork
-    exit exit_code
-  end
-  puts "Installation completed for host #{host}\n"
-end
-
-procs = Process.waitall
-
-puts "Rebooting systems to complete installation."
-@reboots.each do |info|
-  ssh_host = info[0]
-  reboot = info[1]
-  responsive = info[2]
-  # We don't start the next reboot until the previous syetm is available.
-  if not system(reboot) and not $?.exitstatus == 255
-    puts "Attempted to run '#{reboot}' against #{ssh_host} but was unsuccessful. You must manually reboot the hosts in this OpenShift deployment to complete the installation process."
-    exit
-  else
-    retries = 5
-    loop do
-      # Try the system every 15 seconds until it is reachable or we hit our limit
-      sleep 15
-      print "\nAttempting to contact #{ssh_host}... "
-      if not system(responsive)
-        puts "not responding yet; trying again in 15 seconds.\n\n"
-        retries = retries - 1
-      else
-        puts "succeeded.\n\n"
-        break
-      end
-      if retries < 0
-        puts "\nWarning: Could not reconect to #{ssh_host} after several retries. Moving on to next host, but there may be issues with your deployment.\n\n"
-        break
-      end
-    end
+    puts "--------------------------------------------"
+    save_and_exit 1
   end
 end
 
-exit
+# total success
+puts "All installer steps are complete."
+puts "Please reboot newly-installed systems to complete the deployment."
+save_and_exit
