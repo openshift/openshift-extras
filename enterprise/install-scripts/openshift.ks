@@ -877,22 +877,18 @@ configure_rhsm_channels()
    set +x # don't log password
    subscription-manager register --force --username="$CONF_RHN_USER" --password="$CONF_RHN_PASS" --name "$profile_name" || abort_install
    set -x
-   for poolid in ${CONF_SM_REG_POOL//,/ }; do
+   for poolid in ${CONF_SM_REG_POOL//[, :+\/-]/ }; do
      echo "OpenShift: Registering subscription from pool id $poolid"
      subscription-manager attach --pool "$poolid" || abort_install
    done
 
-   # have yum sync new list of repos from rhsm before changing settings
-   yum $disable_plugin repolist
-
    # The yum-config-manager command is provided by the yum-utils package.
-   yum_install_or_exit yum-utils
    # We also need the priorities plugin before we start setting priorities, or that fails.
    # We need to ensure the right channel is enabled in order to get the priorities plugin.
-   if need_node_repo; then ycm_setopt rhel-6-server-ose-2-beta-node-rpms enabled=True
-   else ycm_setopt rhel-6-server-ose-2-beta-infra-rpms enabled=True
+   if need_node_repo; then subscription-manager repos --enable=rhel-6-server-ose-2-beta-node-rpms || abort_install
+   else subscription-manager repos --enable=rhel-6-server-ose-2-beta-infra-rpms || abort_install
    fi
-   yum_install_or_exit yum-plugin-priorities
+   yum_install_or_exit yum-plugin-priorities yum-utils
 
 
    # configure the RHEL subscription
