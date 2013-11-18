@@ -20,7 +20,7 @@ then
   echo "Reusing existing installer assets."
 else
   echo "Downloading oo-install package..."
-  curl -o ${TMPDIR}INSTALLPKGNAME.zip http://oo-install.rhcloud.com/INSTALLVERPATHINSTALLPKGNAME.zip
+  curl -s -o ${TMPDIR}INSTALLPKGNAME.zip http://oo-install.rhcloud.com/INSTALLVERPATHINSTALLPKGNAME.zip
 fi
 
 echo "Extracting oo-install to temporary directory..."
