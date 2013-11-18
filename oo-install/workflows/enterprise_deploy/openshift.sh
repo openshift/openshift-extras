@@ -757,12 +757,12 @@ rhn_setopt() # e.g. rhn_setopt myrepo foo=bar
 configure_rhn_channels()
 {
   if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
-    echo "Register with RHN using an activation key"
-    rhnreg_ks --force --activationkey=${CONF_RHN_REG_ACTKEY} --profilename="$profile_name" || abort_install
+    echo "OpenShift: Register to RHN Classic using an activation key"
+    rhnreg_ks --force --activationkey="${CONF_RHN_REG_ACTKEY}" --profilename="$profile_name" || abort_install
   else
-    echo "Register with RHN with username and password"
+    echo "OpenShift: Register to RHN Classic with username and password"
     set +x # don't log password
-    rhnreg_ks --force --profilename="$profile_name" --username ${CONF_RHN_USER} --password ${CONF_RHN_PASS} || abort_install
+    rhnreg_ks --force --profilename="$profile_name" --username "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
     set -x
   fi
 
@@ -805,26 +805,22 @@ ycm_setopt() # e.g. ycm_setopt myrepo foo=bar; must have an option to do anythin
 
 configure_rhsm_channels()
 {
-   echo "Register with RHSM"
+   echo "OpenShift: Register with RHSM"
    set +x # don't log password
-   subscription-manager register --force --username=$CONF_RHN_USER --password=$CONF_RHN_PASS --name "$profile_name" || abort_install
+   subscription-manager register --force --username="$CONF_RHN_USER" --password="$CONF_RHN_PASS" --name "$profile_name" || abort_install
    set -x
-   for poolid in ${CONF_SM_REG_POOL//,/ }; do
-     echo "Registering subscription from pool id $poolid"
-     subscription-manager attach --pool $poolid || abort_install
+   for poolid in ${CONF_SM_REG_POOL//[, :+\/-]/ }; do
+     echo "OpenShift: Registering subscription from pool id $poolid"
+     subscription-manager attach --pool "$poolid" || abort_install
    done
 
-   # have yum sync new list of repos from rhsm before changing settings
-   yum $disable_plugin repolist
-
    # The yum-config-manager command is provided by the yum-utils package.
-   yum_install_or_exit yum-utils
    # We also need the priorities plugin before we start setting priorities, or that fails.
    # We need to ensure the right channel is enabled in order to get the priorities plugin.
-   if need_node_repo; then ycm_setopt rhel-server-ose-1.2-node-6-rpms enabled=True
-   else ycm_setopt rhel-server-ose-1.2-infra-6-rpms enabled=True
+   if need_node_repo; then subscription-manager repos --enable=rhel-server-ose-1.2-node-6-rpms || abort_install
+   else subscription-manager repos --enable=rhel-server-ose-1.2-infra-6-rpms || abort_install
    fi
-   yum_install_or_exit yum-plugin-priorities
+   yum_install_or_exit yum-plugin-priorities yum-utils
 
    # configure the RHEL subscription
    ycm_setopt rhel-6-server-rpms priority=2 "exclude=tomcat6*"
@@ -852,17 +848,18 @@ abort_install()
 {
   [[ "$@"x == x ]] || echo "$@"
   # don't change this; could be used as an automation cue.
-  echo "Aborting OpenShift Installation."
+  echo "OpenShift: Aborting Installation."
   exit 1
 }
 
 yum_install_or_exit()
 {
+  echo "OpenShift: yum install $*"
   yum install -y $* $disable_plugin
   if [ $? -ne 0 ]
   then
-    echo "Command failed: yum install $*"
-    echo "Please ensure relevant repos/subscriptions are configured."
+    echo "OpenShift: Command failed: yum install $*"
+    echo "OpenShift: Please ensure relevant repos/subscriptions are configured."
     abort_install
   fi
 }
@@ -1221,13 +1218,13 @@ install_datastore_pkgs()
 # we need the following to wait until the daemon is really ready.
 wait_for_mongod()
 {
-  echo "Waiting for MongoDB to start ($(date +%H:%M:%S))..."
+  echo "OpenShift: Waiting for MongoDB to start ($(date +%H:%M:%S))..."
   while :
   do
     echo exit | mongo && break
     sleep 5
   done
-  echo "MongoDB is ready! ($(date +%H:%M:%S))"
+  echo "OpenShift: MongoDB is ready! ($(date +%H:%M:%S))"
 }
 
 # $1 = commands
@@ -1925,7 +1922,7 @@ add_host_to_zone()
 configure_hosts_dns()
 {
   add_host_to_zone "$named_hostname" "$named_ip_addr" # always define self
-  if [ -z $CONF_NAMED_ENTRIES ]; then
+  if [ -z "$CONF_NAMED_ENTRIES" ]; then
     # Add A records for any other components that are being installed locally.
     broker && add_host_to_zone "$broker_hostname" "$broker_ip_addr"
     node && add_host_to_zone "$node_hostname" "$node_ip_addr"
@@ -2648,38 +2645,38 @@ validate_preflight()
   preflight_failure=
   # Test that this isn't RHEL < 6 or Fedora
   if ! grep -q "Enterprise.* 6" /etc/redhat-release; then
-    echo "This process needs to begin with Enterprise Linux 6 installed."
+    echo "OpenShift: This process needs to begin with Enterprise Linux 6 installed."
     preflight_failure=1
   fi
   # Test that SELinux is at least present and not Disabled
   if ! command -v getenforce || ! [[ $(getenforce) =~ Enforcing|Permissive ]] ; then
-    echo "SELinux needs to be installed and enabled."
+    echo "OpenShift: SELinux needs to be installed and enabled."
     preflight_failure=1
   fi
   # Test that rpm/yum exists and isn't totally broken
   if ! command -v rpm || ! command -v yum; then
-    echo "rpm and yum must be installed."
+    echo "OpenShift: rpm and yum must be installed."
     preflight_failure=1
   fi
   if ! rpm -q rpm yum; then
-    echo "rpm command failed; there may be a problem with the RPM DB."
+    echo "OpenShift: rpm command failed; there may be a problem with the RPM DB."
     preflight_failure=1
   fi
   # test that subscription parameters are available if needed
   if [[ "$CONF_INSTALL_METHOD" =~ rhn|rhsm ]]; then
     set +x # don't log password
     if [ ! "$CONF_RHN_USER" -o ! "$CONF_RHN_PASS" ]; then
-      echo "Install method $CONF_INSTALL_METHOD requires an RHN user and password."
+      echo "OpenShift: Install method $CONF_INSTALL_METHOD requires an RHN user and password."
       preflight_failure=1
     fi
     set -x
   fi
   if [ "$CONF_INSTALL_METHOD" = rhsm -a ! "$CONF_SM_REG_POOL" ]; then
-    echo "Install method rhsm requires a poolid."
+    echo "OpenShift: Install method rhsm requires a poolid."
     preflight_failure=1
   fi
   if [ "$CONF_INSTALL_METHOD" = yum -a ! "$ose_repo_base" ]; then
-    echo "Install method yum requires providing URLs for at least OpenShift repos."
+    echo "OpenShift: Install method yum requires providing URLs for at least OpenShift repos."
     preflight_failure=1
   fi
   # Test that known problematic RPMs aren't present
@@ -2692,6 +2689,7 @@ install_rpms()
 {
   echo "OpenShift: Begin installing RPMs."
   # we often rely on latest selinux policy and other updates
+  echo "OpenShift: yum update"
   yum $disable_plugin update -y || abort_install
   # Install ntp and ntpdate because they may not be present in a RHEL
   # minimal install.
