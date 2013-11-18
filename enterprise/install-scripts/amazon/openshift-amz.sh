@@ -42,53 +42,39 @@ configure_repos()
   # functions.
 
   # Make need_${repo}_repo return false by default.
-  for repo in optional infra node jbosseap_cartridge client_tools jbosseap jbossews
-  do
+  for repo in optional infra node jbosseap_cartridge client_tools jbosseap jbossews; do
       eval "need_${repo}_repo() { false; }"
   done
 
-  if is_true "$CONF_OPTIONAL_REPO"
-  then
-    need_optional_repo() { :; }
-  fi
+  is_true "$CONF_OPTIONAL_REPO" && need_optional_repo() { :; }
 
-  if activemq || broker || datastore || named
-  then
+  if activemq || broker || datastore || named; then
     # The ose-infrastructure channel has the activemq, broker, and mongodb
     # packages.  The ose-infrastructure and ose-node channels also include
     # the yum-plugin-priorities package, which is needed for the installation
-    # script itself, so we also enable ose-infrastructure here if we are
-    # installing named.
+    # script itself, so we require ose-infrastructure here even if we are
+    # only installing named.
     need_infra_repo() { :; }
 
     # The rhscl channel is needed for the ruby193 software collection.
     need_rhscl_repo() { :; }
   fi
 
-  if broker
-  then
-    # We install the rhc client tool on the broker host.
-    need_client_tools_repo() { :; }
-  fi
+  # We install the rhc client tool on the broker host.
+  broker && need_client_tools_repo() { :; }
 
-  if node
-  then
+  if node; then
     # The ose-node channel has node packages including all the cartridges.
     need_node_repo() { :; }
 
-    if is_false "${CONF_NO_JBOSSEAP}"; then
-      need_jbosseap_cartridge_repo() { :; }
+    # The jbosseap and jbossas cartridges require the jbossas packages
+    # in the jbappplatform channel.
+    is_false "${CONF_NO_JBOSSEAP}" \
+             && need_jbosseap_cartridge_repo() { :; } \
+             && need_jbosseap_repo() { :; }
 
-      # The jbosseap and jbossas cartridges require the jbossas packages
-      # in the jbappplatform channel.
-      need_jbosseap_repo() { :; }
-    fi
-
-    if is_false "${CONF_NO_JBOSSEWS}"; then
-      # The jbossews cartridge requires the tomcat packages in the jb-ews
-      # channel.
-      need_jbossews_repo() { :; }
-    fi
+    # The jbossews cartridge requires the tomcat packages in the jb-ews channel.
+    is_false "${CONF_NO_JBOSSEWS}" && need_jbossews_repo() { :; }
 
     # The rhscl channel is needed for several cartridge platforms.
     need_rhscl_repo() { :; }
