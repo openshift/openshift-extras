@@ -183,6 +183,7 @@ def run_on_host(host, step)
   localfile.close
 
   # Copy the files and run the install
+  script_output = ""
   if host['ssh_host'] == 'localhost'
     # relocate launcher file
     system "cp #{File.dirname(__FILE__)}/openshift.sh /tmp/"
@@ -194,9 +195,8 @@ def run_on_host(host, step)
     # Local installation. Clean out the ENV.
     clear_env
     # Run the launcher
-    output = ""
     IO.popen("bash -l -c '#{sudo}#{localfile.path}' 2>&1") do |pipe|
-      pipe.each { |line| output += line; puts line }
+      pipe.each { |line| script_output += line; puts line }
     end
     success = $?.success?
     # Now restore the original env
@@ -227,9 +227,8 @@ def run_on_host(host, step)
     puts "Executing deployment script on #{host['ssh_host']} (#{host['host']}).\n"
     puts "  You can watch the full log with:\n"
     puts "  #{@ssh_cmd} #{ssh_target} '#{sudo}tail -f #{logfile}'"
-    output = ""
     IO.popen("#{@ssh_cmd} #{ssh_target} '#{sudo}chmod u+x /tmp/#{hostfile} /tmp/openshift.sh \&\& #{sudo}/tmp/#{hostfile}' 2>&1") do |pipe|
-      pipe.each { |line| output += line; puts line }
+      pipe.each { |line| script_output += line; puts line }
     end
     $?.success? or return {
       :success => false,
@@ -237,14 +236,14 @@ def run_on_host(host, step)
       # that the third one fails before connecting and issuing the command.
       # So, assume that ssh failed in the middle of executing.
       :recoverable => step != 'configure', # which is only a problem for 'configure'
-      :message => "Execution of deployment script on remote host failed:\n#{output}\n"
-    }
-    output.split("\n").include?(STEP_SUCCESS_MSG[INSTALL_STEPS.index step]) or return {
-      :success => false,
-      :recoverable => step != 'configure',
-      :message => "Please examine #{logfile} on #{host['ssh_host']} to troubleshoot."
+      :message => "Execution of deployment script on remote host failed:\n#{script_output}\n"
     }
   end
+  script_output.split("\n").include?(STEP_SUCCESS_MSG[INSTALL_STEPS.index step]) or return {
+    :success => false,
+    :recoverable => step != 'configure',
+    :message => "Please examine #{logfile} on #{host['ssh_host']} to troubleshoot."
+  }
 
   return {
     :success => true,
