@@ -198,7 +198,6 @@ def run_on_host(host, step)
     IO.popen("bash -l -c '#{sudo}#{localfile.path}' 2>&1") do |pipe|
       pipe.each { |line| output += line; puts line }
     end
-    output = ``
     success = $?.success?
     # Now restore the original env
     restore_env
