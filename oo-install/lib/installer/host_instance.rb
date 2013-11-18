@@ -14,6 +14,8 @@ module Installer
       @roles = []
       @install_status = item.has_key?('state') ? item['state'].to_sym : :new
       self.class.attrs.each do |attr|
+        # Skip install_status here or the value will be nilled out
+        next if attr == :install_status
         value = attr == :roles ? [] : nil
         if item.has_key?(attr.to_s)
           if attr == :roles
@@ -162,7 +164,6 @@ module Installer
 
     def to_hash
       output = {}
-      puts "ATTRS: #{self.class.attrs.inspect}"
       self.class.attrs.each do |attr|
         next if self.send(attr).nil?
         if attr == :install_status
@@ -171,7 +172,6 @@ module Installer
           output[attr.to_s] = attr == :roles ? self.send(attr).map{ |r| r.to_s } : self.send(attr)
         end
       end
-      puts "OUT: #{output.inspect}\nSTATE: #{@install_status.inspect}"
       output
     end
 

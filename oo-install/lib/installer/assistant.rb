@@ -714,6 +714,8 @@ module Installer
             elsif not host_instance.host.match(/#{deployment.dns.component_domain}$/)
               say "\nThe hostname #{host_instance.host} is not part of the domain that was specified for OpenShift hosts (#{deployment.dns.component_domain})."
               host_instance.host = nil
+            else
+              break
             end
           else
             break
