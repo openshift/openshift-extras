@@ -1,4 +1,5 @@
 require 'net/ssh'
+require 'iconv' if RUBY_VERSION == '1.8.7'
 
 module Installer
   class HostInstance
@@ -146,6 +147,7 @@ module Installer
       @roles.delete_if{ |r| r == role }
     end
 
+
     def host_type
       @host_type ||=
         begin
@@ -247,13 +249,13 @@ module Installer
         end
       end
       ssh.loop
-      { :stdout => stdout_data, :stderr => stderr_data, :exit_code => exit_code, :exit_signal => exit_signal }
+      { :stdout => force_utf8(stdout_data), :stderr => force_utf8(stderr_data), :exit_code => exit_code, :exit_signal => exit_signal }
     end
 
     def local_exec!(command)
       stdout_data = %x[#{command}]
       exit_code = $?.exitstatus
-      { :stdout => stdout_data, :exit_code => exit_code }
+      { :stdout => force_utf8(stdout_data), :exit_code => exit_code }
     end
 
     def get_ip_addr_choices
@@ -294,6 +296,14 @@ module Installer
     end
 
     private
+
+    def force_utf8(s)
+      case RUBY_VERSION
+        when '1.8.7' then ::Iconv.conv('UTF-8//IGNORE', 'UTF-8', s.to_s + ' ')[0..-2]
+        else s.to_s.encode('UTF-8', :invalid => :replace)
+      end
+    end
+
     def lookup_ssh_target
       ssh_config = Net::SSH::Config.for(ssh_host)
       if ssh_config.has_key?(:host_name)
