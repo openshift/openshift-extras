@@ -781,7 +781,7 @@ module Installer
             manual_ip_info_for_host_instance(host_instance, ip_addrs)
           when 1
             say "\nDetected IP address #{ip_addrs[0][1]} at interface #{ip_addrs[0][0]} for this host."
-            question = "Do you want Nodes to use this IP information to reach this Broker?"
+            question = "Do you want Nodes to use this IP information to reach this host?"
             if host_instance.is_node?
               question = "Do you want to use this as the public IP information for this Node?"
             end
