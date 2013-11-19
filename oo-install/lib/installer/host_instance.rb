@@ -149,7 +149,7 @@ module Installer
     def host_type
       @host_type ||=
         begin
-          type_output = exec_on_host!('cat /etc/redhat-release')
+          type_output = exec_on_host!('LC_CTYPE=en_US.utf8 cat /etc/redhat-release')
           type_result = :other
           if type_output[:exit_code] == 0
             if type_output[:stdout].match(/^Fedora/)
