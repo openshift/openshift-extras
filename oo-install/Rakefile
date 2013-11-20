@@ -12,7 +12,6 @@ task :package do
     system 'rm', '-rf', @package_dir
   end
 
-  # Recreate the package dir
   Dir.mkdir(@package_dir)
 
   # Set up a new package / archive name
@@ -62,7 +61,7 @@ task :package do
     end
 
     # Zip up the source and copy it to the package dir
-    system "cd #{@tmpdir}; zip -qq -r #{pkgname}.zip #{pkgname}"
+    system "cd #{@tmpdir} && rm -rf #{pkgname}/package && zip -qq -r #{pkgname}.zip #{pkgname}"
     system 'mv', "#{@tmpdir}#{pkgname}.zip", pkgdir
 
     # Copy the bootstrap file to the package dir
