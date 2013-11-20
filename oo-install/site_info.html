@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Install OpenShift!</title>
+  <!--<script src="http://netdna.bootstrapcdn.com/bootstrap/3.0.2/js/bootstrap.min.js"></script>-->
+  <link href="http://netdna.bootstrapcdn.com/bootstrap/3.0.2/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<div class="container">
+  <div class="row">
+    <div class="col-md-12">
+      <div class="well">
+        <h1>Get Ready to Rock with <a href="http://www.openshift.com/">OpenShift</a>.</h1>
+        <p class="lead">You're one shell command away from deploying the OpenShift Platform-as-a-Service into your own network environment.</p>
+      </div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="col-md-6">
+      <h2>OpenShift Origin</h2>
+      <p>Copy this command and run it from a bash shell:</p>
+      <pre>sh <(curl -s http://oo-install.rhcloud.com/)</pre>
+    </div>
+    <div class="col-md-6">
+      <h2>OpenShift Enterprise</h2>
+      <p>Grab the latest OpenShift Enterprise installer here:</p>
+      <pre>sh <(curl -s http://oo-install.rhcloud.com/ose)</pre>
+    </div>
+  </div>
+  <div class="row">
+    <div class="col-md-12">
+      <hr />
+      <h3>Popular Options</h3>
+      <p>Want to get fancy? You can pass options to the installer by including them in a quoted string, like this:</p>
+      <pre>sh <(curl -s http://oo-install.rhcloud.com/) "-e -s rhsm -u user@company.com"</pre>
+      <p>Here are some useful settings:</p>
+      <pre>
+    -a, --advanced-mode              Enable access to message server and db server customization.
+    -c, --config-file FILEPATH       The path to an alternate config file
+        --create-config              Use with "-c" to create and use a new alternate config file
+    -w, --workflow WORKFLOW_ID       The installer workflow for unattended deployment.
+    -e, --enterprise-mode            Show OpenShift Enterprise options (ignored in unattended mode)
+    -s, --subscription-type TYPE     The software source for installation packages.
+    -u, --username USERNAME          Red Hat Login username
+    -p, --password PASSWORD          Red Hat Login password
+    -d, --debug                      Enable debugging messages
+      </pre>
+      <h3>Need more help? We're here for you.</h3>
+      <ul>
+        <li>Documentation is available at the <a href="http://openshift.github.io/documentation/">OpenShift Origin documentation site</a>.</li>
+        <li>Familiar with IRC? OpenShift superstars can be found on the <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift&uio=d4">#openshift</a> and <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift-dev&uio=d4">#openshift-dev</a> channels on <a href="http://www.freenode.net/">FreeNode</a>.</li>
+        <li>You can also join the <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/users">Users</a> or <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/dev">Developers</a> mailing list.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</body>
+</html>
