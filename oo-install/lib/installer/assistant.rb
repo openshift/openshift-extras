@@ -146,6 +146,10 @@ module Installer
       if workflow.check_deployment?
         if deployment.hosts.length == 0
           ui_create_deployment
+          ui_show_deployment
+          if concur("\nDo you want to change the deployment info?", translate(:help_basic_deployment))
+            ui_edit_deployment
+          end
         elsif not deployment.is_valid?
           ui_show_deployment(translate(:info_force_run_deployment_setup))
           ui_edit_deployment
@@ -285,8 +289,6 @@ module Installer
       if not advanced_mode?
         deployment.set_basic_hosts!
       end
-
-      say "\nLastly we need to set up information about where you will be getting your software packages from."
     end
 
     def ui_edit_workflow
@@ -824,7 +826,7 @@ module Installer
     end
 
     def manual_ip_info_for_host_instance(host_instance, ip_addrs)
-      addr_question = "\nSpecify the IP address that Nodes will use to connect to this Broker"
+      addr_question = "\nSpecify the IP address that Nodes will use to connect to this host"
       if host_instance.is_node?
         addr_question = "\nSpecify the public IP address for this Node"
       end
