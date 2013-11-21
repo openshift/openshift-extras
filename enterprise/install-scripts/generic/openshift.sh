@@ -1929,8 +1929,8 @@ ensure_domain()
 # TODO: use oo-register-dns to do this instead.
 add_host_to_zone()
 {
-  # $1 = host; $2 = ip
-  zone="$hosts_domain"
+  # $1 = host; $2 = ip; [ $3 = zone ]
+  zone="${3:-$hosts_domain}"
   nsdb="/var/named/dynamic/${zone}.db"
   # sanity check that $1 isn't an IP, and $2 is.
   ip_regex='^[.0-9]+$' # all numbers and dots = IP (not rigorous)
@@ -1944,6 +1944,8 @@ add_host_to_zone()
 configure_hosts_dns()
 {
   add_host_to_zone "$named_hostname" "$named_ip_addr" # always define self
+  # glue record for NS host in subdomain:
+  [[ "$hosts_domain" == *?"$domain" ]] && add_host_to_zone "$named_hostname" "$named_ip_addr" "$domain"
   if [ -z "$CONF_NAMED_ENTRIES" ]; then
     # Add A records for any other components that are being installed locally.
     broker && add_host_to_zone "$broker_hostname" "$broker_ip_addr"
