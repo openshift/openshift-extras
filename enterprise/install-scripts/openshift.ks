@@ -1543,6 +1543,12 @@ plugin.psk = asimplething
 connector = activemq
 $(generate_mcollective_pools_configuration)
 
+# We do not actually use node registration in any way at this time.
+# However, having it configured enables mcollective to recover from
+# dead connections (msg host rebooted, etc.) as a side effect.
+# See https://bugzilla.redhat.com/show_bug.cgi?id=1009887
+registerinterval = 30
+
 # Facts
 factsource = yaml
 plugin.yaml = /etc/mcollective/facts.yaml
