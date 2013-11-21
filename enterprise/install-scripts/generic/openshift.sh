@@ -365,16 +365,14 @@
 #CONF_KEEP_NAMESERVERS=true
 
 # forward_dns / CONF_FORWARD_DNS
-#   Default: ! keep_nameservers (so typically, true)
+#   Default: false (not set)
 #   This option determines whether the BIND server being installed will
 #   forward requests for which it is not authoritative to upstream DNS
-#   servers or not. In a rogue DNS install, forwarding will make for
-#   a better client experience, so the default is true; however this
-#   should not be done if the service is open to the internet as it
-#   can be used to magnify DDoS attacks.  If OpenShift DNS is properly
-#   delegated/authoritative then this is not necessary at all and
-#   should be false.
-#CONF_FORWARD_DNS=false
+#   servers. This should not be necessary in most cases; with this
+#   disabled, BIND will refuse requests (status REFUSED) that it
+#   cannot answer directly, which should cause most clients to ask the
+#   next nameserver in their configuration.
+#CONF_FORWARD_DNS=true
 
 
 # # # # # # # # # # # miscellaneous other settings # # # # # # # # # # #
@@ -2600,11 +2598,6 @@ set_defaults()
     named_ip_addr="${CONF_NAMED_IP_ADDR:-$broker_ip_addr}"
   fi
 
-  if ! [ "${CONF_FORWARD_DNS}" ]; then  # decide default for forwarding
-    CONF_FORWARD_DNS=true
-    # if not running a rogue DNS server, don't need to forward
-    is_true "$CONF_KEEP_NAMESERVERS" && CONF_FORWARD_DNS=false
-  fi
   # The nameservers to which named on the broker will forward requests.
   # This should be a list of IP addresses with a semicolon after each.
   nameservers="$(awk '/nameserver/ { printf "%s; ", $2 }' /etc/resolv.conf)"

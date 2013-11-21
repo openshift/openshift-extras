@@ -2112,11 +2112,6 @@ set_defaults()
     named_ip_addr="${CONF_NAMED_IP_ADDR:-$broker_ip_addr}"
   fi
 
-  if ! [ "${CONF_FORWARD_DNS}" ]; then  # decide default for forwarding
-    CONF_FORWARD_DNS=true
-    # if not running a rogue DNS server, don't need to forward
-    is_true "$CONF_KEEP_NAMESERVERS" && CONF_FORWARD_DNS=false
-  fi
   # The nameservers to which named on the broker will forward requests.
   # This should be a list of IP addresses with a semicolon after each.
   nameservers="$(awk '/nameserver/ { printf "%s; ", $2 }' /etc/resolv.conf)"
