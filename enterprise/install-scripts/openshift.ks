@@ -847,8 +847,6 @@ configure_rhn_channels()
 
   # RHEL packages are second priority
   rhn_setopt rhel-x86_64-server-6 priority=20 "exclude=tomcat6*"
-  # While RHEL 6.5 is in beta, add that channel
-  rhn_setopt rhel-x86_64-server-6-beta priority=20 "exclude=tomcat6*"
 
   # JBoss packages are third priority -- and all else is lower
   need_jbosseap_repo && rhn_setopt jbappplatform-6-x86_64-server-6-rpm priority=30
@@ -894,8 +892,6 @@ configure_rhsm_channels()
    # configure the RHEL subscription
    ycm_setopt rhel-6-server-rpms priority=20 "exclude=tomcat6*"
    need_optional_repo && ycm_setopt rhel-6-server-optional-rpms enabled=True
-   # for the duration of the RHEL 6.5 beta need to enable that too
-   ycm_setopt rhel-6-server-beta-rpms priority=20 "exclude=tomcat6*"
 
    # and the OpenShift subscription (beta until 2.0 is GA)
    need_infra_repo && ycm_setopt rhel-6-server-ose-2-beta-infra-rpms priority=10
