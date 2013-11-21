@@ -20,21 +20,25 @@ DESCRIPTION
 OPTIONS
 
   -h|--help  
-    show this help message and exit
+    Show help message and exit
 
   -r|--role system_role  
     Valid arguments: node, broker, client, node-eap
 
     OpenShift component role(s) this system will fulfill. This option
-    may be specified more than once.
+    may be specified more than once
 
     Note that --role=node-eap implies --role=node, and --role=broker
     implies --role=client
 
   -o|--oo-version openshift_version  
-    Valid arguments: 1.2, 2.0
+    Example arguments: 1.2, 2.0, 2.0beta, ...
 
-    Version of OpenShift Enterprise in use on this system.
+    Version of OpenShift Enterprise in use on this system. Valid
+    arguments are derived from the product_version fields of
+    repositories defined in the default repository configuration file
+    (/etc/yum-validator/repos.ini) or from the configuration file
+    specified via the --repo-config option
 
   -s|--subscription-type subscription_type  
     Valid arguments: rhsm, rhn
@@ -42,23 +46,24 @@ OPTIONS
     Subscription management system which provides the OpenShift
     Enterprise repositories/channels.
 
-  -f|--fix             Attempt to repair the first problem found.
+  -f|--fix             Attempt to repair the first problem found
 
-  -a|--fix-all         Attempt to repair all problems found.
+  -a|--fix-all         Attempt to repair all problems found
 
   -p|--report-all  
     Report all problems (default is to halt after first problem
-    report.)
+    report)
 
   -c|--repo-config repo_config  
-    Load blessed repository data from the specified file repo_config
-    instead of built-in values.
+    Load repository configuration data from the specified file
+    repo_config instead of the default file
+    /etc/yum-validator/repos.ini
 
 APPLICATION USAGE
 
   With no arguments, oo-admin-yum-validator will attempt to guess various details about your system, including:
 
-  1. What OpenShift component role or roles the system is configured to fulfill.
+  1. What OpenShift component role or roles the system is configured to fulfill
 
   2. Which version, if any, of OpenShift Enterprise is currently installed
 
@@ -140,7 +145,7 @@ EXAMPLE
 
 WARNINGS
 
-  oo-admin-yum-validator currently supports only OpenShift Enterprise versions 1.2.x and 2.0.x. Support for OpenShift Origin based installs is planned.
+  oo-admin-yum-validator currently supports only OpenShift Enterprise. Support for OpenShift Origin based installs is planned.
 
   oo-admin-yum-validator does not currently work for installations where the required repositories are not provided from subscriptions via RHN Classic or Red Hat Subscription Manager. Specific examples include:
 
@@ -152,7 +157,7 @@ SEE ALSO
 
   oo-admin-chk(8), oo-accept-broker(8), oo-accept-systems(8),
   oo-accept-node(8), oo-diagnostics(8), rhn-channel(8),
-  subscription-manager(8), yum-utils(1),
+  subscription-manager(8), yum-utils(1)
 
 AUTHOR
   John Lamb <jolamb@redhat.com> - man page written for OpenShift

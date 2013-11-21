@@ -22,7 +22,7 @@ SUBS_NAME = {'unknown': '', 'rhsm': 'Red Hat Subscription Manager',
              'rhn': 'RHN Classic or RHN Satellite'}
 VALID_SUBS = SUBS_NAME.keys()[1:]
 ATTACH_ENTITLEMENTS_URL = 'https://access.redhat.com/site/articles/522923'
-VALID_OO_VERSIONS = ['1.2', '2.0']
+# VALID_OO_VERSIONS = ['1.2', '2.0']
 VALID_ROLES = ['node', 'broker', 'client', 'node-eap']
 
 def flatten_uniq(llist):
@@ -142,6 +142,16 @@ class OpenShiftYumValidator(object):
                     if not product or repo.product == product]
         return self.rdb.find_repos(**kwargs)
 
+    def _available_subs(self):
+        subs = {}
+        for fxn_rcheck, sub in [(self.oscs.repo_is_rhsm, 'rhsm'),
+                                (self.oscs.repo_is_rhn, 'rhn')]:
+            for repoid in self.oscs.all_repoids():
+                if fxn_rcheck(repoid):
+                    subs[sub] = True
+                    break
+        return subs
+
     def _sub(self, subscription):
         self.opts.subscription = subscription
         self.logger.info('Detected OpenShift Enterprise repository '
@@ -150,8 +160,8 @@ class OpenShiftYumValidator(object):
 
     def _oo_ver(self, version):
         self.opts.oo_version = version
-        self.logger.info('Detected installed OpenShift Enterprise '
-                         'version %s' % self.opts.oo_version)
+        self.logger.info('Detected OpenShift Enterprise version %s' % 
+                         self.opts.oo_version)
 
     def _sub_ver(self, subscription, version = None):
         if self.opts.subscription == UNKNOWN and not self.opts.oo_version:
@@ -176,81 +186,53 @@ class OpenShiftYumValidator(object):
                 return True
         return False
 
-    def guess_ose_version_and_subscription(self):
-        """Attempt to determine the product version and subscription
-        management tool in use if one or both arguments aren't
-        provided by the user.
+    def detect_prod_version_and_sub(self):
+        """Attempt to determine if an existing version of OpenShift is
+        installed, and if so, guess what version (out of the available
+        versions in the repository config file) is installed
 
-        TODO: Better description of guess criteria
         """
         if self.opts.subscription != UNKNOWN and self.opts.oo_version:
             # Short-circuit guess if user specifies sub and ver
             return True
-        matches = self.rdb.find_repos_by_repoid(self.oscs.all_repoids())
-        rhsm_ose_2_0 = [repo for repo in matches if
-                        repo in self.rdb.find_repos(subscription = 'rhsm',
-                                                  product_version = '2.0',
-                                                  product = 'ose')]
-        rhn_ose_2_0 = [repo for repo in matches if
-                       repo in self.rdb.find_repos(subscription = 'rhn',
-                                                 product_version = '2.0',
-                                                 product = 'ose')]
-        rhsm_ose_1_2 = [repo for repo in matches if
-                        repo in self.rdb.find_repos(subscription = 'rhsm',
-                                                  product_version = '1.2',
-                                                  product = 'ose')]
-        rhn_ose_1_2 = [repo for repo in matches if
-                       repo in self.rdb.find_repos(subscription = 'rhn',
-                                                 product_version = '1.2',
-                                                 product = 'ose')]
-        rhsm_2_0_avail = [repo for repo in rhsm_ose_2_0 if repo.repoid in
-                          self.oscs.enabled_repoids()]
-        rhn_2_0_avail = [repo for repo in rhn_ose_2_0 if repo.repoid in
-                         self.oscs.enabled_repoids()]
-        rhsm_1_2_avail = [repo for repo in rhsm_ose_1_2 if repo.repoid in
-                          self.oscs.enabled_repoids()]
-        rhn_1_2_avail = [repo for repo in rhn_ose_1_2 if repo.repoid in
-                         self.oscs.enabled_repoids()]
-        rhsm_2_0_pkgs = filter(None,
-                               [self.oscs.verify_package(repo.key_pkg,
-                                                         source=repo.repoid)
-                                for repo in rhsm_2_0_avail])
-        rhn_2_0_pkgs = filter(None,
-                              [self.oscs.verify_package(repo.key_pkg,
-                                                        source=repo.repoid)
-                               for repo in rhn_2_0_avail])
-        rhsm_1_2_pkgs = filter(None,
-                               [self.oscs.verify_package(repo.key_pkg,
-                                                         source=repo.repoid)
-                                for repo in rhsm_1_2_avail])
-        rhn_1_2_pkgs = filter(None,
-                              [self.oscs.verify_package(repo.key_pkg,
-                                                        source=repo.repoid)
-                               for repo in rhn_1_2_avail])
-        # This if ladder detects the subscription type and version
-        # based on available OSE repos and which repos provide
-        # installed packages. Maybe there's a better way?
-        if ((rhsm_2_0_pkgs and self._sub_ver('rhsm', '2.0')) or
-            (rhn_2_0_pkgs and self._sub_ver('rhn', '2.0')) or
-            (rhsm_1_2_pkgs and self._sub_ver('rhsm', '1.2')) or
-            (rhn_1_2_pkgs and self._sub_ver('rhn', '1.2')) or
-            (rhsm_2_0_avail and self._sub_ver('rhsm', '2.0')) or
-            (rhn_2_0_avail and self._sub_ver('rhn', '2.0')) or
-            (rhsm_1_2_avail and self._sub_ver('rhsm', '1.2')) or
-            (rhn_1_2_avail and self._sub_ver('rhn', '1.2')) ):
-            return True
-        # This section detects just the subscription type if the
-        # version has been specified or couldn't be determined by the
-        # preceding logic.
-        for fxn_rcheck, sub in [(self.oscs.repo_is_rhsm, 'rhsm'),
-                                (self.oscs.repo_is_rhn, 'rhn')]:
-            if self.opts.subscription == UNKNOWN:
-                for repoid in self.oscs.all_repoids():
-                    if fxn_rcheck(repoid) and self._sub_ver(sub):
-                        return True
-            else:
-                # No need to check for a value the user has provided
-                break
+        enabled_repos = [repo for repo in
+                         self.rdb.find_repos_by_repoid(
+                             self.oscs.enabled_repoids()) if
+                         not isinstance(repo.product_version, tuple)]
+        pkg_repos = [repo for repo in enabled_repos if
+                     self.oscs.verify_package(repo.key_pkg, source=repo.repoid)]
+        for repos in (pkg_repos, enabled_repos):
+            if not repos:
+                continue
+            if self.rdb.preferred_version:
+                ver_mtch = [repo for repo in repos if
+                            repo.product_version ==
+                            self.rdb.preferred_version]
+                if ver_mtch:
+                    self._oo_ver(self.rdb.preferred_version)
+            if self.opts.oo_version:
+                repos = [repo for repo in repos if
+                         repo.product_version == self.opts.oo_version]
+                if not repos:
+                    continue
+            if self.rdb.preferred_subscription:
+                subs_mtch = [repo for repo in repos if
+                             repo.subscription ==
+                             self.rdb.preferred_subscription]
+                if subs_mtch:
+                    mtch_repo = subs_mtch[0]
+                    return self._sub_ver(mtch_repo.subscription,
+                                         mtch_repo.product_version)
+            mtch_repo = repos[0]
+            return self._sub_ver(mtch_repo.subscription,
+                                 mtch_repo.product_version)
+        avail_subs = self._available_subs()
+        if avail_subs:
+            if avail_subs.get(self.rdb.preferred_subscription, False):
+                # Get the preferred subscription if available
+                return self._sub_ver(self.rdb.preferred_subscription)
+            # Get first valid subscription otherwise
+            return self._sub_ver(avail_subs.keys()[0])
         return False
 
     def check_version_conflict(self):
@@ -702,22 +684,23 @@ class OpenShiftYumValidator(object):
                 self.problem = True
                 self.logger.error('You have specified an invalid role: %s '
                                   'is not one of %s' % (role, VALID_ROLES))
-                self.opt_parser.print_help()
+                # self.opt_parser.print_help()
                 return False
         return True
 
     def validate_version(self):
-        """Check supplied product version against VALID_OO_VERSIONS.
-
-        TODO: This probably isn't necessary any longer
+        """Check supplied product version against versions available in RepoDB
+        object self.rdb
 
         """
+        valid_vers = self.rdb.list_available('product_version')
         if self.opts.oo_version:
-            if not self.opts.oo_version in VALID_OO_VERSIONS:
+            if not self.opts.oo_version in valid_vers:
                 self.logger.error('You have specified an invalid version: '
-                                  '%s is not one of %s' %
-                                  (self.opts.oo_version, VALID_OO_VERSIONS))
-                self.opt_parser.print_help()
+                                  '%s is not one of: %s' %
+                                  (self.opts.oo_version, ', '.join(valid_vers)))
+                # self.opt_parser.print_help()
+                self.problem = True
                 return False
         return True
 
@@ -749,7 +732,8 @@ class OpenShiftYumValidator(object):
         if not self.validate_roles():
             return False
         self.massage_roles()
-        if not self.guess_ose_version_and_subscription():
+        # if not self.guess_ose_version_and_subscription():
+        if not self.detect_prod_version_and_sub():
             self.problem = True
             if self.opts.subscription == UNKNOWN:
                 self.logger.error('Could not determine subscription type.')
@@ -801,6 +785,8 @@ class OpenShiftYumValidator(object):
         return False
 
     def main(self):
+        if not self.validate_version():
+            return 1
         if self.opts.report_all:
             # report_all + fix == fix_all, we don't want someone to
             # accidentally set that up by hand
@@ -848,7 +834,6 @@ def validate_yum():
                                 help=ROLE_HELP)
         opt_parser.add_argument('-o', '--oo_version', '--oo-version',
                                 default=None,
-                                choices=VALID_OO_VERSIONS,
                                 dest='oo_version',
                                 help=OO_VERSION_HELP)
         opt_parser.add_argument('-s', '--subscription-type',
@@ -874,15 +859,15 @@ def validate_yum():
     except ImportError:
         import optparse
         ROLE_HELP += ' One or more of: %s' % VALID_ROLES
-        OO_VERSION_HELP += ' One of: %s' % VALID_OO_VERSIONS
+        # OO_VERSION_HELP += ' One of: %s' % VALID_OO_VERSIONS
         SUBSCRIPTION_HELP += ' One of: %s' % VALID_SUBS
         opt_parser = optparse.OptionParser()
         opt_parser.add_option('-r', '--role', default=None,
                               choices=VALID_ROLES, action='append',
                               help=ROLE_HELP)
         opt_parser.add_option('-o', '--oo_version', '--oo-version',
-                              default=None, choices=VALID_OO_VERSIONS,
-                              dest='oo_version', help=OO_VERSION_HELP)
+                              default=None, dest='oo_version',
+                              help=OO_VERSION_HELP)
         opt_parser.add_option('-s', '--subscription-type',
                               default=None, choices=VALID_SUBS,
                               dest='subscription',
