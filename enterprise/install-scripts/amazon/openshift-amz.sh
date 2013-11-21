@@ -1451,7 +1451,6 @@ ensure_domain()
   fi
 }
 
-# TODO: use oo-register-dns to do this instead.
 add_host_to_zone()
 {
   # $1 = host; $2 = ip; [ $3 = zone ]
@@ -1479,16 +1478,27 @@ configure_hosts_dns()
     datastore && add_host_to_zone "$datastore_hostname" "$cur_ip_addr"
   elif [[ "$CONF_NAMED_ENTRIES" =~ : ]]; then
     # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
-    pairs=(${CONF_NAMED_ENTRIES//,/ })
-    for i in "${!pairs[@]}"
-    do
-      host_ip=${pairs[i]}
-      host_ip=(${host_ip//:/ })
-      add_host_to_zone "${host_ip[0]}" "${host_ip[1]}"
+    for host_ip in ${CONF_NAMED_ENTRIES//,/ }; do
+      add_host_to_zone ${host_ip//:/ }
     done
   else # if "none" then just don't add anything
     echo "Not adding named entries; named_entries = $CONF_NAMED_ENTRIES"
   fi
+}
+
+# An alternate method for registering against a running named
+# using oo-register-dns. Not used by default.
+register_named_entries()
+{
+  ip_regex='^[.0-9]+$' # all numbers and dots = IP (not rigorous)
+  for host_ip in ${CONF_NAMED_ENTRIES//,/ }; do
+    read host ip <<<$(echo ${host_ip//:/ })
+    if [[ $host =~ $ip_regex || ! $ip =~ $ip_regex ]]; then
+      echo "Not adding DNS record to host zone: '$host' should be a hostname and '$ip' should be an IP address"
+    else
+      oo-register-dns -d "$hosts_domain" -h "${host%$hosts_domain}" -n $ip || echo "WARNING: Failed to register host $host with IP $ip"
+    fi
+  done
 }
 
 configure_network()
