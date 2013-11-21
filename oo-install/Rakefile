@@ -66,6 +66,7 @@ task :package do
 
     # Copy the bootstrap file to the package dir
     system 'cp', 'oo-install-bootstrap.sh', "#{pkgdir}/index.html"
+    system 'cp', 'site_info.html', pkgdir
     system "sed -i .bak 's/INSTALLPKGNAME/#{pkgname}/g' #{pkgdir}/index.html"
     system "sed -i .bak 's/INSTALLVERPATH/#{pkgurl}/' #{pkgdir}/index.html"
     system "sed -i .bak 's/INSTALLCONTEXT/#{context}/' #{pkgdir}/index.html"
