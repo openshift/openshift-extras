@@ -21,6 +21,7 @@ task :package do
     { :version => nil,
       :wget => nil,
       :context => :origin,
+      :base => true,
     },
     { :version => 'ose',
       :wget => nil,
@@ -65,8 +66,11 @@ task :package do
     system 'mv', "#{@tmpdir}#{pkgname}.zip", pkgdir
 
     # Copy the bootstrap file to the package dir
-    system 'cp', 'oo-install-bootstrap.sh', "#{pkgdir}/index.html"
-    system 'cp', 'site_info.html', pkgdir
+    system 'cp', 'site_assets/oo-install-bootstrap.sh', "#{pkgdir}/index.html"
+    if build.has_key?(:base) and build[:base]
+      system 'cp', 'site_assets/site_info.html', pkgdir
+      system 'cp', 'vendor/bootstrap/css/bootstrap.min.css', pkgdir
+    end
     system "sed -i .bak 's/INSTALLPKGNAME/#{pkgname}/g' #{pkgdir}/index.html"
     system "sed -i .bak 's/INSTALLVERPATH/#{pkgurl}/' #{pkgdir}/index.html"
     system "sed -i .bak 's/INSTALLCONTEXT/#{context}/' #{pkgdir}/index.html"
