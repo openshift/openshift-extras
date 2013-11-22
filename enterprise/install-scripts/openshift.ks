@@ -1543,6 +1543,12 @@ plugin.psk = asimplething
 connector = activemq
 $(generate_mcollective_pools_configuration)
 
+# We do not actually use node registration in any way at this time.
+# However, having it configured enables mcollective to recover from
+# dead connections (msg host rebooted, etc.) as a side effect.
+# See https://bugzilla.redhat.com/show_bug.cgi?id=1009887
+registerinterval = 30
+
 # Facts
 factsource = yaml
 plugin.yaml = /etc/mcollective/facts.yaml
@@ -1953,11 +1959,10 @@ ensure_domain()
   fi
 }
 
-# TODO: use oo-register-dns to do this instead.
 add_host_to_zone()
 {
-  # $1 = host; $2 = ip
-  zone="$hosts_domain"
+  # $1 = host; $2 = ip; [ $3 = zone ]
+  zone="${3:-$hosts_domain}"
   nsdb="/var/named/dynamic/${zone}.db"
   # sanity check that $1 isn't an IP, and $2 is.
   ip_regex='^[.0-9]+$' # all numbers and dots = IP (not rigorous)
@@ -1971,6 +1976,8 @@ add_host_to_zone()
 configure_hosts_dns()
 {
   add_host_to_zone "$named_hostname" "$named_ip_addr" # always define self
+  # glue record for NS host in subdomain:
+  [[ "$hosts_domain" == *?"$domain" ]] && add_host_to_zone "$named_hostname" "$named_ip_addr" "$domain"
   if [ -z "$CONF_NAMED_ENTRIES" ]; then
     # Add A records for any other components that are being installed locally.
     broker && add_host_to_zone "$broker_hostname" "$broker_ip_addr"
@@ -1979,16 +1986,27 @@ configure_hosts_dns()
     datastore && add_host_to_zone "$datastore_hostname" "$cur_ip_addr"
   elif [[ "$CONF_NAMED_ENTRIES" =~ : ]]; then
     # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
-    pairs=(${CONF_NAMED_ENTRIES//,/ })
-    for i in "${!pairs[@]}"
-    do
-      host_ip=${pairs[i]}
-      host_ip=(${host_ip//:/ })
-      add_host_to_zone "${host_ip[0]}" "${host_ip[1]}"
+    for host_ip in ${CONF_NAMED_ENTRIES//,/ }; do
+      add_host_to_zone ${host_ip//:/ }
     done
   else # if "none" then just don't add anything
     echo "Not adding named entries; named_entries = $CONF_NAMED_ENTRIES"
   fi
+}
+
+# An alternate method for registering against a running named
+# using oo-register-dns. Not used by default.
+register_named_entries()
+{
+  ip_regex='^[.0-9]+$' # all numbers and dots = IP (not rigorous)
+  for host_ip in ${CONF_NAMED_ENTRIES//,/ }; do
+    read host ip <<<$(echo ${host_ip//:/ })
+    if [[ $host =~ $ip_regex || ! $ip =~ $ip_regex ]]; then
+      echo "Not adding DNS record to host zone: '$host' should be a hostname and '$ip' should be an IP address"
+    else
+      oo-register-dns -d "$hosts_domain" -h "${host%$hosts_domain}" -n $ip || echo "WARNING: Failed to register host $host with IP $ip"
+    fi
+  done
 }
 
 configure_network()
