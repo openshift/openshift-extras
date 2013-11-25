@@ -1,0 +1,158 @@
+NAME
+
+  oo-admin-yum-validator
+
+SYNOPSIS
+
+  oo-admin-yum-validator [--help]
+    [--role system_role,...]
+    [--oo-version openshift_version]
+    [--subscription-type subscription_type]
+    [--fix|--fix-all|--report-all]
+    [--repo-config repo_config]
+
+DESCRIPTION
+
+  oo-admin-yum-validator attempts to validate repository priorities
+  and availability to ensure OpenShift Enterprise dependencies are
+  available and preferred over packages from other repositories.
+
+OPTIONS
+
+  -h|--help  
+    show this help message and exit
+
+  -r|--role system_role  
+    Valid arguments: node, broker, client, node-eap
+
+    OpenShift component role(s) this system will fulfill. This option
+    may be specified more than once.
+
+    Note that --role=node-eap implies --role=node, and --role=broker
+    implies --role=client
+
+  -o|--oo-version openshift_version  
+    Valid arguments: 1.2, 2.0
+
+    Version of OpenShift Enterprise in use on this system.
+
+  -s|--subscription-type subscription_type  
+    Valid arguments: rhsm, rhn
+
+    Subscription management system which provides the OpenShift
+    Enterprise repositories/channels.
+
+  -f|--fix             Attempt to repair the first problem found.
+
+  -a|--fix-all         Attempt to repair all problems found.
+
+  -p|--report-all  
+    Report all problems (default is to halt after first problem
+    report.)
+
+  -c|--repo-config repo_config  
+    Load blessed repository data from the specified file repo_config
+    instead of built-in values.
+
+APPLICATION USAGE
+
+  With no arguments, oo-admin-yum-validator will attempt to guess various details about your system, including:
+
+  1. What OpenShift component role or roles the system is configured to fulfill.
+
+  2. Which version, if any, of OpenShift Enterprise is currently installed
+
+  3. Which subscription management or entitlement system is in use (e.g. Red Hat Subscription Manager/RHSM)
+
+  These details are determined by examining what repositories/channels are currently enabled and what OpenShift packages are installed. If one or more of these details can't be guessed, oo-admin-yum-validator will exit with a message to that effect. These details can be supplied by the user via the --role, --oo-version and --subscription-type options. User-supplied information takes precedence over guessed details.
+
+  Once the role, version and subscription details are available, oo-admin-yum-validator performs a series of checks to make sure that OpenShift Enterprise packages and their dependencies are coming from the appropriate repositories. These checks validate the following requirements:
+
+  1. OpenShift Enterprise repositories and known dependency-providing repositories which are required for the guessed or specified roles are available
+
+  2. Required repositories are enabled
+
+  3. The yum-plugin-priorities package is installed
+
+  4. Required repositories' relative priorities conform to a prescribed order
+
+  5. Any OpenShift Enterprise repositories which don't match the version or subscription type specified are disabled
+
+  6. Any enabled repositories which provide packages that conflict with those provided from required repositories have a priority that prevents the conflicting packages from taking precedence
+
+  7. Required repositories have pre-defined package exclusions configured
+  
+  The four principle usage modes for oo-admin-yum-validator are as follows:
+  
+  ITERATIVE REPORT USAGE
+  
+  Without specifying --fix, --fix-all, or --report-all, the default behavior for yum-validator is to:
+
+  * Output a message explaining the problem
+  * Detail steps to resolve the problem manually
+  * Immediately exit with an error code
+
+  Once the fix is attempted, oo-admin-yum-validator can be run again to determine if the problem has been resolved, and if any other problems remain. This validate-fix-validate cycle is useful when building deployment automation configurations, e.g. with Puppet.
+
+  ITERATIVE FIX USAGE
+
+  Specifying --fix will cause oo-admin-yum-validator to attempt to repair the first problem class it detects, at which point it outputs a message explaining the problem and the steps taken to repair it, and exits with an error code. Subsequent runs with the --fix option will repair problems one at a time until no more problems are detected.
+
+  REPORT ALL USAGE
+
+  The --report-all option leads oo-admin-yum-validator to make a best-effort analysis of all possible problems without fixing them. The same caveat regarding incorrect problem detection from --fix-all applies here. The result of fixing one problem may impact the detection or interpretation of one or more following problems.
+
+  By buffering the output and checking the exit code, this option can be used to hook oo-admin-yum-validator into system monitoring services.
+
+  FIX ALL USAGE
+
+  If the --fix-all option is provided will repair all detected problems in one shot. If no problems are detected, oo-admin-yum-validator will exit normally. If any problems were detected and fixed, an error code is generated. This can pose a very small risk; in the event that a problem is incorrectly detected, oo-admin-yum-validator will attempt the fix anyway.
+
+  Cautious users should prefer the iterative fix usage offered by --fix over --fix-all.
+
+
+EXIT STATUS
+
+  0  No problems were detected
+
+  1  At least one problem detected
+
+EXAMPLE
+
+  On a fresh system with subscriptions managed via RHSM and no OpenShift installation, determine what changes need to happen in order to configure the system as an OpenShift Enterprise broker:
+
+    # oo-admin-yum-validator \\
+        --subscription-type=rhsm \\
+        --oo-version=2.0 \\
+        --role=broker
+
+  As a system administrator, you're responding to a report that mentions only "an OpenShift Enterprise server isn't working". You're logged into the system; to make a best-guess at what version of OpenShift Enterprise is installed and what role the system is configured for:
+
+    # oo-admin-yum-validator
+
+  oo-admin-yum-validator reports that the system has roles node and node-eap, that it's subscribed via RHN and the OpenShift Enterprise version is 2.0. It also reports that a third-party repository conflicts with the official OpenShift repositories. You use this information to amend your configuration management profile for OpenShift Enterprise systems and set the priority of the new repository to the suggested value. You refresh the system with the configuration management tool and then run oo-admin-yum-validator again to verify that no problems remain:
+
+    # oo-admin-yum-validator \\
+        --subscription-type=rhn \\
+        --oo-version 2.0 \\
+        --role=node-eap \\
+        --role=node
+
+WARNINGS
+
+  oo-admin-yum-validator currently supports only OpenShift Enterprise versions 1.2.x and 2.0.x. Support for OpenShift Origin based installs is planned.
+
+  oo-admin-yum-validator does not currently work for installations where the required repositories are not provided from subscriptions via RHN Classic or Red Hat Subscription Manager. Specific examples include:
+
+  * Installations where the repositories are sourced from a "plain old" Yum repository (as in OpenShift Origin or some ad-hoc OpenShift Enterprise scenarios) are currently unsupported.
+
+  * Subscriptions provided via RHN Satellite are untested, and only stand a chance of working if the channel names match those of the corresponding channels provided through RHN Classic.
+
+SEE ALSO
+
+  oo-admin-chk(8), oo-accept-broker(8), oo-accept-systems(8),
+  oo-accept-node(8), oo-diagnostics(8), rhn-channel(8),
+  subscription-manager(8), yum-utils(1),
+
+AUTHOR
+  John Lamb <jolamb@redhat.com> - man page written for OpenShift
