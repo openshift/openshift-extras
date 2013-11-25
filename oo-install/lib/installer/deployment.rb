@@ -76,8 +76,8 @@ module Installer
       save_to_disk!
     end
 
-    def remove_host_instance! id
-      hosts.delete_if{ |h| h.id == id }
+    def remove_host_instance! host_instance
+      hosts.delete_if{ |h| h == host_instance }
       save_to_disk!
     end
 

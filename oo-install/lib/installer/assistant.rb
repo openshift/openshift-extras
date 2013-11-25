@@ -584,7 +584,7 @@ module Installer
             end
             deletable_list.each do |host_instance|
               menu.choice("Remove #{host_instance.host}") {
-                deployment.remove_host_instance!(host_instance.id)
+                deployment.remove_host_instance!(host_instance)
                 say "\nRemoved #{host_instance.host}"
               }
             end
@@ -646,7 +646,7 @@ module Installer
       if source_host.roles.length == 1
         if concur("\nThe #{role.to_s} role was the only one assigned to host #{source_host.host}. If you move the role, this host will be removed from the deployment. Is it okay to proceed?")
           say "\nOkay; removing host #{source_host.host}."
-          deployment.remove_host_instance!(source_host.id)
+          deployment.remove_host_instance!(source_host)
           return true
         else
           say "\nOkay; cancelling role move."
