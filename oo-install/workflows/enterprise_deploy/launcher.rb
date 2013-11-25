@@ -6,18 +6,20 @@ require 'net/ssh'
 
 COMPONENT_INSTALL_ORDER = %w[ named datastore activemq broker node ]
 # steps/states/actions are arrays with corresponding indices
-INSTALL_STEPS = %w[ . prepare install configure ]
-INSTALL_STATES = %w[ new prepared installed completed validated broken ]
+INSTALL_STEPS = %w[ . prepare install configure define_hosts ]
+INSTALL_STATES = %w[ new prepared installed completed completed validated broken ]
 INSTALL_ACTIONS = %w[ .
                       init_message,validate_preflight,configure_repos
                       install_rpms
                       configure_host,configure_openshift
+                      register_named_entries
                     ]
 STEP_SUCCESS_MSG = <<"MSGS".split "\n"
 .
 OpenShift: Completed configuring repos.
 OpenShift: Completed installing RPMs.
 OpenShift: Completed configuring OpenShift.
+OpenShift: Completed updating host DNS entries.
 MSGS
 
 # Check ENV for an alternate config file location.
@@ -156,7 +158,7 @@ def run_on_host(host, step)
   ssh_target = "#{host['user']}@#{host['ssh_host']}"
   ssh_path = "#{host['user']}@#{host['ssh_host']}:/tmp"
   hostfile = "oo_install_configure_#{host['ssh_host']}.sh"
-  logfile = "/tmp/openshift-deploy-#{step}.log"
+  logfile = "/tmp/openshift-deploy.log"
   sudo = host['user'] == 'root' ? '' : 'sudo -- '
 
   @env_map['CONF_INSTALL_COMPONENTS'] = components_list(host)
@@ -447,6 +449,20 @@ host_order.select {|host| !state_already? host, 'completed' }.each do |host|
     end
     puts "--------------------------------------------"
     save_and_exit 1
+  end
+end
+
+# Use broker to define DNS entries for new host(s), but not original deployment
+if 'Y' == @config['Deployment']['DNS']['register_components'] and
+          @hosts.size > host_order.size # deploying new host(s)
+  @hosts.each do |ssh_host, host|
+    next unless host['roles'].include? 'broker'
+    result = run_on_host host, 'define_hosts'
+    if !result[:success]
+      puts "Defining DNS entries for hosts may not have succeeded."
+      puts "Please ensure that DNS names for all deployed hosts resolve correctly."
+    end
+    break
   end
 end
 
