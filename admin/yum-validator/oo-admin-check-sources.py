@@ -1,0 +1,1 @@
+oo-admin-yum-validator
