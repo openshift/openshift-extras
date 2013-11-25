@@ -10,12 +10,11 @@ module Installer
   class Assistant
     include Installer::Helpers
 
-    attr_reader :workflow_id, :target_version
+    attr_reader :workflow_id
     attr_accessor :config, :deployment, :cli_subscription, :cfg_subscription, :workflow, :workflow_cfg
 
-    def initialize config, deployment=nil, workflow_id=nil, cli_subscription=nil, target_version=nil
+    def initialize config, deployment=nil, workflow_id=nil, cli_subscription=nil
       @config = config
-      @target_version = target_version
       @deployment = deployment || config.get_deployment
       @cfg_subscription = config.get_subscription
       @cli_subscription = cli_subscription
@@ -136,10 +135,6 @@ module Installer
     def ui_workflow id
       @workflow = Installer::Workflow.find(id)
       @workflow_cfg = config.get_workflow_cfg(id)
-      # If the user supplied a desired target version, set it here.
-      if not target_version.nil?
-        @workflow_cfg['version'] = target_version
-      end
       ui_newpage
 
       # Deployment check
