@@ -1999,14 +1999,17 @@ configure_hosts_dns()
 register_named_entries()
 {
   ip_regex='^[.0-9]+$' # all numbers and dots = IP (not rigorous)
+  failed="false"
   for host_ip in ${CONF_NAMED_ENTRIES//,/ }; do
     read host ip <<<$(echo ${host_ip//:/ })
     if [[ $host =~ $ip_regex || ! $ip =~ $ip_regex ]]; then
       echo "Not adding DNS record to host zone: '$host' should be a hostname and '$ip' should be an IP address"
-    else
-      oo-register-dns -d "$hosts_domain" -h "${host%$hosts_domain}" -n $ip || echo "WARNING: Failed to register host $host with IP $ip"
+    elif ! oo-register-dns -d "$hosts_domain" -h "${host%.$hosts_domain}" -n $ip; then
+      echo "WARNING: Failed to register host $host with IP $ip"
+      failed="true"
     fi
   done
+  is_false $failed && echo "OpenShift: Completed updating host DNS entries."
 }
 
 configure_network()
