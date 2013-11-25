@@ -23,12 +23,10 @@ end
 options = {
   :workflow_id => nil,
   :config_file => nil,
-  :create_config => false,
   :subscription_type => nil,
   :rh_username => nil,
   :rh_password => nil,
   :advanced_mode => false,
-  :version => nil,
   :debug => false,
 }
 
@@ -42,17 +40,11 @@ p = OptionParser.new do |opts|
   opts.on('-c', '--config-file FILEPATH', 'The path to an alternate config file') do |filepath|
     options[:config_file] = File.expand_path(filepath)
   end
-  opts.on('--create-config', 'Use with "-c" to create and use a new alternate config file') do |create_config|
-    options[:create_config] = create_config
-  end
   opts.on('-w', '--workflow WORKFLOW_ID', 'The installer workflow for unattended deployment.') do |workflow_id|
     options[:workflow_id] = workflow_id
   end
   opts.on('-e', '--enterprise-mode', 'Show OpenShift Enterprise options (ignored in unattended mode)') do |flag|
     installer_context = :ose
-  end
-  opts.on('--openshift-version VERSION', 'Specify the version of OpenShift to be installed (default is latest)') do |version|
-    options[:version] = version
   end
   opts.on('-s', '--subscription-type TYPE', "The software source for installation packages.") do |subscription_type|
     options[:subscription_type] = subscription_type
@@ -107,16 +99,6 @@ elsif not options[:subscription_type].nil?
     exit 1
   end
 end
-if not options[:version].nil?
-  if not options[:workflow_id].nil?
-    # Make sure that this version is supported by this workflow
-    supported_versions = Installer::Workflow.supported_versions_for_id(options[:workflow_id])
-    if not supported_versions.include?(options[:version])
-      puts "Requested version #{options[:version]} is not available through workflow '#{options[:workflow_id]}'.\nValid values are: #{supported_versions.keys.sort.join(', ')}. Exiting."
-      exit 1
-    end
-  end
-end
 
 # If the config file argument was passed, make sure it is usable.
 if not options[:config_file].nil?
@@ -127,10 +109,6 @@ if not options[:config_file].nil?
       exit 1
     end
   else
-    if not options[:create_config]
-      puts "Config file '#{options[:config_file]}' does not exist.\nRerun oo-install with the --create-config flag to create a config file at that location."
-      exit 1
-    end
     puts "Attempting to create and use new config file at '#{options[:config_file]}'."
   end
 end
@@ -170,7 +148,7 @@ cli_subscription.rh_password = options[:rh_password]
 
 # Set up the assistant and get going
 begin
-  @assistant = Installer::Assistant.new(@config, @deployment, options[:workflow_id], cli_subscription, options[:version])
+  @assistant = Installer::Assistant.new(@config, @deployment, options[:workflow_id], cli_subscription)
 rescue Installer::UnrecognizedContextException => e
   puts "\n#{e.message}"
   exit
