@@ -300,7 +300,7 @@ module Installer
     def force_utf8(s)
       case RUBY_VERSION
         when '1.8.7' then ::Iconv.conv('UTF-8//IGNORE', 'UTF-8', s.to_s + ' ')[0..-2]
-        else s.to_s.encode('UTF-8', :invalid => :replace)
+        else s.to_s.encode('UTF-8', { :invalid => :replace, :undef => :replace, :replace => '?' })
       end
     end
 
