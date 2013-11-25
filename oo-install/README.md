@@ -5,7 +5,7 @@ This package is a general-purpose installation tool for [OpenShift](http://www.o
 ## Installation
 The latest stable version of the installer is available for "curl-to-shell" use from the OpenShift cloud. To use it, run:
 
-    sh <(curl -s http://oo-install.rhcloud.com/)
+    sh <(curl -s https://install.openshift.com/)
 
 from the command line of any system with ruby 1.8.7 or above plus unzip and curl. Depending on what you are trying to install (OpenShift Origin versus OpenShift Enterprise), your target system may require additional RPMs. The installer will attempt to suggest RPM packages to install to provide the necessary utilities.
 
@@ -36,7 +36,7 @@ The following command-line options are currently supported:
 **NOTE**:  
 In order to pass arguments to the curl-to-shell command, enclose them in quotes.
 
-    sh <(curl -s http://oo-install.rhcloud.com/) "-c alternate/config/file.yml -w origin_add_node -s yum"
+    sh <(curl -s https://install.openshift.com/) "-c alternate/config/file.yml -w origin_add_node -s yum"
 
 - - -
 
