@@ -58,6 +58,8 @@ class RepoDB:
     """
     repositories = []
     repo_cache = {}
+    preferred_version = None
+    preferred_subscription = None
 
     def __init__(self, *args, **kwargs):
         if not (args or kwargs):
@@ -96,6 +98,12 @@ class RepoDB:
     def populate_db(self):
         for repoid in list(self.cfg):
             repocfg = self.cfg[repoid]
+            if "preferences" == repoid:
+                self.preferred_version = getattr(repocfg,
+                                                 'preferred_version', None)
+                self.preferred_subscription = getattr(repocfg,
+                                                 'preferred_subscription', None)
+                continue
             rtpl = RepoTuple( subscription =
                               parse_multivalue(getattr(repocfg,
                                                        'subscription', None)),
@@ -158,6 +166,19 @@ class RepoDB:
             return tuple(set(res)) # make unique
         return self.find_repos(repoid = repoids)
 
+    def list_available(self, attribute):
+        """Return a sorted list of one of each available value for the given
+        attribute
+
+        """
+        avail = []
+        for repo in self.repositories:
+            val = getattr(repo, attribute)
+            if isinstance(val, tuple):
+                avail += val
+                continue
+            avail.append(val)
+        return sorted(set(avail))
 
 if __name__ == '__main__':
     rdb = RepoDB()
