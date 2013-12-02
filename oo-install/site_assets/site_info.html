@@ -31,8 +31,8 @@
     <div class="col-md-12">
       <hr />
       <h3>Popular Options</h3>
-      <p>Want to get fancy? You can pass options to the installer by including them in a quoted string, like this:</p>
-      <pre>sh <(curl -s https://install.openshift.com/) "-e -s rhsm -u user@company.com"</pre>
+      <p>Want to get fancy? You can pass options to the installer by adding them to the end of the command, like this:</p>
+      <pre>sh <(curl -s https://install.openshift.com/) -e -s rhsm -u user@company.com</pre>
       <p>Here are some useful settings:</p>
       <pre>
     -a, --advanced-mode              Enable access to message server and db server customization.
@@ -44,9 +44,15 @@
     -p, --password PASSWORD          Red Hat Login password
     -d, --debug                      Enable debugging messages
       </pre>
+      <h3>Take It With You</h3>
+      <p>You can also download the installer and run it from a CD or USB drive. Unzip one of these packages onto your portable media and you are good to go:
+      <ul>
+        <li>OpenShift Origin Portable: <a href="https://install.openshift.com/portable/oo-install-origin.zip">https://install.openshift.com/portable/oo-install-origin.zip</a></li>
+        <li>OpenShift Enterprise Portable: <a href="https://install.openshift.com/portable/oo-install-ose.zip">https://install.openshift.com/portable/oo-install-ose.zip</a></li>
+      </ul>
       <h3>Need more help? We're here for you.</h3>
       <ul>
-        <li>Documentation is available at the <a href="http://openshift.github.io/documentation/">OpenShift Origin documentation site</a>.</li>
+        <li>The <a href="http://openshift.github.io/documentation/oo_install_users_guide.html">oo-install User's Guide</a> is available at the <a href="http://openshift.github.io/documentation/">OpenShift Origin documentation site</a>.</li>
         <li>Familiar with IRC? OpenShift superstars can be found on the <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift&uio=d4">#openshift</a> and <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift-dev&uio=d4">#openshift-dev</a> channels on <a href="http://www.freenode.net/">FreeNode</a>.</li>
         <li>You can also join the <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/users">Users</a> or <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/dev">Developers</a> mailing list.</li>
       </ul>
