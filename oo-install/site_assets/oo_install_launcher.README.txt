@@ -15,7 +15,7 @@ written to a USB drive and used to run the oo-install utility in places
 where the web-based installer is not reachable.
 
 All of the command-line arguments supported by oo-install can be passed
-to this launncher application.
+to this launcher application.
 
 For more information, refer to the oo-install User's Guide:
 http://openshift.github.io/documentation/oo_install_users_guide.html
