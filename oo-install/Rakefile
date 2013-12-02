@@ -6,6 +6,9 @@ include Installer::Helpers
 task :package do
   @tmpdir = ENV['TMPDIR'] || '/tmp/'
   @package_dir = "#{gem_root_dir}/package"
+  @portable_dir = @package_dir + "/portable"
+  @portable_readme = 'oo_install_launcher.README.txt'
+  @site_assets_dir = "#{gem_root_dir}/site_assets"
 
   # Clear out the old package dir before making the new package
   if Dir.entries(gem_root_dir).include?('package')
@@ -13,6 +16,7 @@ task :package do
   end
 
   Dir.mkdir(@package_dir)
+  Dir.mkdir(@portable_dir)
 
   # Set up a new package / archive name
   pkgtime = Time.now.getutc.strftime('%Y%m%d-%H%M')
@@ -30,6 +34,10 @@ task :package do
     { :version => 'ose-2.0b',
       :wget => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
       :context => :ose,
+    },
+    { :version => 'origin',
+      :wget => nil,
+      :context => :origin,
     },
   ]
 
@@ -75,6 +83,23 @@ task :package do
     system "sed -i .bak 's/INSTALLVERPATH/#{pkgurl}/' #{pkgdir}/index.html"
     system "sed -i .bak 's/INSTALLCONTEXT/#{context}/' #{pkgdir}/index.html"
     system 'rm', "#{pkgdir}/index.html.bak"
+
+    # Lastly, make a "portable" package.
+    next if build[:version].nil?
+
+    launcher_name = 'oo-install'
+    build_name = 'origin'
+    if not build[:version].nil?
+      launcher_name << "-#{build[:version]}"
+      build_name = build[:version]
+    end
+    system "cd #{pkgdir} && cp index.html #{@portable_dir}/#{launcher_name} && chmod +x #{@portable_dir}/#{launcher_name}"
+    system "cd #{pkgdir} && cp #{pkgname}.zip #{@portable_dir}/#{pkgname}.zip"
+    system "cp #{@site_assets_dir}/#{@portable_readme} #{@portable_dir}"
+    system "sed -i .bak 's/LAUNCHERNAME/#{launcher_name}/g' #{@portable_dir}/#{@portable_readme}"
+    system "rm #{@portable_dir}/#{@portable_readme}.bak"
+    system "cd #{@portable_dir} && zip -qq #{launcher_name}.zip #{launcher_name} #{@portable_readme} #{pkgname}.zip"
+    system "cd #{@portable_dir} && rm #{launcher_name} #{pkgname}.zip #{@portable_readme}"
   end
 
   system 'rm', '-rf', "#{@tmpdir}oo-install*"

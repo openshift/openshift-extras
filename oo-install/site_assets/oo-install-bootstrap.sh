@@ -15,9 +15,13 @@ done
 echo "...looks good."
 
 # All instances of INSTALLPKGNAME are replaced during packaging with the actual package name.
-if [ $OO_INSTALL_KEEP_ASSETS == 'true' ] && [ -e ${TMPDIR}/INSTALLPKGNAME.zip ]
+if [[ -e ./INSTALLPKGNAME.zip ]]
 then
-  echo "Reusing existing installer assets."
+  echo "Using bundled assets."
+  cp INSTALLPKGNAME.zip ${TMPDIR}/INSTALLPKGNAME.zip
+elif [[ $OO_INSTALL_KEEP_ASSETS == 'true' && -e ${TMPDIR}/INSTALLPKGNAME.zip ]]
+then
+  echo "Using existing installer assets."
 else
   echo "Downloading oo-install package..."
   curl -s -o ${TMPDIR}INSTALLPKGNAME.zip https://install.openshift.com/INSTALLVERPATHINSTALLPKGNAME.zip
