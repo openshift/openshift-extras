@@ -147,7 +147,7 @@ module Installer
       end
 
       @executable = Installer::Executable.new(self, config['Executable'])
-      @utilities = ['yum']
+      @utilities = ['getenforce','yum']
       if config.has_key?('RequiredUtilities')
         @utilities.concat(config['RequiredUtilities'])
       end

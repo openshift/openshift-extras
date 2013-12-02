@@ -1003,7 +1003,7 @@ module Installer
             cmd_result = host_instance.exec_on_host!("command -v #{util}")
           end
           if not cmd_result[:exit_code] == 0
-            say "* Could not locate #{util}... "
+            say "* ERROR: Could not locate #{util}... "
             find_result = host_instance.exec_on_host!("yum -q provides */#{util}")
             if not find_result[:exit_code] == 0
               say "no suggestions available"
@@ -1015,13 +1015,26 @@ module Installer
             if not host_instance.root_user?
               say "* Located #{util}... "
               if not host_instance.can_sudo_execute?(util)
-                say "cannot not invoke '#{util}' with sudo"
+                say "ERROR - cannot not invoke '#{util}' with sudo"
                 deployment_good = false
               else
                 say "can invoke '#{util}' with sudo"
               end
             else
               say "* Located #{util}"
+            end
+          end
+          # SELinux configuration check
+          if util == 'getenforce'
+            cmd_result = host_instance.exec_on_host!("#{util}")
+            if not cmd_result[:exit_code] == 0
+              say "* ERROR: Could not run #{util} to determine SELinux status."
+              deployment_good = false
+            elsif cmd_result[:stdout].chomp.strip.downcase == 'disabled'
+              say "* ERROR: SELinux is disabled. You must enable SELinux on this host."
+              deployment_good = false
+            else
+              say "* SELinux is running in #{cmd_result[:stdout].chomp.strip.downcase} mode"
             end
           end
         end
