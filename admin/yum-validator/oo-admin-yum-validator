@@ -209,6 +209,9 @@ class OpenShiftYumValidator(object):
                             repo.product_version ==
                             self.rdb.preferred_version]
                 if ver_mtch:
+                    if self.opts.subscription != UNKNOWN:
+                        return self._sub_ver(self.opts.subscription,
+                                             self.rdb.preferred_version)
                     self._oo_ver(self.rdb.preferred_version)
             if self.opts.oo_version:
                 repos = [repo for repo in repos if
