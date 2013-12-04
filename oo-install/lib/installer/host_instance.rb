@@ -41,7 +41,7 @@ module Installer
         else
           info[:valid_access] = false
         end
-      rescue Net::SSH::AuthenticationFailed, SocketError, Timeout::Error => e
+      rescue Net::SSH::AuthenticationFailed, SocketError, Timeout::Error, Errno::EHOSTUNREACH => e
         info[:valid_access] = false
         info[:error] = e
       end
@@ -146,7 +146,6 @@ module Installer
     def remove_role role
       @roles.delete_if{ |r| r == role }
     end
-
 
     def host_type
       @host_type ||=

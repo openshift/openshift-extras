@@ -103,7 +103,7 @@ module Installer
     private
     def ui_title
       ui_newpage
-      say translate(:title)
+      say translate(is_origin_vm? ? :vm_title : :title)
       say "#{horizontal_rule}\n\n"
     end
 
@@ -113,8 +113,22 @@ module Installer
 
     def ui_welcome_screen
       ui_title
-      say translate :welcome
-      say translate :intro
+      say translate(is_origin_vm? ? :vm_welcome : :welcome)
+      if is_origin_vm?
+        say "\n\tHost: #{vm_installer_host.host}"
+        say "\tUser: #{vm_installer_host.user}"
+        addr_list = vm_installer_host.get_ip_addr_choices
+        if addr_list.length > 1
+          say "\t IPs:"
+          addr_list.each do |info|
+            say "\t* #{info[1]}"
+          end
+        elsif addr_list.length == 1
+          say "\t  IP: #{addr_list[0][1]}"
+        end
+      end
+      puts "\n"
+      say translate(is_origin_vm? ? :vm_intro : :intro)
       puts "\n"
       loop do
         choose do |menu|
@@ -218,7 +232,13 @@ module Installer
 
       # Hand it off to the workflow executable
       workflow.executable.run workflow_cfg, merged_subscription, config.file_path
-      raise Installer::AssistantWorkflowCompletedException.new
+      if not workflow.exit_on_complete?
+        raise Installer::AssistantRestartException.new
+      elsif workflow.non_deployment?
+        raise Installer::AssistantWorkflowNonDeploymentCompletedException.new
+      else
+        raise Installer::AssistantWorkflowCompletedException.new
+      end
     end
 
     def ui_create_deployment

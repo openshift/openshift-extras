@@ -59,6 +59,10 @@ module Installer
       Installer.const_set("DEBUG", debug)
     end
 
+    def is_origin_vm?
+      get_context == :origin_vm
+    end
+
     def debug_mode?
       Installer::DEBUG
     end
@@ -86,6 +90,22 @@ module Installer
         @i18n_configured = true
       end
       I18n.t text
+    end
+
+    def vm_installer_host
+      @vm_installer_host ||= begin
+        host = Installer::HostInstance.new(
+          { 'host' => `hostname`.chomp.strip,
+            'ssh_host' => 'localhost',
+            'user' => `whoami`.chomp.strip,
+            'roles' => ['mqserver','dbserver','broker','node'],
+            'status' => 'validated',
+          }
+        )
+        ip_path = which('ip')
+        host.set_ip_exec_path(ip_path)
+        host
+      end
     end
 
     def sym_to_arg value

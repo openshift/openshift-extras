@@ -19,6 +19,12 @@ module Installer
     end
   end
 
+  class AssistantWorkflowNonDeploymentCompletedException < Exception
+    def initialize(message="The selected non-deployment installation workflow has completed.", code=1)
+      super(message, code)
+    end
+  end
+
   class AssistantMissingUtilityException < Exception
     def initialize(message="A utility program used by oo-install could not be found.", code=1)
       super(message,code)

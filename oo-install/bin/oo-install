@@ -171,7 +171,9 @@ loop do
     puts "\n#{e.message}"
     break
   rescue Installer::AssistantWorkflowCompletedException => e
-    puts "\nInstallation completed."
+    puts "\nAll tasks completed."
+    break
+  rescue Installer::AssistantWorkflowNonDeploymentCompletedException => e
     break
   end
 end
