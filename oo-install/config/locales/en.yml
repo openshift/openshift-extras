@@ -29,8 +29,7 @@ en:
     You can also type '?' for Help or 'q' to return to the main menu."
   deployment_summary: "Here are the details of your current deployment."
   workflow_summary: "Here are your previous answers to the questions for this workflow."
-  subscription_summary: >
-    Here is subscription configuration that the installer will use for this deployment.
+  subscription_summary: "Here is the subscription configuration that the installer will use for this deployment."
   invalid_port_number_response: "Enter a valid port number in the range 1 to 65535"
   info_config_is_valid: "The deployment looks good."
   error_unattended_workflow_cfg: "The validation attempt uncovered errors. Rerun oo-install manually to correct them."

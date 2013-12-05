@@ -116,6 +116,8 @@ Repositories:
   - jenkins_repo_base
   - os_repo
   - os_optional_repo
+RequiredUtilities:
+  - broker:dnssec-keygen
 ---
 Name: OE Deployment
 Contexts:

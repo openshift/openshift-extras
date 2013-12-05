@@ -103,7 +103,7 @@ module Installer
       @remote_execute = (config.has_key?('RemoteDeployment') and config['RemoteDeployment'].downcase == 'y') ? true : false
       @check_deployment = (config.has_key?('SkipDeploymentCheck') and config['SkipDeploymentCheck'].downcase == 'y') ? false : true
       @check_subscription = (config.has_key?('SubscriptionCheck') and config['SubscriptionCheck'].downcase == 'y') ? true : false
-      @exit_on_complete = (config.has_key?('ExitOnComplete') and config['ExitOnComplete'].downcase == 'y') ? true : false
+      @exit_on_complete = (config.has_key?('ExitOnComplete') and config['ExitOnComplete'].downcase == 'n') ? false : true
       if config.has_key?('NonDeployment') and config['NonDeployment'].downcase == 'y'
         @non_deployment = true
         @remote_execute = false

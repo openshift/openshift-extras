@@ -70,7 +70,6 @@ if ARGV.length > 0
     @puppet_template_only = false
   end
 end
-puts "TNH: #{@target_node_hostname.inspect}"
 @target_node_ssh_host = nil
 
 # Default and baked-in config values for the Puppet deployment
@@ -107,7 +106,7 @@ end
     { 'component' => 'named', 'env_hostname' => 'named_hostname', 'env_ip_addr' => 'named_ip_addr' },
   ],
   'node' => [{ 'component' => 'node', 'env_hostname' => 'node_hostname', 'env_ip_addr' => 'node_ip_addr', 'env_ip_interface' => 'conf_node_external_eth_dev' }],
-  'mqserver' => [{ 'component' => 'activemq', 'env_hostname' => 'activemq_hostname' }],
+  'msgserver' => [{ 'component' => 'activemq', 'env_hostname' => 'activemq_hostname' }],
   'dbserver' => [{ 'component' => 'datastore', 'env_hostname' => 'datastore_hostname' }],
 }
 
@@ -156,7 +155,7 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
       end
     end
 
-    if host_info['roles'].include?('broker')
+    if host_info['roles'].include?('broker') and not @puppet_template_only
       user = host_info['user']
       host = host_info['host']
       ssh_host = host_info['ssh_host']
@@ -428,7 +427,11 @@ end
 if not @puppet_template_only
   procs = Process.waitall
 else
-  puts "\nThe following Puppet configuration files were generated\nfor use with the OpenShift Puppet module:\n* #{@puppet_templates.join("\n* ")}\n\n"
+  if @puppet_templates.length > 0
+    puts "\nThe following Puppet configuration files were generated\nfor use with the OpenShift Puppet module:\n* #{@puppet_templates.join("\n* ")}\n\n"
+  else
+    puts "\nErrors with the deployment setup prevented puppet configuration files from being generated. Please review the output above and try again."
+  end
   exit
 end
 

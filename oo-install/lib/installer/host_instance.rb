@@ -170,7 +170,7 @@ module Installer
         if attr == :install_status
           output['state'] = self.send(attr).to_s
         else
-          output[attr.to_s] = attr == :roles ? self.send(attr).map{ |r| r.to_s } : self.send(attr)
+          output[attr.to_s] = attr == :roles ? self.send(attr).map{ |r| r == :mqserver ? 'msgserver' : r.to_s } : self.send(attr)
         end
       end
       output

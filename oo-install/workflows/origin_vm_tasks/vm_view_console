@@ -1,3 +1,13 @@
 #!/bin/sh
-echo 'login info'
+host=`hostname | tr -d "\n"`
+echo "To connect to the web console on this Origin VM, point your browser at:"
+echo ""
+echo "    http://${host}/console/"
+echo ""
+echo "    Username: demo"
+echo "    Password: changeme"
+echo ""
+echo "You may receive a warning about the SSL certificate that the VM uses. This is because the Origin VM signs its own SSL certificate. It is okay to accept this certificate, though you will want to update it with a propoerly signed certificate if you intend to use this Origin VM as the Broker in a permanent OpenShift deployment."
+echo ""
+read -p "Press the [Enter] key to return to the main menu."
 exit

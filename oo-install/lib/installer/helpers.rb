@@ -104,6 +104,10 @@ module Installer
         )
         ip_path = which('ip')
         host.set_ip_exec_path(ip_path)
+        ip_addrs = host.get_ip_addr_choices
+        # For now we blindly assume that the Origin VM will have only one interface
+        host.ip_interface = ip_addrs[0][0]
+        host.ip_addr = ip_addrs[0][1]
         host
       end
     end
