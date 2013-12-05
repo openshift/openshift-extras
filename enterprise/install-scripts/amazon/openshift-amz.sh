@@ -776,19 +776,25 @@ execute_mongodb()
   echo "$1"
   echo "---"
 
-  echo "$1" | mongo
+  output="$( echo "$1" | mongo )"
+  echo "$output"
+  if [ "$2" ]; then # test output against regex
+    [[ "$output" =~ $2 ]] || return 1
+  fi
+  return 0
 }
 
 # This configuration step should only be performed if MongoDB is not
 # replicated or if this host is the primary in a replicated setup.
 configure_datastore_add_users()
 {
+  set +x  # just confusing to have everything re-echo
   wait_for_mongod
 
   execute_mongodb "$(
     if [[ ${datastore_replicants} =~ , ]]
     then
-      echo 'while (rs.isMaster().primary == null) { sleep(500); }'
+      echo 'while (rs.isMaster().primary == null) { sleep(5); }'
     fi
     if is_false "$CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST"
     then
@@ -802,12 +808,14 @@ configure_datastore_add_users()
     echo "use ${mongodb_name}"
     echo "db.addUser('${mongodb_broker_user}', '${mongodb_broker_password}')"
   )"
+  set -x
 }
 
 # This configuration step should only be performed on the primary in
-# a replicated setup.
+# a replicated setup, and only after the secondary DBs are installed.
 configure_datastore_add_replicants()
 {
+  set +x  # just confusing to have everything re-echo
   wait_for_mongod
 
   # Configure the replica set.
@@ -831,8 +839,10 @@ configure_datastore_add_replicants()
     echo
     echo '  ]'
     echo '})'
-  )"
+  )" '"ok" : 1' || abort_install "OpenShift: Failed to form MongoDB replica set; please do this manually."
 
+  configure_datastore_add_users
+  set -x
 }
 
 # $1 = setting name
@@ -1527,7 +1537,7 @@ configure_dns_resolution()
   # will resolve public addresses even when our private named is
   # nonfunctional.  However, our private named must appear first in
   # order for hostnames private to our OpenShift PaaS to resolve.
-  sed -i -e "1i# The named we install for our OpenShift PaaS must appear first.\\nsearch ${hosts_domain}.\\nnameserver ${named_ip_addr}\\n" /etc/resolv.conf
+  sed -i -e "/search/ d; 1i# The named we install for our OpenShift PaaS must appear first.\\nsearch ${hosts_domain}.\\nnameserver ${named_ip_addr}\\n" /etc/resolv.conf
 
   # Append resolution conf to the DHCP configuration.
   cat <<EOF >> /etc/dhcp/dhclient-$iface.conf
@@ -2126,13 +2136,16 @@ set_defaults()
   # Generate a random session secret for console sessions.
   broker && console_session_secret="${CONF_CONSOLE_SESSION_SECRET:-${randomized}}"
 
-  # If no list of replicants is provided, assume there is only one
-  # datastore host.
+  # If no list of replicants is provided, assume there is only one datastore host.
   datastore_replicants="${CONF_DATASTORE_REPLICANTS:-$datastore_hostname:27017}"
-
   # For each replicant that does not have an explicit port number
   # specified, append :27017 to its host name.
-  datastore_replicants="$(echo "${datastore_replicants}" | sed -e 's/\([^:,]\+\)\(,\|$\)/\1:27017\2/g')"
+  datastore_replicants="$( for repl in ${datastore_replicants//,/ }; do
+                             [[ "$repl" =~ : ]] || repl=$repl:27017
+                             printf ",%s" "${repl}"
+                           done)"
+  datastore_replicants="${datastore_replicants:1}"
+
 
   # If no list of replicants is provided, assume there is only one
   # ActiveMQ host.

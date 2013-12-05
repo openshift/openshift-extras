@@ -91,15 +91,19 @@
 # MANUAL TASKS
 #
 # This script attempts to automate as many tasks as it reasonably can.
-# Unfortunately, it is constrained to setting up only a single host at a
-# time. In a multi-host setup, you will need to do the following after
-# the script has completed.
+# Because it deploys only a single host at a time, it has some limitations.
+# In a multi-host setup, you may need to attend to the following
+# concerns separately from this script:
 #
 # 1. Set up DNS entries for hosts
-#    If you installed BIND with the script, then any other components
-#    the script installed on the same host received DNS entries.
-#    Other hosts must all be defined manually, including at least your
-#    node hosts. oo-register-dns may be useful for this.
+#    Generally, all hosts in your deployment should have DNS entries.
+#    Node hosts strictly require DNS entries in order to alias CNAMEs.
+#    If you install named with this script, you can opt to define DNS
+#    entries for your hosts. By default, any other components the script
+#    installs on the same host with named receive DNS entries. Or, you
+#    can use CONF_NAMED_ENTRIES to specify (or skip) host DNS creation.
+#    Host DNS entries not created this way must be created separately.
+#    oo-register-dns on the broker may be useful for this.
 #
 # 2. Copy public rsync key to enable moving gears
 #    The broker rsync public key needs to be authorized on nodes. The
@@ -120,17 +124,6 @@
 
 
 # PARAMETER DESCRIPTIONS
-
-# actions / CONF_ACTIONS
-#   Default: do_all_actions
-#     Helpful steps: init_message,validate_preflight,configure_repos,
-#                    install_rpms,configure_host,configure_openshift,
-#                    reboot_after
-#   Comma-separated list of bash functions to run.  This
-#   setting is intended to allow configuration steps defined within this
-#   file to be rerun selectively when the shell-script version of this
-#   file is used.  For a normal installation, this setting can be left
-#   at its default value.
 
 # install_components / CONF_INSTALL_COMPONENTS
 #   Comma-separated selections from the following:
@@ -188,6 +181,21 @@
 #   Not usually needed, but may help with temporary dependency mismatches
 #   Default: no
 #CONF_OPTIONAL_REPO=1
+
+# actions / CONF_ACTIONS
+#   Default: do_all_actions
+#   Comma-separated list of bash functions to run.  This
+#   setting is intended to allow configuration steps defined within this
+#   file to be run or re-run selectively.  For a typical installation,
+#   this setting can be left at its default value.
+#
+#   Some helpful actions:
+#     init_message,validate_preflight,configure_repos,
+#     install_rpms,configure_host,configure_openshift,
+#     configure_datastore_add_replicants,reboot_after
+#
+# For example, these are the actions to run on a primary MongoDB replicant:
+#CONF_ACTIONS=do_all_actions,configure_datastore_add_replicants
 
 
 # # # # # # # # # # # # yum-based install method # # # # # # # # # # # #
@@ -392,18 +400,6 @@
 #   the activemq_replicants setting.
 #CONF_ACTIVEMQ_AMQ_USER_PASSWORD="ChangeMe"
 
-
-# datastore_replicants / CONF_DATASTORE_REPLICANTS
-#   Default: the value of datastore_hostname
-#   A comma-separated list of MongoDB replicants.  If you are installing
-#   with a configuration that has only a single MongoDB instance, you
-#   can leave this setting at its default value.  If you specify more
-#   than one replicant, the first is designated as the master and the
-#   rest are designated as slaves.  For each replicant, if you omit the
-#   port specification for that replicant, the port specification :27017
-#   will be appended to that replicant's hostname.
-#CONF_DATASTORE_REPLICANTS="datastore01.example.com:27017,datastore02.example.com:27017,datastore03.example.com:27017"
-
 # mcollective_user / CONF_MCOLLECTIVE_USER
 # mcollective_password / CONF_MCOLLECTIVE_PASSWORD
 #   Default: mcollective/marionette
@@ -412,6 +408,23 @@
 #   be the same on all broker and node hosts.
 #CONF_MCOLLECTIVE_USER="mcollective"
 #CONF_MCOLLECTIVE_PASSWORD="mcollective"
+
+
+# mongodb_name / CONF_MONGODB_NAME
+#   Default: openshift_broker
+#   This is the name of the database in MongoDB in which the broker will
+#   store data.
+#CONF_MONGODB_NAME="openshift_broker"
+
+# mongodb_broker_user / CONF_MONGODB_BROKER_USER
+# mongodb_broker_password / CONF_MONGODB_BROKER_PASSWORD
+#   Default: openshift:mongopass
+#   These are the username and password of the normal user that will be
+#   created for the broker to connect to the MongoDB datastore. The
+#   broker application's MongoDB plugin is also configured with these
+#   values.
+#CONF_MONGODB_BROKER_USER="openshift"
+#CONF_MONGODB_BROKER_PASSWORD="mongopass"
 
 # mongodb_admin_user / CONF_MONGODB_ADMIN_USER
 # mongodb_admin_password / CONF_MONGODB_ADMIN_PASSWORD
@@ -425,32 +438,31 @@
 #CONF_MONGODB_ADMIN_USER="admin"
 #CONF_MONGODB_ADMIN_PASSWORD="mongopass"
 
-# mongodb_broker_user / CONF_MONGODB_BROKER_USER
-# mongodb_broker_password / CONF_MONGODB_BROKER_PASSWORD
-#   Default: openshift:mongopass
-#   These are the username and password of the normal user that will be
-#   created for the broker to connect to the MongoDB datastore. The
-#   broker application's MongoDB plugin is also configured with these
-#   values.
-#CONF_MONGODB_BROKER_USER="openshift"
-#CONF_MONGODB_BROKER_PASSWORD="mongopass"
-
-# mongodb_key / CONF_MONGODB_KEY
-#   Default: OSEnterprise
-#   In a replicated setup, this is the key that slaves will use to
-#   authenticate with the master.
-#CONF_MONGODB_KEY="OSEnterprise"
+# datastore_replicants / CONF_DATASTORE_REPLICANTS
+#   Default: the value of datastore_hostname (no replication)
+#   A comma-separated list of MongoDB replicants to be used as a
+#   replica set. For each replicant, if you omit the port specification
+#   for that replicant, port :27017 will be appended.
+#
+#   To install and configure a HA replica set, install at least three
+#   hosts with the datastore component, and when all are complete,
+#   all hostnames resolve and all databases are reachable,
+#   on one host execute the configure_datastore_add_replicants
+#   action to configure the replica set; e.g. (on the last host only):
+#CONF_ACTIONS=do_all_actions,configure_datastore_add_replicants
+#   All hosts should be installed with all replicants specified:
+#CONF_DATASTORE_REPLICANTS="datastore01.example.com:27017,datastore02.example.com:27017,datastore03.example.com:27017"
 
 # mongodb_replset / CONF_MONGODB_REPLSET
 #   Default: ose
 #   In a replicated setup, this is the name of the replica set.
 #CONF_MONGODB_REPLSET="ose"
 
-# mongodb_name / CONF_MONGODB_NAME
-#   Default: openshift_broker
-#   This is the name of the database in MongoDB in which the broker will
-#   store data.
-#CONF_MONGODB_NAME="openshift_broker"
+# mongodb_key / CONF_MONGODB_KEY
+#   Default: OSEnterprise
+#   In a replicated setup, this is the key that slaves will use to
+#   authenticate with the master.
+#CONF_MONGODB_KEY="OSEnterprise"
 
 # openshift_user1 / CONF_OPENSHIFT_USER1
 # openshift_password1 / CONF_OPENSHIFT_PASSWORD1
@@ -1284,19 +1296,25 @@ execute_mongodb()
   echo "$1"
   echo "---"
 
-  echo "$1" | mongo
+  output="$( echo "$1" | mongo )"
+  echo "$output"
+  if [ "$2" ]; then # test output against regex
+    [[ "$output" =~ $2 ]] || return 1
+  fi
+  return 0
 }
 
 # This configuration step should only be performed if MongoDB is not
 # replicated or if this host is the primary in a replicated setup.
 configure_datastore_add_users()
 {
+  set +x  # just confusing to have everything re-echo
   wait_for_mongod
 
   execute_mongodb "$(
     if [[ ${datastore_replicants} =~ , ]]
     then
-      echo 'while (rs.isMaster().primary == null) { sleep(500); }'
+      echo 'while (rs.isMaster().primary == null) { sleep(5); }'
     fi
     if is_false "$CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST"
     then
@@ -1310,12 +1328,14 @@ configure_datastore_add_users()
     echo "use ${mongodb_name}"
     echo "db.addUser('${mongodb_broker_user}', '${mongodb_broker_password}')"
   )"
+  set -x
 }
 
 # This configuration step should only be performed on the primary in
-# a replicated setup.
+# a replicated setup, and only after the secondary DBs are installed.
 configure_datastore_add_replicants()
 {
+  set +x  # just confusing to have everything re-echo
   wait_for_mongod
 
   # Configure the replica set.
@@ -1339,8 +1359,10 @@ configure_datastore_add_replicants()
     echo
     echo '  ]'
     echo '})'
-  )"
+  )" '"ok" : 1' || abort_install "OpenShift: Failed to form MongoDB replica set; please do this manually."
 
+  configure_datastore_add_users
+  set -x
 }
 
 # $1 = setting name
@@ -2035,7 +2057,7 @@ configure_dns_resolution()
   # will resolve public addresses even when our private named is
   # nonfunctional.  However, our private named must appear first in
   # order for hostnames private to our OpenShift PaaS to resolve.
-  sed -i -e "1i# The named we install for our OpenShift PaaS must appear first.\\nsearch ${hosts_domain}.\\nnameserver ${named_ip_addr}\\n" /etc/resolv.conf
+  sed -i -e "/search/ d; 1i# The named we install for our OpenShift PaaS must appear first.\\nsearch ${hosts_domain}.\\nnameserver ${named_ip_addr}\\n" /etc/resolv.conf
 
   # Append resolution conf to the DHCP configuration.
   cat <<EOF >> /etc/dhcp/dhclient-$iface.conf
@@ -2634,13 +2656,16 @@ set_defaults()
   # Generate a random session secret for console sessions.
   broker && console_session_secret="${CONF_CONSOLE_SESSION_SECRET:-${randomized}}"
 
-  # If no list of replicants is provided, assume there is only one
-  # datastore host.
+  # If no list of replicants is provided, assume there is only one datastore host.
   datastore_replicants="${CONF_DATASTORE_REPLICANTS:-$datastore_hostname:27017}"
-
   # For each replicant that does not have an explicit port number
   # specified, append :27017 to its host name.
-  datastore_replicants="$(echo "${datastore_replicants}" | sed -e 's/\([^:,]\+\)\(,\|$\)/\1:27017\2/g')"
+  datastore_replicants="$( for repl in ${datastore_replicants//,/ }; do
+                             [[ "$repl" =~ : ]] || repl=$repl:27017
+                             printf ",%s" "${repl}"
+                           done)"
+  datastore_replicants="${datastore_replicants:1}"
+
 
   # If no list of replicants is provided, assume there is only one
   # ActiveMQ host.
