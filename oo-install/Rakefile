@@ -104,3 +104,8 @@ task :package do
 
   system 'rm', '-rf', "#{@tmpdir}oo-install*"
 end
+
+task :clean do
+  @package_dir = "#{gem_root_dir}/package"
+  system "rm -rf #{@package_dir}"
+end

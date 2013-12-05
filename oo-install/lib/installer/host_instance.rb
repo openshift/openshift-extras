@@ -41,7 +41,7 @@ module Installer
         else
           info[:valid_access] = false
         end
-      rescue Net::SSH::AuthenticationFailed, SocketError, Timeout::Error => e
+      rescue Net::SSH::AuthenticationFailed, SocketError, Timeout::Error, Errno::EHOSTUNREACH => e
         info[:valid_access] = false
         info[:error] = e
       end
@@ -147,7 +147,6 @@ module Installer
       @roles.delete_if{ |r| r == role }
     end
 
-
     def host_type
       @host_type ||=
         begin
@@ -171,7 +170,7 @@ module Installer
         if attr == :install_status
           output['state'] = self.send(attr).to_s
         else
-          output[attr.to_s] = attr == :roles ? self.send(attr).map{ |r| r.to_s } : self.send(attr)
+          output[attr.to_s] = attr == :roles ? self.send(attr).map{ |r| r == :mqserver ? 'msgserver' : r.to_s } : self.send(attr)
         end
       end
       output

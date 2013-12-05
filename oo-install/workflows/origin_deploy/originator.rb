@@ -60,7 +60,16 @@ end
 
 # If this is the add-a-node scenario, the node to be installed will
 # be passed via the command line
-@target_node_hostname = ARGV[0]
+if ARGV.length > 0
+  if not ARGV[0].nil? and not ARGV[0] == 'nil'
+    @target_node_hostname = ARGV[0]
+  end
+  if not ARGV[1].nil? and ARGV[1] == 'true'
+    @puppet_template_only = true
+  else
+    @puppet_template_only = false
+  end
+end
 @target_node_ssh_host = nil
 
 # Default and baked-in config values for the Puppet deployment
@@ -97,7 +106,7 @@ end
     { 'component' => 'named', 'env_hostname' => 'named_hostname', 'env_ip_addr' => 'named_ip_addr' },
   ],
   'node' => [{ 'component' => 'node', 'env_hostname' => 'node_hostname', 'env_ip_addr' => 'node_ip_addr', 'env_ip_interface' => 'conf_node_external_eth_dev' }],
-  'mqserver' => [{ 'component' => 'activemq', 'env_hostname' => 'activemq_hostname' }],
+  'msgserver' => [{ 'component' => 'activemq', 'env_hostname' => 'activemq_hostname' }],
   'dbserver' => [{ 'component' => 'datastore', 'env_hostname' => 'datastore_hostname' }],
 }
 
@@ -146,7 +155,7 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
       end
     end
 
-    if host_info['roles'].include?('broker')
+    if host_info['roles'].include?('broker') and not @puppet_template_only
       user = host_info['user']
       host = host_info['host']
       ssh_host = host_info['ssh_host']
@@ -234,6 +243,7 @@ end
 # Make it so
 local_dns_key = nil
 saw_deployment_error = false
+@puppet_templates = []
 @child_pids = []
 host_order.each do |ssh_host|
   user = @hosts[ssh_host]['user']
@@ -306,13 +316,16 @@ host_order.each do |ssh_host|
     output = `#{commands[:enabledns]}`
     dnsstatus = $?.exitstatus
     if dnsstatus > 0
-      # This may be RHEL
+      # This may be RHEL (or at least, not systemd)
+      puts "Command 'systemctl' didn't work; trying older style..."
       output = `#{commands[:enabledns_rhel]}`
       dnsstatus = $?.exitstatus
       if dnsstatus > 0
         puts "Could not enable named using command '#{commands[:enabledns]}'. Exiting."
         saw_deployment_error = true
         break
+      else
+        puts "Older style system command succeeded."
       end
     end
   end
@@ -338,12 +351,21 @@ host_order.each do |ssh_host|
 
   # Write it out so we can copy it to the target
   hostfilepath = "/tmp/#{hostfile}"
+  if @puppet_template_only and ENV.has_key?('HOME')
+    hostfilepath = ENV['HOME'] + "/#{hostfile}"
+  end
   if File.exists?(hostfilepath)
     File.unlink(hostfilepath)
   end
   fh = File.new(hostfilepath, 'w')
   fh.write(filetext)
   fh.close
+
+  if @puppet_template_only
+    @puppet_templates << hostfilepath
+    puts "Created template #{hostfilepath}"
+    next
+  end
 
   # Handle the config file copying and delete the original.
   if not ssh_host == 'localhost'
@@ -402,7 +424,16 @@ host_order.each do |ssh_host|
 end
 
 # Wait for the parallel installs to finish
-procs = Process.waitall
+if not @puppet_template_only
+  procs = Process.waitall
+else
+  if @puppet_templates.length > 0
+    puts "\nThe following Puppet configuration files were generated\nfor use with the OpenShift Puppet module:\n* #{@puppet_templates.join("\n* ")}\n\n"
+  else
+    puts "\nErrors with the deployment setup prevented puppet configuration files from being generated. Please review the output above and try again."
+  end
+  exit
+end
 
 if saw_deployment_error
   puts "OpenShift Origin deployment completed with errors."

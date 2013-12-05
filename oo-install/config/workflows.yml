@@ -1,24 +1,53 @@
 ---
-Name: VM role setup
+Name: Origin VM Instructions
+Contexts:
+  - origin_vm
+Summary: Build an Application
+Description: Explains how to develop applications against this VM.
+ID: vm_build_app
+WorkflowDir: origin_vm_tasks
+NonDeployment: Y
+ExitOnComplete: N
+Executable: <workflow_path>/vm_build_app
+---
+Name: Origin VM Console
+Contexts:
+  - origin_vm
+Summary: View the Web Console
+Description: Explains how to view the web console on this VM.
+ID: vm_view_console
+WorkflowDir: origin_vm_tasks
+NonDeployment: Y
+ExitOnComplete: N
+Executable: <workflow_path>/vm_view_console
+---
+Name: OO Deployment from VM
 Contexts:
   - origin_vm
 Targets:
   - fedora
-Summary: Use this VM in a multi-instance deployment
-Description: You can configure multiple copies of the Origin VM to interact with each other as a distributed Origin system. This option guides you through the setup process.
-ID: vm_role
-Questions:
-  - Text: What role should this VM fill in the Origin system?
-    Variable: role
-    AnswerType: role
-Executable: <workflow_path>/vm_originator <q:role>
+  - rhel
+  - other
+Summary: Install OpenShift Origin on Other Systems
+Description: To install a new OpenShift Origin deployment on one or more target systems, select this option
+ID: origin_deploy
+Executable: <workflow_path>/originator.rb
+RemoteDeployment: Y
+SubscriptionCheck: Y
+Repositories:
+  - repos_base
+  - jboss_repo_base
+  - jenkins_repo_base
+  - os_repo
+  - os_optional_repo
+RequiredUtilities:
+  - puppet
+  - broker:dnssec-keygen
+  - broker:htpasswd
 ---
 Name: OO Deployment
 Contexts:
   - origin
-  - origin_vm
-# Versions:
-#  - 2.0
 Targets:
   - fedora
   - rhel
@@ -43,9 +72,6 @@ RequiredUtilities:
 Name: OO Node Instance Deployment
 Contexts:
   - origin
-  - origin_vm
-# Versions:
-#  - 2.0
 Targets:
   - fedora
   - rhel
@@ -73,22 +99,25 @@ RequiredUtilities:
 Name: Puppet templates
 Contexts:
   - origin_vm
-Summary: Download Puppet templates
-Description: See info on obtaining OpenShift Origin Puppet templates
-ID: puppet_templates
-SkipDeploymentCheck: Y
-NonDeployment: Y
-Executable: <workflow_path>/puppet_info
----
-Name: Login info
-Contexts:
-  - origin_vm
-Summary: See login information for this Origin VM
-Description: Shows basic login information for this VM instance.
-ID: login_info
-SkipDeploymentCheck: Y
-NonDeployment: Y
-Executable: <workflow_path>/login_info
+Targets:
+  - fedora
+  - rhel
+  - other
+Summary: Generate a Puppet Configuration File
+Description: Make a puppet configuration file that you can use to run an OpenShift Origin installation.
+ID: puppet_template
+WorkflowDir: origin_deploy
+Executable: <workflow_path>/originator.rb nil true
+RemoteDeployment: Y
+SubscriptionCheck: Y
+Repositories:
+  - repos_base
+  - jboss_repo_base
+  - jenkins_repo_base
+  - os_repo
+  - os_optional_repo
+RequiredUtilities:
+  - broker:dnssec-keygen
 ---
 Name: OE Deployment
 Contexts:

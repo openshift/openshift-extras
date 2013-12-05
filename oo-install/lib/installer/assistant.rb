@@ -103,7 +103,7 @@ module Installer
     private
     def ui_title
       ui_newpage
-      say translate(:title)
+      say translate(is_origin_vm? ? :vm_title : :title)
       say "#{horizontal_rule}\n\n"
     end
 
@@ -113,8 +113,14 @@ module Installer
 
     def ui_welcome_screen
       ui_title
-      say translate :welcome
-      say translate :intro
+      say translate(is_origin_vm? ? :vm_welcome : :welcome)
+      if is_origin_vm?
+        say "\n\tHost: #{vm_installer_host.host}"
+        say "\tUser: #{vm_installer_host.user}"
+        say "\t  IP: #{vm_installer_host.ip_addr}"
+      end
+      puts "\n"
+      say translate(is_origin_vm? ? :vm_intro : :intro)
       puts "\n"
       loop do
         choose do |menu|
@@ -157,8 +163,8 @@ module Installer
       end
 
       # Subscription check
-      ui_newpage
       if workflow.check_subscription?
+        ui_newpage
         msub = merged_subscription
         sub_question = "\nDo you want to make any changes to the subscription info in the configuration file?"
         sub_followup = "\nDo you want to go back and modify your subscription info settings in the configuration file?"
@@ -218,27 +224,63 @@ module Installer
 
       # Hand it off to the workflow executable
       workflow.executable.run workflow_cfg, merged_subscription, config.file_path
-      raise Installer::AssistantWorkflowCompletedException.new
+
+      # Exit the workflow, and possibly the application.
+      if not workflow.exit_on_complete?
+        raise Installer::AssistantRestartException.new
+      elsif workflow.non_deployment?
+        raise Installer::AssistantWorkflowNonDeploymentCompletedException.new
+      else
+        raise Installer::AssistantWorkflowCompletedException.new
+      end
     end
 
     def ui_create_deployment
-      say "It looks like you are running oo-install for the first time on a new system. The installer will guide you through the process of defining your OpenShift deployment."
-      has_running_broker = concur("\nFirst things first: do you already have a running Broker?")
-      if has_running_broker
+      use_origin_vm_as_broker = false
+      has_running_broker = false
+      if is_origin_vm?
+        say "Before we do that, we need to gather information about the Origin system that you want to deploy. It can consist of one or more hosts systems, including this VM. See:\n\nhttp://openshift.github.io/documentation/oo_install_users_guide.html\n\nfor information on how to integrate this VM into a larger OpenShift deployment."
+        use_origin_vm_as_broker = concur("\n#{horizontal_rule}\nNOTE: Using this VM in a Full Deployment\n#{horizontal_rule}\nBe aware that if this VM is reconfigured as part of a larger deployment, you will potentially lose access to any applications that you have already built here. Additionally, this system will switch from mDNS to BIND, which means that you will need to do some DNS configuration in your own network to be able to connect to this VM by hostname.\n\nIf you answer 'no', we'll gather information about your intended Broker host in a moment.\n\nDo you want to use this VM as the Broker for a multi-host deployment?")
+      else
+        say "It looks like you are running oo-install for the first time on a new system. The installer will guide you through the process of defining your OpenShift deployment."
+      end
+      if not use_origin_vm_as_broker
+        broker_question = is_origin_vm? ? 'Is there already a running Broker in the OpenShift system that you want to deploy?' : 'First things first: do you already have a running Broker?'
+        has_running_broker = concur("\n#{broker_question}")
+      else
+        has_running_broker = true
+      end
+      if use_origin_vm_as_broker
+        vm_hash = vm_installer_host.to_hash
+        vm_hash['roles'] = ['broker']
+        deployment.add_host_instance! Installer::HostInstance.new(vm_hash)
+        say "\nOkay. This VM will be reconfigured as the Broker for a larger deployment."
+      elsif has_running_broker
         say "\nOkay. We will collect information about your Broker in a moment."
       else
         say "\nOkay. We will gather information to install a Broker in a moment."
       end
-      say "Before we do that, we need to collect some information about your OpenShift DNS configuration."
+      if not is_origin_vm?
+        say "Before we do that, we need to collect some information about your OpenShift DNS configuration."
+      end
       # Now grab the DNS config
-      ui_modify_dns(has_running_broker)
+      ui_modify_dns((has_running_broker and not use_origin_vm_as_broker))
       say "\nThat's all of the DNS information that we need right now. Next, we need to gather information about the hosts in your OpenShift deployment."
       Installer::Deployment.display_order.each do |role|
         role_item = Installer::Deployment.role_map[role].chop
         puts "\n" + horizontal_rule
         say "#{role_item} Configuration"
         puts horizontal_rule
-        instance_exists = role == :broker ? has_running_broker : concur("Do you already have a running #{role_item}?")
+        instance_exists = false
+        if use_origin_vm_as_broker
+          if role == :broker
+            # We've already set up the Broker; move along.
+            say "You've specified this Origin VM as the Broker for your new deployment. Now we'll gather information about where the other roles will be deployed."
+            next
+          end
+        else
+          instance_exists = role == :broker ? has_running_broker : concur("Do you already have a running #{role_item}?")
+        end
         if instance_exists
           say "\nOkay. I'm going to need you to tell me about the host where the #{role_item} is installed."
         else
@@ -388,7 +430,7 @@ module Installer
     def ui_show_deployment(message=translate(:deployment_summary))
       ui_newpage
       say message
-      if not advanced_mode?
+      if not is_origin_vm? and not advanced_mode?
         say "\n#{translate(:basic_mode_explanation)}"
       end
       list_dns
@@ -484,7 +526,6 @@ module Installer
           end
         end
       end
-      ui_newpage
       say message
       puts table
     end
@@ -784,9 +825,7 @@ module Installer
             end
             if concur(question, translate(:ip_config_help_text))
               host_instance.ip_addr = ip_addrs[0][1]
-              if host_instance.is_node?
-                host_instance.ip_interface = ip_addrs[0][0]
-              end
+              host_instance.ip_interface = ip_addrs[0][0]
             else
               manual_ip_info_for_host_instance(host_instance, ip_addrs)
             end
