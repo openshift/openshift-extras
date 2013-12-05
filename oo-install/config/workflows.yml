@@ -40,10 +40,14 @@ Repositories:
   - jenkins_repo_base
   - os_repo
   - os_optional_repo
-RequiredUtilities:
-  - puppet
-  - broker:dnssec-keygen
-  - broker:htpasswd
+RequiredComponents:
+  - util:all:puppet
+  - util:broker:dnssec-keygen
+  - util:broker:htpasswd
+  - util:rhel:scl:ruby193
+  - util:other:scl:ruby193
+  - repo:rhel:epel
+  - repo:other:epel
 ---
 Name: OO Deployment
 Contexts:
@@ -64,10 +68,14 @@ Repositories:
   - jenkins_repo_base
   - os_repo
   - os_optional_repo
-RequiredUtilities:
-  - puppet
-  - broker:dnssec-keygen
-  - broker:htpasswd
+RequiredComponents:
+  - util:all:puppet
+  - util:broker:dnssec-keygen
+  - util:broker:htpasswd
+  - util:rhel:scl:ruby193
+  - util:other:scl:ruby193
+  - repo:rhel:epel
+  - repo:other:epel
 ---
 Name: OO Node Instance Deployment
 Contexts:
@@ -93,8 +101,12 @@ Repositories:
   - jenkins_repo_base
   - os_repo
   - os_optional_repo
-RequiredUtilities:
-  - puppet
+RequiredComponents:
+  - util:all:puppet
+  - util:rhel:scl:ruby193
+  - util:other:scl:ruby193
+  - repo:rhel:epel
+  - repo:other:epel
 ---
 Name: Puppet templates
 Contexts:
@@ -116,8 +128,8 @@ Repositories:
   - jenkins_repo_base
   - os_repo
   - os_optional_repo
-RequiredUtilities:
-  - broker:dnssec-keygen
+RequiredComponents:
+  - util:broker:dnssec-keygen
 ---
 Name: OE Deployment
 Contexts:

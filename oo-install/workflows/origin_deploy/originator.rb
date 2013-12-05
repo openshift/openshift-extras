@@ -38,6 +38,10 @@ end
 def components_list host_instance
   values = []
   host_instance['roles'].each do |role|
+    # This addresses an error in older config files
+    if role == 'mqserver'
+      role = 'msgserver'
+    end
     @role_map[role].each do |puppet_role|
       values << puppet_role['component']
     end
@@ -134,6 +138,10 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
 
     # Set up the puppet-related ENV variables except node settings
     host_info['roles'].each do |role|
+      # This addresses an error in older config files
+      if role == 'mqserver'
+        role = 'msgserver'
+      end
       if not @seen_roles.has_key?(role)
         @seen_roles[role] = 1
       elsif not role == 'node'
@@ -216,6 +224,10 @@ host_order = []
   end
   @hosts.each_pair do |ssh_host,host_info|
     host_info['roles'].each do |host_role|
+      # This addresses an error in older config files
+      if host_role == 'mqserver'
+        host_role = 'msgserver'
+      end
       @role_map[host_role].each do |origin_info|
         if origin_info['component'] == order_role
           if not @target_node_ssh_host.nil? and not @target_node_ssh_host == ssh_host
@@ -256,6 +268,7 @@ host_order.each do |ssh_host|
 
   # Set up the commands that we will be using.
   commands = {
+    :typecheck => "export LC_CTYPE=en_US.utf8 && cat /etc/redhat-release",
     :keycheck => "ls /var/named/K#{@puppet_map['domain']}*.key",
     :keygen => "dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named #{@puppet_map['domain']}",
     :keyget => "cat /var/named/K#{@puppet_map['domain']}*.key",
@@ -267,17 +280,37 @@ host_order.each do |ssh_host|
     :apply => "puppet apply --verbose /tmp/#{hostfile}",
     :clear => "rm /tmp/#{hostfile}",
   }
+  puppet_commands = [:check,:install,:apply]
+  # We have to prep and run :typecheck first.
+  command_list = commands.keys
+  if not command_list[0] == :typecheck
+    command_list.delete_if{ |i| i == :typecheck }
+    command_list.unshift(:typecheck)
+  end
   # Modify the commands with sudo & ssh as necessary for this target host
-  commands.keys.each do |action|
+  host_type = :fedora
+  command_list.each do |action|
     if not ssh_host == 'localhost'
+      if host_type == :other and puppet_commands.include?(action)
+        commands[action] = "scl enable ruby193 \\\"#{commands[action]}\\\""
+      end
       if not user == 'root'
         commands[action] = "sudo sh -c '#{commands[action]}'"
       end
-      commands[action] = "#{@ssh_cmd} #{user}@#{ssh_host} \"#{commands[action]}\""
+      commands[action] = "#{@ssh_cmd} #{user}@#{ssh_host} -C \"#{commands[action]}\""
     else
+      if host_type == :other and puppet_commands.include?(action)
+        commands[action] = "scl enable ruby193 \"#{commands[action]}\""
+      end
       commands[action] = "bash -l -c '#{commands[action]}'"
       if not user == 'root'
         commands[action] = "sudo #{commands[action]}"
+      end
+    end
+    if action == :typecheck
+      output = `#{commands[:typecheck]}`
+      if not output.chomp.strip.downcase.start_with?('fedora')
+        host_type = :other
       end
     end
   end
