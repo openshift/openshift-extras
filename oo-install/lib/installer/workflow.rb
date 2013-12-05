@@ -71,7 +71,7 @@ module Installer
       end
     end
 
-    attr_reader :name, :contexts, :summary, :description, :id, :questions, :executable, :path, :utilities, :versions, :targets, :repositories
+    attr_reader :name, :contexts, :summary, :description, :id, :questions, :executable, :path, :components, :versions, :targets, :repositories
 
     def initialize config
       @id = config['ID']
@@ -148,9 +148,9 @@ module Installer
       end
 
       @executable = Installer::Executable.new(self, config['Executable'])
-      @utilities = ['getenforce','yum']
-      if config.has_key?('RequiredUtilities')
-        @utilities.concat(config['RequiredUtilities'])
+      @components = ['util:all:getenforce','util:all:yum']
+      if config.has_key?('RequiredComponents')
+        @components.concat(config['RequiredComponents'])
       end
     end
 

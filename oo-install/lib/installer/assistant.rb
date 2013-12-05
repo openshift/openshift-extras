@@ -1025,16 +1025,55 @@ module Installer
           say "* Target host is running #{supported_targets[host_instance.host_type]}"
         end
 
-        # Check for all required utilities
-        workflow.utilities.each do |util|
+        # Check for all required components
+        workflow.components.each do |component|
           check_on_role = :all
-          if util.split(":").length == 2
-            check_on_role = util.split(":")[0].to_sym
-            util = util.split(":")[1]
+          check_on_type = :all
+          repo = nil
+          util = nil
+          sub_util = nil
+
+          # Figure out the kind of check we're doing
+          component_info = component.split(":")
+          check_type = component_info[0].to_sym
+          role_or_type = component_info[1].to_sym
+          if not role_or_type == :all
+            if supported_targets.has_key?(role_or_type)
+              check_on_type = role_or_type
+            elsif Installer::Deployment.role_map.has_key?(role_or_type)
+              check_on_role = role_or_type
+            end
           end
-          if not check_on_role == :all and not host_instance.roles.include?(check_on_role)
+          if check_type == :util
+            util = component_info[2]
+            sub_util = component_info[3]
+          elsif check_type == :repo
+            repo = component_info[2]
+          end
+
+          # Move along if this host doesn't match the role / type relevant to the test
+          if (not check_on_role == :all and not host_instance.roles.include?(check_on_role)) or
+            (not check_on_type == :all and not host_instance.host_type == check_on_type)
             next
           end
+
+          # Handle repo checks
+          if not repo.nil?
+            repo_cmd = "yum repolist"
+            cmd_result = host_instance.exec_on_host!(repo_cmd)
+            if not cmd_result[:exit_code] == 0
+              say "* ERROR: Could not perform repo check for #{repo}. Try running `#{repo_cmd}` manually to troubleshoot."
+              deployment_good = false
+            elsif not cmd_result[:stdout].match(/#{repo}/)
+              say "* ERROR: The '#{repo}' repository isn't available via yum. Install / enable this repository and try again."
+              deployment_good = false
+            else
+              say "* #{repo} repository is present and enabled"
+            end
+            next
+          end
+
+          # Still here? Handle util checks
           cmd_result = {}
           if host_instance.localhost?
             cmd_result[:exit_code] = which(util).nil? ? 1 : 0
@@ -1074,6 +1113,19 @@ module Installer
               deployment_good = false
             else
               say "* SELinux is running in #{cmd_result[:stdout].chomp.strip.downcase} mode"
+            end
+          end
+          # SCL collection check
+          if util == 'scl' and not sub_util.nil?
+            cmd_result = host_instance.exec_on_host!("scl -l | grep #{sub_util}")
+            if not cmd_result[:exit_code] == 0
+              say "* ERROR: Could not run #{util} to determine presence of #{sub_util} collection."
+              deployment_good = false
+            elsif not cmd_result[:stdout].chomp.strip.downcase.match(/#{sub_util}/)
+              say "* ERROR: The #{sub_util} software collection is not installed. Correct this by running `yum install #{sub_util}` on this system."
+              deployment_good = false
+            else
+              say "* The #{sub_util} software collection is installed."
             end
           end
         end
