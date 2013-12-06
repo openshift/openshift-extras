@@ -13,6 +13,9 @@ else
   @config_file = ENV['HOME'] + '/.openshift/oo-install-cfg.yml'
 end
 
+# Check to see if we need to preserve generated files.
+@keep_assets = ENV.has_key?('OO_INSTALL_KEEP_ASSETS') and ENV['OO_INSTALL_KEEP_ASSETS'] == 'true'
+
 @ssh_cmd = 'ssh -t -q'
 @scp_cmd = 'scp -q'
 if ENV.has_key?('OO_INSTALL_DEBUG') and ENV['OO_INSTALL_DEBUG'] == 'true'
@@ -417,7 +420,7 @@ host_order.each do |ssh_host|
   @child_pids << Process.fork do
     has_openshift_module = false
     [:check,:install,:yum_clean,:apply,:clear].each do |action|
-      if action == :clear and ENV.has_key?('OO_INSTALL_KEEP_ASSETS') and ENV['OO_INSTALL_KEEP_ASSETS'] == 'true'
+      if action == :clear and @keep_assets
         puts "Keeping #{hostfile}"
         next
       end
@@ -448,7 +451,7 @@ host_order.each do |ssh_host|
       puts "Warning: There were errors during the deployment on host '#{host}'."
     end
     # Delete the local copy of the puppet script if it is still present
-    if File.exists?(hostfilepath)
+    if not @keep_assets and File.exists?(hostfilepath)
       File.unlink(hostfilepath)
     end
     # Bail out of the fork

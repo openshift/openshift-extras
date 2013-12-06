@@ -25,6 +25,9 @@ MSGS
 # Check ENV for an alternate config file location.
 @config_file = ENV['OO_INSTALL_CONFIG_FILE'] || ENV['HOME'] + '/.openshift/oo-install-cfg.yml'
 
+# Check ENV for "keep assets" flag
+@keep_assets = ENV.has_key?('OO_INSTALL_KEEP_ASSETS') and ENV['OO_INSTALL_KEEP_ASSETS'] == 'true'
+
 @ssh_cmd = 'ssh'
 @scp_cmd = 'scp'
 if ENV.has_key?('OO_INSTALL_DEBUG') and ENV['OO_INSTALL_DEBUG'] == 'true'
@@ -174,10 +177,10 @@ def run_on_host(host, step)
 
   # Write the openshift.sh settings (safely escaped) to a wrapper script
   filetext = @env_map.map { |env,val| "export #{env}=#{shellescape(val)}\n" }.join ""
-  filetext << "rm -f $0\n" unless ENV['OO_KEEP_DEPLOY_FILES']
+  filetext << "rm -f $0\n" unless @keep_assets
   # note: since we are cutting WAY down on output with grep, line-buffer it.
   filetext << "/tmp/openshift.sh |& tee -a #{logfile} | stdbuf -oL -eL grep -i '^OpenShift:'\n"
-  filetext << "rm -f /tmp/openshift.sh\n" unless ENV['OO_KEEP_DEPLOY_FILES']
+  filetext << "rm -f /tmp/openshift.sh\n" unless @keep_assets
   filetext << "exit\n"
   # Save it out so we can copy it to the target
   localfile = Tempfile.new('oo-install-wrapper')
