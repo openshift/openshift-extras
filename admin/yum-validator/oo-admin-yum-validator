@@ -17,9 +17,9 @@ RHEL_PRIORITY = 20
 JBOSS_PRIORITY = 30
 OTHER_PRIORITY = 40
 
-UNKNOWN, RHSM, RHN = ('unknown', 'rhsm', 'rhn')
-SUBS_NAME = {'unknown': '', 'rhsm': 'Red Hat Subscription Manager',
-             'rhn': 'RHN Classic or RHN Satellite'}
+UNKNOWN, RHSM, RHN, YUM = ('unknown', 'rhsm', 'rhn', 'yum')
+SUBS_NAME = {UNKNOWN: '', RHSM: 'Red Hat Subscription Manager',
+             RHN: 'RHN Classic or RHN Satellite', YUM: 'Yum'}
 VALID_SUBS = SUBS_NAME.keys()[1:]
 ATTACH_ENTITLEMENTS_URL = 'https://access.redhat.com/site/articles/522923'
 # VALID_OO_VERSIONS = ['1.2', '2.0']
@@ -59,6 +59,8 @@ class OpenShiftYumValidator(object):
                                       user_repos_only=self.opts.user_repos_only)
         else:
             self.rdb = repo_db.RepoDB()
+        if not hasattr(self.opts, 'product'):
+            self.opts.product = None
 
     def _setup_logger(self):
         self.opts.loglevel = logging.INFO
@@ -154,13 +156,13 @@ class OpenShiftYumValidator(object):
 
     def _sub(self, subscription):
         self.opts.subscription = subscription
-        self.logger.info('Detected OpenShift Enterprise repository '
-                         'subscription managed by %s.' %
+        self.logger.info('Detected OpenShift repository '
+                         'subscription managed by %s' %
                          SUBS_NAME[self.opts.subscription])
 
     def _oo_ver(self, version):
         self.opts.oo_version = version
-        self.logger.info('Detected OpenShift Enterprise version %s' % 
+        self.logger.info('Detected OpenShift version %s' % 
                          self.opts.oo_version)
 
     def _sub_ver(self, subscription, version = None):
@@ -263,7 +265,7 @@ class OpenShiftYumValidator(object):
                                    not (repo.repoid in rhsm_conflicts or
                                         repo.repoid in rhn_conflicts)]
                 if rhsm_conflicts:
-                    self.logger.error('The following OpenShift Enterprise '
+                    self.logger.error('The following OpenShift '
                                       'repositories conflict with the '
                                       'detected or specified product version.')
                     self.logger.error('To prevent package conflicts, disable '
@@ -274,7 +276,7 @@ class OpenShiftYumValidator(object):
                                           '--disable=%s' % repoid)
                 if rhn_conflicts:
                     self.logger.error('The following RHN Classic or RHN '
-                                      'Satellite-managed OpenShift Enterprise '
+                                      'Satellite-managed OpenShift '
                                       'repositories conflict with the '
                                       'detected or specified product version.')
                     self.logger.error('To prevent package conflicts, disable '
@@ -478,8 +480,8 @@ class OpenShiftYumValidator(object):
                     if self.oscs.enable_repo(repo):
                         self.logger.warning('Enabled repository %s'%repo)
             else:
-                self.logger.error('The required OpenShift Enterprise '
-                                  'repositories are disabled:')
+                self.logger.error('The required OpenShift repositories '
+                                  'are disabled:')
                 for repo in disabled_repos:
                     self.logger.error('    %s'%repo)
                 if self.opts.subscription == RHN:
@@ -511,14 +513,14 @@ class OpenShiftYumValidator(object):
                          if repo not in self.oscs.all_repoids()]
         if missing_repos:
             self.problem = True
-            self.logger.error('The required OpenShift Enterprise repositories '
-                              'are missing:')
+            self.logger.error('The required OpenShift repositories are '
+                              'missing:')
             for repo in missing_repos:
                 self.logger.error('    %s'%repo)
-            self.logger.error('Please verify that an OpenShift Enterprise '
-                              'subscription is attached to this system using '
-                              'either RHN Classic or Red Hat Subscription '
-                              'Manager by following the instructions here: %s' %
+            self.logger.error('Please verify that an OpenShift subscription is '
+                              'attached to this system using either RHN '
+                              'Classic or Red Hat Subscription Manager by '
+                              'following the instructions here: %s' %
                               ATTACH_ENTITLEMENTS_URL)
             return False
         return True
@@ -662,8 +664,19 @@ class OpenShiftYumValidator(object):
             check_pkgs = list(set([repo.key_pkg for repo in
                                    self.rdb.find_repos(role=role) if
                                    not hasattr(repo.role, '__iter__')]))
-            if filter(self.oscs.verify_package, check_pkgs):
+            present_pkgs = [self.oscs.installed_package_matching(pkg)
+                            for pkg in check_pkgs if
+                            self.oscs.verify_package(pkg)]
+            if present_pkgs:
                 self.opts.role.append(role)
+                pkg_repos = flatten_uniq([self.rdb.find_repos(
+                    key_pkg = pkg.name,
+                    repoid = self.oscs.repo_for_package(pkg))
+                                          for pkg in present_pkgs])
+                # Peek ahead to see if we're possibly running an OSE install
+                for repo in pkg_repos:
+                    if not self.opts.product or repo.product == ose:
+                        self.opts.product = repo.product
         if not self.opts.role:
             self.logger.error('No roles could be detected.')
             self.problem = True
@@ -719,11 +732,15 @@ class OpenShiftYumValidator(object):
             self.opts.role = [xx.lower() for xx in self.opts.role]
             if 'node-eap' in self.opts.role and not 'node' in self.opts.role:
                 self.opts.role.append('node')
-            if 'node' in self.opts.role and not 'node-eap' in self.opts.role:
+            if ('node' in self.opts.role and not 'node-eap' in
+                self.opts.role and (not self.opts.product or
+                                    self.opts.product == 'ose')):
                 # self.problem = True
-                self.logger.warning('If this system will be providing the '
-                                    'JBossEAP cartridge, re-run this '
-                                    'command with the --role=node-eap argument')
+                # TODO: Skip this message if the system is running Origin - how to determine?
+                self.logger.warning('If this system will be running OpenShift '
+                                    'Enterprise and providing the JBossEAP '
+                                    'cartridge, re-run this command with the '
+                                    '--role=node-eap argument')
             if 'broker' in self.opts.role and not 'client' in self.opts.role:
                 self.opts.role.append('client')
                 self.logger.info('Please note: --role=broker implicitly '
@@ -739,11 +756,11 @@ class OpenShiftYumValidator(object):
             self.problem = True
             if self.opts.subscription == UNKNOWN:
                 self.logger.error('Could not determine subscription type.')
-                self.logger.error('Please attach an OpenShift Enterprise '
-                                  'subscription to this system using either '
-                                  'RHN Classic or Red Hat Subscription '
-                                  'Manager by following the instructions '
-                                  'here: %s' % ATTACH_ENTITLEMENTS_URL)
+                self.logger.error('Please attach an OpenShift subscription to '
+                                  'this system using either RHN Classic or Red '
+                                  'Hat Subscription Manager by following the '
+                                  'instructions here: %s' % 
+                                  ATTACH_ENTITLEMENTS_URL)
             if not self.opts.oo_version:
                 self.logger.error('Could not determine product version. '
                                   'Please re-run this script with the '
@@ -815,9 +832,9 @@ class OpenShiftYumValidator(object):
 
 def validate_yum():
     ROLE_HELP = 'OpenShift component role(s) this system will fulfill.'
-    OO_VERSION_HELP = 'Version of OpenShift Enterprise in use on this system.'
+    OO_VERSION_HELP = 'Version of OpenShift in use on this system.'
     SUBSCRIPTION_HELP = ('Subscription management system which provides the '
-                         'OpenShift Enterprise repositories/channels.')
+                         'OpenShift repositories/channels.')
     FIX_HELP = 'Attempt to repair the first problem found.'
     FIX_ALL_HELP = 'Attempt to repair all problems found.'
     REPORT_ALL_HELP = ('Report all problems (default is to halt after first '
