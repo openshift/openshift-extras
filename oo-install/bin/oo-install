@@ -13,6 +13,7 @@ require 'pathname'
 include Installer::Helpers
 
 installer_context = ENV.has_key?('OO_INSTALL_CONTEXT') ? ENV['OO_INSTALL_CONTEXT'].to_sym : :origin
+installer_version = ENV.has_key?('OO_INSTALL_VERSION') ? ENV['OO_INSTALL_VERSION'] : ''
 
 # Catch a bogus ENV-supplied installer context straight away
 if not supported_contexts.include?(installer_context)
@@ -148,7 +149,7 @@ cli_subscription.rh_password = options[:rh_password]
 
 # Set up the assistant and get going
 begin
-  @assistant = Installer::Assistant.new(@config, @deployment, options[:workflow_id], cli_subscription)
+  @assistant = Installer::Assistant.new(@config, @deployment, options[:workflow_id], cli_subscription, installer_version)
 rescue Installer::UnrecognizedContextException => e
   puts "\n#{e.message}"
   exit
