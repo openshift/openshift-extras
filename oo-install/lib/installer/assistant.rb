@@ -118,9 +118,17 @@ module Installer
         say "\n\tHost: #{vm_installer_host.host}"
         say "\tUser: #{vm_installer_host.user}"
         say "\t  IP: #{vm_installer_host.ip_addr}"
+        puts "\n"
+        if @config.new_config? and not @offered_tutorial and concur("It looks like this is your first time using the Origin VM. Would you like to take the administrator's tutorial? If you answer 'no', you can always go back to the main menu and select 'Take the Tutorial' to see it.\n\nTake the tutorial?")
+          @offered_tutorial = true
+          ui_workflow('vm_tutorial')
+        else
+          @offered_tutorial = true
+          say "\n#{translate(:vm_intro)}"
+        end
+      else
+        say "\n#{translate(:intro)}"
       end
-      puts "\n"
-      say translate(is_origin_vm? ? :vm_intro : :intro)
       puts "\n"
       loop do
         choose do |menu|
@@ -130,6 +138,9 @@ module Installer
           Installer::Workflow.list(get_context).each do |workflow|
             menu.choice(workflow.summary) { ui_workflow(workflow.id) }
             descriptions << "## #{workflow.summary}\n#{workflow.description}"
+          end
+          if is_origin_vm?
+            menu.choice("Exit to the command prompt.") { say "\nTo restart the menu at any time, run 'oo-install'.\n\n"; return 0 }
           end
           descriptions << horizontal_rule
           menu.hidden("?") { say descriptions.join("\n\n") + "\n\n" }

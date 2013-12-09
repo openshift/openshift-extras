@@ -9,6 +9,13 @@ task :package do
   @portable_dir = @package_dir + "/portable"
   @portable_readme = 'oo_install_launcher.README.txt'
   @site_assets_dir = "#{gem_root_dir}/site_assets"
+  @ose_launchers = {}
+
+  if `uname`.chomp.strip == 'Linux'
+    @sed_cmd = 'sed --in-place='
+  else
+    @sed_cmd = 'sed -i '
+  end
 
   # Clear out the old package dir before making the new package
   if Dir.entries(gem_root_dir).include?('package')
@@ -23,25 +30,35 @@ task :package do
 
   builds = [
     { :version => nil,
-      :wget => nil,
+      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-1.2/enterprise/install-scripts/generic/openshift.sh',
       :context => :origin,
       :base => true,
     },
     { :version => 'ose',
-      :wget => nil,
+      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-1.2/enterprise/install-scripts/generic/openshift.sh',
       :context => :ose,
     },
-    { :version => 'ose-2.0b',
-      :wget => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
+    { :version => 'ose-2.0',
+      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
+      :context => :ose,
+    },
+    { :version => 'ose-1.2',
+      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-1.2/enterprise/install-scripts/generic/openshift.sh',
       :context => :ose,
     },
     { :version => 'origin',
-      :wget => nil,
+      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-1.2/enterprise/install-scripts/generic/openshift.sh',
       :context => :origin,
+    },
+    { :version => 'origin_vm',
+      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-1.2/enterprise/install-scripts/generic/openshift.sh',
+      :context => :origin_vm,
+      :portable_only => true,
     },
   ]
 
   builds.each do |build|
+    puts "Building #{build[:version].nil? ? 'base' : build[:version].to_s }"
     pkgname = 'oo-install-'
     pkgurl = ''
     pkgdir = @package_dir
@@ -57,16 +74,21 @@ task :package do
     # Copy the installer source to $TMPDIR
     system "cp -r #{gem_root_dir} #{@tmpdir}"
     system "mv #{@tmpdir}/oo-install #{@tmpdir}/#{pkgname}"
-    openshift_path = "#{@tmpdir}/#{pkgname}/workflows/enterprise_deploy/openshift.sh"
+    ose_launcher_path = "#{@tmpdir}/#{pkgname}/workflows/enterprise_deploy/openshift.sh"
 
     # If there is a replacement openshift.sh file, get it.
-    if not build[:wget].nil?
-      system "rm #{openshift_path}"
-      system "wget -nv --output-document=#{openshift_path} #{build[:wget]}"
-      if not $?.exitstatus == 0
-        puts "Failed to get #{build[:wget]}\nExiting."
-        exit 1
+    if not build[:ose_launcher].nil?
+      launcher_url = build[:ose_launcher]
+      if @ose_launchers[launcher_url].nil?
+        @ose_launchers[launcher_url] = `curl -s #{launcher_url}`
+        if not $?.exitstatus == 0
+          puts "Failed to get #{build[:ose_launcher]}\nExiting."
+          exit 1
+        end
       end
+      system "rm #{ose_launcher_path}"
+      File.open(ose_launcher_path, 'w') { |file| file.write(@ose_launchers[launcher_url]) }
+      File.chmod(755, ose_launcher_path)
     end
 
     # Zip up the source and copy it to the package dir
@@ -77,11 +99,12 @@ task :package do
     system 'cp', 'site_assets/oo-install-bootstrap.sh', "#{pkgdir}/index.html"
     if build.has_key?(:base) and build[:base]
       system 'cp', 'site_assets/site_info.html', pkgdir
+      system 'cp', 'site_assets/openshift-logo-horizontal-99a90035cbd613be7b6293335eb05563.svg', pkgdir
       system 'cp', 'vendor/bootstrap/css/bootstrap.min.css', pkgdir
     end
-    system "sed -i .bak 's/INSTALLPKGNAME/#{pkgname}/g' #{pkgdir}/index.html"
-    system "sed -i .bak 's/INSTALLVERPATH/#{pkgurl}/' #{pkgdir}/index.html"
-    system "sed -i .bak 's/INSTALLCONTEXT/#{context}/' #{pkgdir}/index.html"
+    system "#{@sed_cmd}.bak 's/INSTALLPKGNAME/#{pkgname}/g' #{pkgdir}/index.html"
+    system "#{@sed_cmd}.bak 's/INSTALLVERPATH/#{pkgurl}/' #{pkgdir}/index.html"
+    system "#{@sed_cmd}.bak 's/INSTALLCONTEXT/#{context}/' #{pkgdir}/index.html"
     system 'rm', "#{pkgdir}/index.html.bak"
 
     # Lastly, make a "portable" package.
@@ -96,10 +119,14 @@ task :package do
     system "cd #{pkgdir} && cp index.html #{@portable_dir}/#{launcher_name} && chmod +x #{@portable_dir}/#{launcher_name}"
     system "cd #{pkgdir} && cp #{pkgname}.zip #{@portable_dir}/#{pkgname}.zip"
     system "cp #{@site_assets_dir}/#{@portable_readme} #{@portable_dir}"
-    system "sed -i .bak 's/LAUNCHERNAME/#{launcher_name}/g' #{@portable_dir}/#{@portable_readme}"
+    system "#{@sed_cmd}.bak 's/LAUNCHERNAME/#{launcher_name}/g' #{@portable_dir}/#{@portable_readme}"
     system "rm #{@portable_dir}/#{@portable_readme}.bak"
     system "cd #{@portable_dir} && zip -qq #{launcher_name}.zip #{launcher_name} #{@portable_readme} #{pkgname}.zip"
     system "cd #{@portable_dir} && rm #{launcher_name} #{pkgname}.zip #{@portable_readme}"
+
+    if build[:portable_only]
+      system 'rm', '-rf', pkgdir
+    end
   end
 
   system 'rm', '-rf', "#{@tmpdir}oo-install*"

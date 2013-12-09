@@ -2,13 +2,13 @@
 Name: Origin VM Instructions
 Contexts:
   - origin_vm
-Summary: Build an Application
-Description: Explains how to develop applications against this VM.
-ID: vm_build_app
+Summary: Take the Admin Tutorial
+Description: Explains how to administer the Origin VM
+ID: vm_tutorial
 WorkflowDir: origin_vm_tasks
 NonDeployment: Y
 ExitOnComplete: N
-Executable: <workflow_path>/vm_build_app
+Executable: <workflow_path>/vm_tutorial
 ---
 Name: Origin VM Console
 Contexts:
