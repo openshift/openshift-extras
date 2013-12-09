@@ -88,11 +88,11 @@ task :package do
       end
       system "rm #{ose_launcher_path}"
       File.open(ose_launcher_path, 'w') { |file| file.write(@ose_launchers[launcher_url]) }
-      File.chmod(755, ose_launcher_path)
+      File.chmod(0755, ose_launcher_path)
     end
 
     # Zip up the source and copy it to the package dir
-    system "cd #{@tmpdir} && rm -rf #{pkgname}/package && zip -qq -r #{pkgname}.zip #{pkgname}"
+    system "cd #{@tmpdir} && rm -rf #{pkgname}/package && zip -qq -x \*.swp -r #{pkgname}.zip #{pkgname}"
     system 'mv', "#{@tmpdir}#{pkgname}.zip", pkgdir
 
     # Copy the bootstrap file to the package dir
