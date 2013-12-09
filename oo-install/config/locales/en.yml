@@ -7,11 +7,10 @@ en:
     This installer will guide you through a basic system deployment,
     based on one of the scenarios below.
   vm_intro: >
-    If you want to dive right in and start working with this VM, select option 1 for instructions on how to set up your first application.
-    The other options will enable you to install OpenShift across one or more host systems, or to make this VM part of a larger OpenShift deployment.
+    Choose option 1 to run the tutorial for administrators. Select from the other options to interact with your OpenShift Origin VM or deploy a whole separate OpenShift system.
   select_workflow: |-
     Select from the following installation scenarios.
-    You can also type '?' for Help or 'q' to Quit."
+    You can also type '?' for Help or 'q' to Quit
   info_wait_configuration_validation: >
     Please wait while your oo-install configuration is validated.
   info_deployment_validation: Validating deployment configuration...
