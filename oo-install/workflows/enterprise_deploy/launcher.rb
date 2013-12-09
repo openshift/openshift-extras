@@ -292,7 +292,7 @@ end
     { 'component' => 'named', 'env_hostname' => 'CONF_NAMED_HOSTNAME', 'env_ip_addr' => 'CONF_NAMED_IP_ADDR' },
   ],
   'node' => [{ 'component' => 'node', 'env_hostname' => 'CONF_NODE_HOSTNAME', 'env_ip_addr' => 'CONF_NODE_IP_ADDR' }],
-  'mqserver' => [{ 'component' => 'activemq', 'env_hostname' => 'CONF_ACTIVEMQ_HOSTNAME' }],
+  'msgserver' => [{ 'component' => 'activemq', 'env_hostname' => 'CONF_ACTIVEMQ_HOSTNAME' }],
   'dbserver' => [{ 'component' => 'datastore', 'env_hostname' => 'CONF_DATASTORE_HOSTNAME' }],
 }
 
@@ -325,6 +325,9 @@ if @config.has_key?('Deployment') and @config['Deployment'].has_key?('Hosts') an
 
     # Set up the OSE-related ENV variables
     host_info['roles'].each do |role|
+      if role == 'mqserver'
+        role = 'msgserver'
+      end
       if not @seen_roles.has_key?(role)
         @seen_roles[role] = 1
       elsif not role == 'node'
