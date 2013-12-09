@@ -35,23 +35,26 @@ task :package do
       :base => true,
     },
     { :version => 'ose',
-      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-1.2/enterprise/install-scripts/generic/openshift.sh',
+      :version_text => 'OpenShift Enterprise 2.0',
+      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
       :context => :ose,
     },
     { :version => 'ose-2.0',
+      :version_text => 'OpenShift Enterprise 2.0',
       :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
       :context => :ose,
     },
     { :version => 'ose-1.2',
+      :version_text => 'OpenShift Enterprise 1.2',
       :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-1.2/enterprise/install-scripts/generic/openshift.sh',
       :context => :ose,
     },
     { :version => 'origin',
-      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-1.2/enterprise/install-scripts/generic/openshift.sh',
+      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
       :context => :origin,
     },
     { :version => 'origin_vm',
-      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-1.2/enterprise/install-scripts/generic/openshift.sh',
+      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
       :context => :origin_vm,
       :portable_only => true,
     },
@@ -70,6 +73,9 @@ task :package do
       Dir.mkdir(pkgdir)
     end
     pkgname << pkgtime
+
+    version_text = build[:version_text].nil? ? '' : "#{build[:version_text]} - "
+    version_text << "Build #{pkgtime}"
 
     # Copy the installer source to $TMPDIR
     system "cp -r #{gem_root_dir} #{@tmpdir}"
@@ -104,6 +110,7 @@ task :package do
     end
     system "#{@sed_cmd}.bak 's/INSTALLPKGNAME/#{pkgname}/g' #{pkgdir}/index.html"
     system "#{@sed_cmd}.bak 's/INSTALLVERPATH/#{pkgurl}/' #{pkgdir}/index.html"
+    system "#{@sed_cmd}.bak 's/INSTALLVERSION/#{version_text}/' #{pkgdir}/index.html"
     system "#{@sed_cmd}.bak 's/INSTALLCONTEXT/#{context}/' #{pkgdir}/index.html"
     system 'rm', "#{pkgdir}/index.html.bak"
 

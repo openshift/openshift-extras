@@ -11,15 +11,16 @@ module Installer
     include Installer::Helpers
 
     attr_reader :workflow_id
-    attr_accessor :config, :deployment, :cli_subscription, :cfg_subscription, :workflow, :workflow_cfg
+    attr_accessor :config, :deployment, :cli_subscription, :cfg_subscription, :workflow, :workflow_cfg, :version_text
 
-    def initialize config, deployment=nil, workflow_id=nil, cli_subscription=nil
+    def initialize config, deployment=nil, workflow_id=nil, cli_subscription=nil, version_text=nil
       @config = config
       @deployment = deployment || config.get_deployment
       @cfg_subscription = config.get_subscription
       @cli_subscription = cli_subscription
       @workflow_id = workflow_id
       @save_subscription = true
+      @version_text = version_text
       # This is a bit hinky; highline/import shoves a HighLine object into the $terminal global
       # so we need to set these on the global object
       $terminal.wrap_at = 70
@@ -103,7 +104,7 @@ module Installer
     private
     def ui_title
       ui_newpage
-      say translate(is_origin_vm? ? :vm_title : :title)
+      say translate(is_origin_vm? ? :vm_title : :title) + (version_text.nil? or version_text.empty? ? '' : " (#{version_text})")
       say "#{horizontal_rule}\n\n"
     end
 
