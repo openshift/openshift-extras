@@ -735,8 +735,7 @@ class OpenShiftYumValidator(object):
         if not self.validate_roles():
             return False
         self.massage_roles()
-        # if not self.guess_ose_version_and_subscription():
-        if not (self.detect_prod_version_and_sub() or self.opts.report_all):
+        if not self.detect_prod_version_and_sub():
             self.problem = True
             if self.opts.subscription == UNKNOWN:
                 self.logger.error('Could not determine subscription type.')
