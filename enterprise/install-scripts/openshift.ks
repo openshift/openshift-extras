@@ -641,7 +641,7 @@ configure_yum_repos()
     eval "need_${repo}_repo && configure_${repo}_repo"
   done
   yum clean metadata
-  yum_install_or_exit openshift-enterprise-release-2.0
+  yum_install_or_exit openshift-enterprise-release-2.0.0c
 }
 
 configure_rhel_repo()
@@ -804,7 +804,7 @@ YUM
 configure_subscription()
 {
    # install our release package to enable repo/channel configuration
-   yum_install_or_exit openshift-enterprise-release-2.0
+   yum_install_or_exit openshift-enterprise-release-2.0.0c
 
    roles=""  # we will build the list of roles we need, then enable them.
    need_infra_repo && roles="$roles --role broker"
@@ -827,11 +827,20 @@ configure_rhn_channels()
   fi
 
   # Enable the node or infrastructure channel to enable installing the release RPM
-  repo=rhel-x86_64-server-6-ose-2.0-infrastructure
-  need_node_repo && repo=rhel-x86_64-server-6-ose-2.0-node
+  repos=('rhel-x86_64-server-6-rhscl-1')
+  if [ ! need_node_repo ] || need_infra_repo ; then
+    repos+=('rhel-x86_64-server-6-ose-2.0-infrastructure')
+  fi
+  need_node_repo && repos+=('rhel-x86_64-server-6-ose-2.0-node' 'jb-ews-2-x86_64-server-6-rpm')
+  need_client_tools_repo && repos+=('rhel-x86_64-server-6-ose-2.0-rhc')
+  need_jbosseap_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.0-jbosseap' 'jbappplatform-6-x86_64-server-6-rpm')
+
   set +x # don't log password
-  [[ "$(rhn-channel -l)" == *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
+  for repo in "${repos[@]}"; do
+    [[ "$(rhn-channel -l)" == *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
+  done
   set -x
+
   configure_subscription
 }
 
