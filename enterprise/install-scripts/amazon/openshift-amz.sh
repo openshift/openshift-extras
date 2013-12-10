@@ -312,11 +312,20 @@ configure_rhn_channels()
   fi
 
   # Enable the node or infrastructure channel to enable installing the release RPM
-  repo=rhel-x86_64-server-6-ose-1.2-infrastructure
-  need_node_repo && repo=rhel-x86_64-server-6-ose-1.2-node
+  repos=('rhel-x86_64-server-6-rhscl-1')
+  if [ ! need_node_repo ] || need_infra_repo ; then
+    repos+=('rhel-x86_64-server-6-ose-1.2-infrastructure')
+  fi
+  need_node_repo && repos+=('rhel-x86_64-server-6-ose-1.2-node' 'jb-ews-2-x86_64-server-6-rpm')
+  need_client_tools_repo && repos+=('rhel-x86_64-server-6-ose-1.2-rhc')
+  need_jbosseap_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-1.2-jbosseap' 'jbappplatform-6-x86_64-server-6-rpm')
+
   set +x # don't log password
-  [[ "$(rhn-channel -l)" == *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
+  for repo in "${repos[@]}"; do
+    [[ "$(rhn-channel -l)" == *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
+  done
   set -x
+
   configure_subscription
 }
 
