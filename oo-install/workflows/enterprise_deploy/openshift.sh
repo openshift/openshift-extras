@@ -1,0 +1,1 @@
+../../../enterprise/install-scripts/generic/openshift.sh

@@ -1,0 +1,28 @@
+#!/bin/sh
+host=`hostname | tr -d "\n"`
+
+cat <<EOF
+----------------------------------------------------------------------
+OpenShift Origin: Web Console
+----------------------------------------------------------------------
+
+To connect to the web console on this Origin VM, point your browser at:
+
+    http://${host}/console/
+
+    Username: demo
+    Password: changeme
+
+You may receive a warning about the SSL certificate that the VM uses.
+This is because the Origin VM signs its own SSL certificate. It is
+okay to accept this certificate, though you will want to update it
+with a properly signed certificate if you intend to use this Origin VM
+as the Broker in a permanent OpenShift deployment.
+
+For more info on the web console, refer to the OpenShift User Guide:
+
+http://openshift.github.io/documentation/oo_user_guide.html#the-web-console
+EOF
+
+read -p "Press the [Enter] key to return to the main menu."
+exit
