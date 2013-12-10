@@ -2815,7 +2815,7 @@ install_rpms()
   yum $disable_plugin update -y || abort_install
   # Install ntp and ntpdate because they may not be present in a RHEL
   # minimal install.
-  yum_install_or_exit ntp ntpdate
+  yum_install_or_exit ntp ntpdate lokkit
 
   # install what we need for various components
   named && install_named_pkgs
