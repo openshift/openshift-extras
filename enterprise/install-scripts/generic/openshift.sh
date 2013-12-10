@@ -212,10 +212,10 @@
 # <base>/jbews/2/os
 # <base>/optional/os        - "optional" channel, not normally needed
 # <base>/os                 - RHEL 6 itself
-# <base>/ose-infra/2/os     - Released OpenShift Enterprise repos
-# <base>/ose-jbosseap/2/os
-# <base>/ose-node/2/os
-# <base>/ose-rhc/2/os
+# <base>/ose-infra/2.0/os     - Released OpenShift Enterprise repos
+# <base>/ose-jbosseap/2.0/os
+# <base>/ose-node/2.0/os
+# <base>/ose-rhc/2.0/os
 # <base>/rhscl/1/os/        - RH software collections
 #
 # To use this layout, simply set the CDN base URL below. Alternatively,
@@ -655,7 +655,7 @@ ose_yum_repo_url()
     then # use the release CDN layout for OSE URLs
       declare -A map
       map=([RHOSE-CLIENT-2.0]=ose-rhc [RHOSE-INFRA-2.0]=ose-infra [RHOSE-NODE-2.0]=ose-node [RHOSE-JBOSSEAP-2.0]=ose-jbosseap)
-      echo "$ose_repo_base/${map[$channel]}/2/os"
+      echo "$ose_repo_base/${map[$channel]}/2.0/os"
     else # use the nightly puddle URLs
       echo "$ose_repo_base/$channel/x86_64/os/"
     fi

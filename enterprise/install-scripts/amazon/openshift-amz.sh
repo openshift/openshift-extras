@@ -171,7 +171,7 @@ ose_yum_repo_url()
     then # use the release CDN layout for OSE URLs
       declare -A map
       map=([RHOSE-CLIENT-2.0]=ose-rhc [RHOSE-INFRA-2.0]=ose-infra [RHOSE-NODE-2.0]=ose-node [RHOSE-JBOSSEAP-2.0]=ose-jbosseap)
-      echo "$ose_repo_base/${map[$channel]}/2/os"
+      echo "$ose_repo_base/${map[$channel]}/2.0/os"
     else # use the nightly puddle URLs
       echo "$ose_repo_base/$channel/x86_64/os/"
     fi
