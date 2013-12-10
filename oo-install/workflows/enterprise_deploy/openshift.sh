@@ -92,15 +92,19 @@
 # MANUAL TASKS
 #
 # This script attempts to automate as many tasks as it reasonably can.
-# Unfortunately, it is constrained to setting up only a single host at a
-# time. In a multi-host setup, you will need to do the following after
-# the script has completed.
+# Because it deploys only a single host at a time, it has some limitations.
+# In a multi-host setup, you may need to attend to the following
+# concerns separately from this script:
 #
 # 1. Set up DNS entries for hosts
-#    If you installed BIND with the script, then any other components
-#    the script installed on the same host received DNS entries.
-#    Other hosts must all be defined manually, including at least your
-#    node hosts. oo-register-dns may be useful for this.
+#    Generally, all hosts in your deployment should have DNS entries.
+#    Node hosts strictly require DNS entries in order to alias CNAMEs.
+#    If you install named with this script, you can opt to define DNS
+#    entries for your hosts. By default, any other components the script
+#    installs on the same host with named receive DNS entries. Or, you
+#    can use CONF_NAMED_ENTRIES to specify (or skip) host DNS creation.
+#    Host DNS entries not created this way must be created separately.
+#    oo-register-dns on the broker may be useful for this.
 #
 # 2. Copy public rsync key to enable moving gears
 #    The broker rsync public key needs to be authorized on nodes. The
@@ -121,17 +125,6 @@
 
 
 # PARAMETER DESCRIPTIONS
-
-# actions / CONF_ACTIONS
-#   Default: do_all_actions
-#     Helpful steps: init_message,validate_preflight,configure_repos,
-#                    install_rpms,configure_host,configure_openshift,
-#                    reboot_after
-#   Comma-separated list of bash functions to run.  This
-#   setting is intended to allow configuration steps defined within this
-#   file to be rerun selectively when the shell-script version of this
-#   file is used.  For a normal installation, this setting can be left
-#   at its default value.
 
 # install_components / CONF_INSTALL_COMPONENTS
 #   Comma-separated selections from the following:
@@ -167,6 +160,7 @@
 #       ose_repo_base / CONF_OSE_REPO_BASE -- see below
 #       rhel_repo / CONF_RHEL_REPO -- see below
 #       jboss_repo_base / CONF_JBOSS_REPO_BASE -- see below
+#       rhscl_repo_base / CONF_RHSCL_REPO_BASE -- see below
 #       rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO -- see below
 #     rhsm - use subscription-manager
 #       rhn_user / CONF_RHN_USER
@@ -190,6 +184,21 @@
 #   Default: no
 #CONF_OPTIONAL_REPO=1
 
+# actions / CONF_ACTIONS
+#   Default: do_all_actions
+#   Comma-separated list of bash functions to run.  This
+#   setting is intended to allow configuration steps defined within this
+#   file to be run or re-run selectively.  For a typical installation,
+#   this setting can be left at its default value.
+#
+#   Some helpful actions:
+#     init_message,validate_preflight,configure_repos,
+#     install_rpms,configure_host,configure_openshift,
+#     configure_datastore_add_replicants,reboot_after
+#
+# For example, these are the actions to run on a primary MongoDB replicant:
+#CONF_ACTIONS=do_all_actions,configure_datastore_add_replicants
+
 
 # # # # # # # # # # # # yum-based install method # # # # # # # # # # # #
 #
@@ -203,10 +212,11 @@
 # <base>/jbews/2/os
 # <base>/optional/os        - "optional" channel, not normally needed
 # <base>/os                 - RHEL 6 itself
-# <base>/ose-infra/1.2/os   - Released OpenShift Enterprise repos
-# <base>/ose-jbosseap/1.2/os
-# <base>/ose-node/1.2/os
-# <base>/ose-rhc/1.2/os
+# <base>/ose-infra/2.0/os     - Released OpenShift Enterprise repos
+# <base>/ose-jbosseap/2.0/os
+# <base>/ose-node/2.0/os
+# <base>/ose-rhc/2.0/os
+# <base>/rhscl/1/os/        - RH software collections
 #
 # To use this layout, simply set the CDN base URL below. Alternatively,
 # set repository URLs individually if they are in different locations.
@@ -244,6 +254,10 @@
 # jboss_repo_base / CONF_JBOSS_REPO_BASE
 #   The base URL for the JBoss repositories used with the "yum"
 #   install method - the part before jbeap/jbews - ends in /6Server/x86_64
+
+# rhscl_repo_base / CONF_RHSCL_REPO_BASE
+#   The base URL for the SCL repositories used with the "yum"
+#   install method - the part before rhscl - ends in /6Server/x86_64
 
 
 # # # # # # # # # # # domains, DNS, hostnames, and IPs # # # # # # # # # # # # # # # # #
@@ -354,8 +368,9 @@
 # # # # # # # # # # # miscellaneous other settings # # # # # # # # # # #
 
 
-# A given node can only accept either V1 or V2 cartridges.
-#CONF_NODE_V1_ENABLE=false
+# Valid options are vhost and mod_rewrite.  vhost is less performant but more
+# extensible.
+#CONF_NODE_APACHE_FRONTEND=mod_rewrite
 
 # no_ntp / CONF_NO_NTP
 #   Default: false
@@ -393,18 +408,6 @@
 #   the activemq_replicants setting.
 #CONF_ACTIVEMQ_AMQ_USER_PASSWORD="ChangeMe"
 
-
-# datastore_replicants / CONF_DATASTORE_REPLICANTS
-#   Default: the value of datastore_hostname
-#   A comma-separated list of MongoDB replicants.  If you are installing
-#   with a configuration that has only a single MongoDB instance, you
-#   can leave this setting at its default value.  If you specify more
-#   than one replicant, the first is designated as the master and the
-#   rest are designated as slaves.  For each replicant, if you omit the
-#   port specification for that replicant, the port specification :27017
-#   will be appended to that replicant's hostname.
-#CONF_DATASTORE_REPLICANTS="datastore01.example.com:27017,datastore02.example.com:27017,datastore03.example.com:27017"
-
 # mcollective_user / CONF_MCOLLECTIVE_USER
 # mcollective_password / CONF_MCOLLECTIVE_PASSWORD
 #   Default: mcollective/marionette
@@ -413,6 +416,23 @@
 #   be the same on all broker and node hosts.
 #CONF_MCOLLECTIVE_USER="mcollective"
 #CONF_MCOLLECTIVE_PASSWORD="mcollective"
+
+
+# mongodb_name / CONF_MONGODB_NAME
+#   Default: openshift_broker
+#   This is the name of the database in MongoDB in which the broker will
+#   store data.
+#CONF_MONGODB_NAME="openshift_broker"
+
+# mongodb_broker_user / CONF_MONGODB_BROKER_USER
+# mongodb_broker_password / CONF_MONGODB_BROKER_PASSWORD
+#   Default: openshift:mongopass
+#   These are the username and password of the normal user that will be
+#   created for the broker to connect to the MongoDB datastore. The
+#   broker application's MongoDB plugin is also configured with these
+#   values.
+#CONF_MONGODB_BROKER_USER="openshift"
+#CONF_MONGODB_BROKER_PASSWORD="mongopass"
 
 # mongodb_admin_user / CONF_MONGODB_ADMIN_USER
 # mongodb_admin_password / CONF_MONGODB_ADMIN_PASSWORD
@@ -426,32 +446,31 @@
 #CONF_MONGODB_ADMIN_USER="admin"
 #CONF_MONGODB_ADMIN_PASSWORD="mongopass"
 
-# mongodb_broker_user / CONF_MONGODB_BROKER_USER
-# mongodb_broker_password / CONF_MONGODB_BROKER_PASSWORD
-#   Default: openshift:mongopass
-#   These are the username and password of the normal user that will be
-#   created for the broker to connect to the MongoDB datastore. The
-#   broker application's MongoDB plugin is also configured with these
-#   values.
-#CONF_MONGODB_BROKER_USER="openshift"
-#CONF_MONGODB_BROKER_PASSWORD="mongopass"
-
-# mongodb_key / CONF_MONGODB_KEY
-#   Default: OSEnterprise
-#   In a replicated setup, this is the key that slaves will use to
-#   authenticate with the master.
-#CONF_MONGODB_KEY="OSEnterprise"
+# datastore_replicants / CONF_DATASTORE_REPLICANTS
+#   Default: the value of datastore_hostname (no replication)
+#   A comma-separated list of MongoDB replicants to be used as a
+#   replica set. For each replicant, if you omit the port specification
+#   for that replicant, port :27017 will be appended.
+#
+#   To install and configure a HA replica set, install at least three
+#   hosts with the datastore component, and when all are complete,
+#   all hostnames resolve and all databases are reachable,
+#   on one host execute the configure_datastore_add_replicants
+#   action to configure the replica set; e.g. (on the last host only):
+#CONF_ACTIONS=do_all_actions,configure_datastore_add_replicants
+#   All hosts should be installed with all replicants specified:
+#CONF_DATASTORE_REPLICANTS="datastore01.example.com:27017,datastore02.example.com:27017,datastore03.example.com:27017"
 
 # mongodb_replset / CONF_MONGODB_REPLSET
 #   Default: ose
 #   In a replicated setup, this is the name of the replica set.
 #CONF_MONGODB_REPLSET="ose"
 
-# mongodb_name / CONF_MONGODB_NAME
-#   Default: openshift_broker
-#   This is the name of the database in MongoDB in which the broker will
-#   store data.
-#CONF_MONGODB_NAME="openshift_broker"
+# mongodb_key / CONF_MONGODB_KEY
+#   Default: OSEnterprise
+#   In a replicated setup, this is the key that slaves will use to
+#   authenticate with the master.
+#CONF_MONGODB_KEY="OSEnterprise"
 
 # openshift_user1 / CONF_OPENSHIFT_USER1
 # openshift_password1 / CONF_OPENSHIFT_PASSWORD1
@@ -509,50 +528,42 @@ configure_repos()
   # functions.
 
   # Make need_${repo}_repo return false by default.
-  for repo in optional infra node jbosseap_cartridge client_tools jbosseap jbossews
-  do
+  for repo in optional infra node jbosseap_cartridge client_tools jbosseap jbossews; do
       eval "need_${repo}_repo() { false; }"
   done
 
-  if is_true "$CONF_OPTIONAL_REPO"
-  then
-    need_optional_repo() { :; }
-  fi
+  is_true "$CONF_OPTIONAL_REPO" && need_optional_repo() { :; }
 
-  if activemq || broker || datastore || named
-  then
+  if activemq || broker || datastore || named; then
     # The ose-infrastructure channel has the activemq, broker, and mongodb
     # packages.  The ose-infrastructure and ose-node channels also include
     # the yum-plugin-priorities package, which is needed for the installation
-    # script itself, so we also enable ose-infrastructure here if we are
-    # installing named.
+    # script itself, so we require ose-infrastructure here even if we are
+    # only installing named.
     need_infra_repo() { :; }
+
+    # The rhscl channel is needed for the ruby193 software collection.
+    need_rhscl_repo() { :; }
   fi
 
-  if broker
-  then
-    # We install the rhc client tool on the broker host.
-    need_client_tools_repo() { :; }
-  fi
+  # We install the rhc client tool on the broker host.
+  broker && need_client_tools_repo() { :; }
 
-  if node
-  then
+  if node; then
     # The ose-node channel has node packages including all the cartridges.
     need_node_repo() { :; }
 
-    if is_false "${CONF_NO_JBOSSEAP}"; then
-      need_jbosseap_cartridge_repo() { :; }
+    # The jbosseap and jbossas cartridges require the jbossas packages
+    # in the jbappplatform channel.
+    is_false "${CONF_NO_JBOSSEAP}" \
+             && need_jbosseap_cartridge_repo() { :; } \
+             && need_jbosseap_repo() { :; }
 
-      # The jbosseap and jbossas cartridges require the jbossas packages
-      # in the jbappplatform channel.
-      need_jbosseap_repo() { :; }
-    fi
+    # The jbossews cartridge requires the tomcat packages in the jb-ews channel.
+    is_false "${CONF_NO_JBOSSEWS}" && need_jbossews_repo() { :; }
 
-    if is_false "${CONF_NO_JBOSSEWS}"; then
-      # The jbossews cartridge requires the tomcat packages in the jb-ews
-      # channel.
-      need_jbossews_repo() { :; }
-    fi
+    # The rhscl channel is needed for several cartridge platforms.
+    need_rhscl_repo() { :; }
   fi
 
   # The configure_yum_repos, configure_rhn_channels, and
@@ -570,10 +581,6 @@ configure_repos()
       ;;
   esac
 
-  # Install yum-plugin-priorities
-  yum $disable_plugin clean all
-  echo "Installing yum-plugin-priorities; if something goes wrong here, check your install source."
-  yum_install_or_exit yum-plugin-priorities
   echo "OpenShift: Completed configuring repos."
 }
 
@@ -581,9 +588,11 @@ configure_yum_repos()
 {
   configure_rhel_repo
 
-  for repo in optional infra node jbosseap_cartridge jbosseap jbossews client_tools;
-  do eval "need_${repo}_repo && configure_${repo}_repo"
+  for repo in optional infra node jbosseap_cartridge jbosseap jbossews client_tools rhscl; do
+    eval "need_${repo}_repo && configure_${repo}_repo"
   done
+  yum clean metadata
+  yum_install_or_exit openshift-enterprise-release-2.0.0c
 }
 
 configure_rhel_repo()
@@ -599,7 +608,7 @@ name=RHEL 6 base OS
 baseurl=${rhel_repo}
 enabled=1
 gpgcheck=0
-priority=2
+priority=20
 sslverify=false
 exclude=tomcat6*
 
@@ -616,7 +625,7 @@ name=RHEL 6 Optional
 baseurl=${rhel_optional_repo}
 enabled=1
 gpgcheck=0
-priority=2
+priority=20
 sslverify=false
 
 YUM
@@ -625,12 +634,12 @@ fi
 
 ose_yum_repo_url()
 {
-    channel=$1 #one of: Client,Infrastructure,Node,JBoss_EAP6_Cartridge
+    channel=$1 #one of: RHOSE-CLIENT-2.0,RHOSE-INFRA-2.0,RHOSE-NODE-2.0,RHOSE-JBOSSEAP-2.0
     if is_true "$CONF_CDN_LAYOUT"
     then # use the release CDN layout for OSE URLs
       declare -A map
-      map=([Client]=ose-rhc [Infrastructure]=ose-infra [Node]=ose-node [JBoss_EAP6_Cartridge]=ose-jbosseap)
-      echo "$ose_repo_base/${map[$channel]}/1.2/os"
+      map=([RHOSE-CLIENT-2.0]=ose-rhc [RHOSE-INFRA-2.0]=ose-infra [RHOSE-NODE-2.0]=ose-node [RHOSE-JBOSSEAP-2.0]=ose-jbosseap)
+      echo "$ose_repo_base/${map[$channel]}/2.0/os"
     else # use the nightly puddle URLs
       echo "$ose_repo_base/$channel/x86_64/os/"
     fi
@@ -638,14 +647,13 @@ ose_yum_repo_url()
 
 configure_client_tools_repo()
 {
-  # Enable repo with the puddle for broker packages.
   cat > /etc/yum.repos.d/openshift-client.repo <<YUM
 [openshift_client]
 name=OpenShift Client
-baseurl=$(ose_yum_repo_url Client)
+baseurl=$(ose_yum_repo_url RHOSE-CLIENT-2.0)
 enabled=1
 gpgcheck=0
-priority=1
+priority=10
 sslverify=false
 
 YUM
@@ -653,14 +661,13 @@ YUM
 
 configure_infra_repo()
 {
-  # Enable repo with the puddle for broker packages.
   cat > /etc/yum.repos.d/openshift-infrastructure.repo <<YUM
 [openshift_infrastructure]
 name=OpenShift Infrastructure
-baseurl=$(ose_yum_repo_url Infrastructure)
+baseurl=$(ose_yum_repo_url RHOSE-INFRA-2.0)
 enabled=1
 gpgcheck=0
-priority=1
+priority=10
 sslverify=false
 
 YUM
@@ -668,14 +675,13 @@ YUM
 
 configure_node_repo()
 {
-  # Enable repo with the puddle for node packages.
   cat > /etc/yum.repos.d/openshift-node.repo <<YUM
 [openshift_node]
 name=OpenShift Node
-baseurl=$(ose_yum_repo_url Node)
+baseurl=$(ose_yum_repo_url RHOSE-NODE-2.0)
 enabled=1
 gpgcheck=0
-priority=1
+priority=10
 sslverify=false
 
 YUM
@@ -683,14 +689,13 @@ YUM
 
 configure_jbosseap_cartridge_repo()
 {
-  # Enable repo with the puddle for the JBossEAP cartridge package.
   cat > /etc/yum.repos.d/openshift-jboss.repo <<YUM
 [openshift_jbosseap]
 name=OpenShift JBossEAP
-baseurl=$(ose_yum_repo_url JBoss_EAP6_Cartridge)
+baseurl=$(ose_yum_repo_url RHOSE-JBOSSEAP-2.0)
 enabled=1
 gpgcheck=0
-priority=1
+priority=10
 sslverify=false
 
 YUM
@@ -700,15 +705,13 @@ configure_jbosseap_repo()
 {
   # The JBossEAP cartridge depends on Red Hat's JBoss packages.
 
-  if [ "x${jboss_repo_base}" != "x" ]
-  then
-  ## configure JBossEAP repo
+  if [ "x${jboss_repo_base}" != "x" ]; then
     cat <<YUM > /etc/yum.repos.d/jbosseap.repo
 [jbosseap]
 name=jbosseap
 baseurl=${jboss_repo_base}/jbeap/6/os
 enabled=1
-priority=3
+priority=30
 gpgcheck=0
 
 YUM
@@ -719,15 +722,13 @@ YUM
 configure_jbossews_repo()
 {
   # The JBossEWS cartridge depends on Red Hat's JBoss packages.
-  if [ "x${jboss_repo_base}" != "x" ]
-  then
-  ## configure JBossEWS repo
+  if [ "x${jboss_repo_base}" != "x" ]; then
     cat <<YUM > /etc/yum.repos.d/jbossews.repo
 [jbossews]
 name=jbossews
 baseurl=${jboss_repo_base}/jbews/2/os
 enabled=1
-priority=3
+priority=30
 gpgcheck=0
 
 YUM
@@ -735,23 +736,34 @@ YUM
   fi
 }
 
-rhn_setopt() # e.g. rhn_setopt myrepo foo=bar
+configure_rhscl_repo()
 {
-  # RHN method for setting yum priorities and excludes:
-  RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
+  if [ "x${rhscl_repo_base}" != "x" ]; then
+    cat <<YUM > /etc/yum.repos.d/rhscl.repo
+[rhscl]
+name=rhscl
+baseurl=${rhscl_repo_base}/rhscl/1/os/
+enabled=1
+priority=30
+gpgcheck=0
 
-  repo=$1; shift
-  echo "setting $@ on channel $repo"
-  # subscribe to channel if not already
-  set +x # don't log password
-  [[ "$(rhn-channel -l)" == *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
-  set -x
-  # NOTE: this next bit could go haywire with repo names that include special regex chars
-  sed -i "/^\\[$repo\\]/,/^\\[/{ /^\\[/ !d }" $RHNPLUGINCONF   # remove previous [repo] section if there
-  sed -i "/^\\[$repo\\]/ d" $RHNPLUGINCONF   # remove previous section header if there
-  echo "[$repo]" >> $RHNPLUGINCONF
-  for opt in "$@"; do echo "$opt" >> $RHNPLUGINCONF; done
-  echo >> $RHNPLUGINCONF
+YUM
+
+  fi
+}
+
+configure_subscription()
+{
+   # install our release package to enable repo/channel configuration
+   yum_install_or_exit openshift-enterprise-release-2.0.0c
+
+   roles=""  # we will build the list of roles we need, then enable them.
+   need_infra_repo && roles="$roles --role broker"
+   need_client_tools_repo && roles="$roles --role client"
+   need_node_repo && roles="$roles --role node"
+   need_jbosseap_cartridge_repo && roles="$roles --role node-eap"
+   oo-admin-yum-validator -o 2.0 --fix-all $roles # when fixing, rc is always false
+   oo-admin-yum-validator -o 2.0 $roles || abort_install # so check when fixes are done
 }
 
 configure_rhn_channels()
@@ -766,82 +778,40 @@ configure_rhn_channels()
     set -x
   fi
 
-  # OSE packages are first priority
-  need_client_tools_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-rhc priority=1
-  need_infra_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-infrastructure priority=1
-  need_node_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-node priority=1
-  need_jbosseap_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-jbosseap priority=1
+  # Enable the node or infrastructure channel to enable installing the release RPM
+  repos=('rhel-x86_64-server-6-rhscl-1')
+  if [ ! need_node_repo ] || need_infra_repo ; then
+    repos+=('rhel-x86_64-server-6-ose-2.0-infrastructure')
+  fi
+  need_node_repo && repos+=('rhel-x86_64-server-6-ose-2.0-node' 'jb-ews-2-x86_64-server-6-rpm')
+  need_client_tools_repo && repos+=('rhel-x86_64-server-6-ose-2.0-rhc')
+  need_jbosseap_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.0-jbosseap' 'jbappplatform-6-x86_64-server-6-rpm')
 
-  # RHEL packages are second priority
-  rhn_setopt rhel-x86_64-server-6 priority=2 "exclude=tomcat6*"
-
-  # JBoss packages are third priority -- and all else is lower
-  need_jbosseap_repo && rhn_setopt jbappplatform-6-x86_64-server-6-rpm priority=3
-  need_jbossews_repo && rhn_setopt jb-ews-2-x86_64-server-6-rpm priority=3
-
-  need_optional_repo && rhn_setopt rhel-x86_64-server-optional-6
-}
-
-ycm_setopt() # e.g. ycm_setopt myrepo foo=bar; must have an option to do anything
-{
-  repo=$1; shift
-  echo "setting $@ on repo $repo"
-  # Note: yum-config-manager never indicates errors with a return code. We will check the output
-  # to determine when these fail due to subscription problems etc.
-  yum-config-manager $disable_plugin "$repo" --enable | grep -q '^enabled = \(1\|True\)' \
-     || abort_install "Failed to enable $repo."
-  for repo_opt in "$@"; do
-    # The obvious way to set options would be yum-config-manager. Sadly, against our 1.2 repos,
-    # this is currently broken. https://bugzilla.redhat.com/show_bug.cgi?id=1024111
-    # For a workaround we edit the repo file directly.
-    # In the repo foo=bar becomes "foo = bar"
-    option_name="${repo_opt//=*/}"
-    repo_opt="${repo_opt//=/ = }"
-    NL=$'\n'
-    # NOTE: this next bit could go haywire with repo names that include special regex chars
-    sed -i "/^\\[$repo\\]/,/^\\[/ { /^$option_name =/d; /^\\[$repo\\]/ a${repo_opt}$NL  }" /etc/yum.repos.d/redhat.repo
+  set +x # don't log password
+  for repo in "${repos[@]}"; do
+    [[ "$(rhn-channel -l)" == *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
   done
+  set -x
+
+  configure_subscription
 }
 
 configure_rhsm_channels()
 {
-   echo "OpenShift: Register with RHSM"
-   set +x # don't log password
-   subscription-manager register --force --username="$CONF_RHN_USER" --password="$CONF_RHN_PASS" --name "$profile_name" || abort_install
-   set -x
-   for poolid in ${CONF_SM_REG_POOL//[, :+\/-]/ }; do
-     echo "OpenShift: Registering subscription from pool id $poolid"
-     subscription-manager attach --pool "$poolid" || abort_install
-   done
+  echo "OpenShift: Register with RHSM"
+  set +x # don't log password
+  subscription-manager register --force --username="$CONF_RHN_USER" --password="$CONF_RHN_PASS" --name "$profile_name" || abort_install
+  set -x
+  for poolid in ${CONF_SM_REG_POOL//[, :+\/-]/ }; do
+    echo "OpenShift: Registering subscription from pool id $poolid"
+    subscription-manager attach --pool "$poolid" || abort_install
+  done
 
-   # The yum-config-manager command is provided by the yum-utils package.
-   # We also need the priorities plugin before we start setting priorities, or that fails.
-   # We need to ensure the right channel is enabled in order to get the priorities plugin.
-   if need_node_repo; then subscription-manager repos --enable=rhel-server-ose-1.2-node-6-rpms || abort_install
-   else subscription-manager repos --enable=rhel-server-ose-1.2-infra-6-rpms || abort_install
-   fi
-   yum_install_or_exit yum-plugin-priorities yum-utils
-
-   # configure the RHEL subscription
-   ycm_setopt rhel-6-server-rpms priority=2 "exclude=tomcat6*"
-   need_optional_repo && ycm_setopt rhel-6-server-optional-rpms enabled=True
-
-   # and the OpenShift subscription
-   need_infra_repo && ycm_setopt rhel-server-ose-1.2-infra-6-rpms priority=1
-   need_client_tools_repo && ycm_setopt rhel-server-ose-1.2-rhc-6-rpms priority=1
-   need_node_repo && ycm_setopt rhel-server-ose-1.2-node-6-rpms priority=1
-   need_jbosseap_cartridge_repo && ycm_setopt rhel-server-ose-1.2-jbosseap-6-rpms priority=1
-
-   # and JBoss subscriptions for the node
-   if need_jbosseap_repo; then
-     ycm_setopt jb-eap-6-for-rhel-6-server-rpms priority=3
-     yum-config-manager $disable_plugin --disable jb-eap-5-for-rhel-6-server-rpms > /dev/null
-   fi
-
-   if need_jbossews_repo; then
-     ycm_setopt jb-ews-2-for-rhel-6-server-rpms priority=3
-     yum-config-manager $disable_plugin --disable jb-ews-1-for-rhel-6-server-rpms > /dev/null
-   fi
+  # Enable the node or infrastructure repo to enable installing the release RPM
+  if need_node_repo; then subscription-manager repos --enable=rhel-6-server-ose-2.0-node-rpms || abort_install
+  else subscription-manager repos --enable=rhel-6-server-ose-2.0-infra-rpms || abort_install
+  fi
+  configure_subscription
 }
 
 abort_install()
@@ -873,7 +843,11 @@ install_rhc_pkg()
 # Set up the system express.conf so our broker will be used by default.
 configure_rhc()
 {
-  echo -e "\nlibra_server = '${broker_hostname}'" >> /etc/openshift/express.conf
+  # set_conf expects there to be a new line
+  echo "" >> /etc/openshift/express.conf
+
+  # set up the system express.conf so this broker will be used by default
+  set_conf /etc/openshift/express.conf libra_server "'${broker_hostname}'"
 }
 
 # Install broker-specific packages.
@@ -882,10 +856,11 @@ install_broker_pkgs()
   pkgs="openshift-origin-broker"
   pkgs="$pkgs openshift-origin-broker-util"
   pkgs="$pkgs rubygem-openshift-origin-msg-broker-mcollective"
-  pkgs="$pkgs mcollective-client"
+  pkgs="$pkgs ruby193-mcollective-client"
   pkgs="$pkgs rubygem-openshift-origin-auth-remote-user"
   pkgs="$pkgs rubygem-openshift-origin-dns-nsupdate"
   pkgs="$pkgs openshift-origin-console"
+  pkgs="$pkgs rubygem-openshift-origin-admin-console"
 
 
   yum_install_or_exit $pkgs
@@ -895,15 +870,30 @@ install_broker_pkgs()
 install_node_pkgs()
 {
   pkgs="rubygem-openshift-origin-node ruby193-rubygem-passenger-native"
-  pkgs="$pkgs openshift-origin-port-proxy"
   pkgs="$pkgs openshift-origin-node-util"
-  pkgs="$pkgs mcollective openshift-origin-msg-node-mcollective"
+  pkgs="$pkgs ruby193-mcollective openshift-origin-msg-node-mcollective"
 
   # We use semanage in this script, so we need to install
   # policycoreutils-python.
   pkgs="$pkgs policycoreutils-python"
 
-  yum_install_or_exit -y $pkgs
+  pkgs="$pkgs rubygem-openshift-origin-container-selinux"
+  pkgs="$pkgs rubygem-openshift-origin-frontend-nodejs-websocket"
+
+  case "$node_apache_frontend" in
+    mod_rewrite)
+      pkgs="$pkgs rubygem-openshift-origin-frontend-apache-mod-rewrite"
+      ;;
+    vhost)
+      pkgs="$pkgs rubygem-openshift-origin-frontend-apache-vhost"
+      ;;
+    *)
+      echo "Invalid value: CONF_NODE_APACHE_FRONTEND=${node_apache_frontend}"
+      abort_install
+      ;;
+  esac
+
+  yum_install_or_exit $pkgs
 }
 
 # Remove abrt-addon-python if necessary
@@ -919,117 +909,91 @@ remove_abrt_addon_python()
 # Install any cartridges developers may want.
 install_cartridges()
 {
-  # Following are cartridge rpms that one may want to install here:
-  if is_true "$node_v1_enable"
-  then
-    # Embedded cron support. This is required on node hosts.
-    carts="openshift-origin-cartridge-cron-1.4"
+  # Embedded cron support.
+  carts="openshift-origin-cartridge-cron"
 
-    # diy app.
-    carts="$carts openshift-origin-cartridge-diy-0.1"
+  # diy app.
+  carts="$carts openshift-origin-cartridge-diy"
 
-    # haproxy-1.4 support.
-    carts="$carts openshift-origin-cartridge-haproxy-1.4"
+  # haproxy support.
+  carts="$carts openshift-origin-cartridge-haproxy"
 
-    if is_false "$CONF_NO_JBOSSEWS"; then
-      # JBossEWS1.0 support.
-      # Note: Be sure to subscribe to the JBossEWS entitlements during the
-      # base install or in configure_jbossews_repo.
-      carts="$carts openshift-origin-cartridge-jbossews-1.0"
-    fi
+  if is_false "$CONF_NO_JBOSSEWS"; then
+    # JBossEWS support.
+    # Note: Be sure to subscribe to the JBossEWS entitlements during the
+    # base install or in configure_jbossews_repo.
+    carts="$carts openshift-origin-cartridge-jbossews"
+  fi
 
-    if is_false "$CONF_NO_JBOSSEAP"; then
-      # JBossEAP6.0 support.
-      # Note: Be sure to subscribe to the JBossEAP entitlements during the
-      # base install or in configure_jbosseap_repo.
-      carts="$carts openshift-origin-cartridge-jbosseap-6.0"
-    fi
-
-    # Jenkins server for continuous integration.
-    carts="$carts openshift-origin-cartridge-jenkins-1.4"
-
-    # Embedded jenkins client.
-    carts="$carts openshift-origin-cartridge-jenkins-client-1.4"
-
-    # Embedded MySQL.
-    carts="$carts openshift-origin-cartridge-mysql-5.1"
-
-    # mod_perl support.
-    carts="$carts openshift-origin-cartridge-perl-5.10"
-
-    # PHP 5.3 support.
-    carts="$carts openshift-origin-cartridge-php-5.3"
-
-    # Embedded PostgreSQL.
-    carts="$carts openshift-origin-cartridge-postgresql-8.4"
-
-    # Python 2.6 support.
-    carts="$carts openshift-origin-cartridge-python-2.6"
-
-    # Ruby Rack support running on Phusion Passenger (Ruby 1.8).
-    carts="$carts openshift-origin-cartridge-ruby-1.8"
-
-    # Ruby Rack support running on Phusion Passenger (Ruby 1.9).
-    carts="$carts openshift-origin-cartridge-ruby-1.9-scl"
-  else
-    # Embedded cron support. This is required on node hosts.
-    carts="openshift-origin-cartridge-cron"
-
-    # diy app.
-    carts="$carts openshift-origin-cartridge-diy"
-
-    # haproxy support.
-    carts="$carts openshift-origin-cartridge-haproxy"
-
-    if is_false "$CONF_NO_JBOSSEWS"; then
-      # JBossEWS support.
-      # Note: Be sure to subscribe to the JBossEWS entitlements during the
-      # base install or in configure_jbossews_repo.
-      carts="$carts openshift-origin-cartridge-jbossews"
-    fi
-
-    if is_false "$CONF_NO_JBOSSEAP"; then
-      # JBossEAP support.
-      # Note: Be sure to subscribe to the JBossEAP entitlements during the
-      # base install or in configure_jbosseap_repo.
-      carts="$carts openshift-origin-cartridge-jbosseap"
-    fi
-
+  if is_false "$CONF_NO_JBOSSEAP"; then
     # JBossEAP support.
     # Note: Be sure to subscribe to the JBossEAP entitlements during the
     # base install or in configure_jbosseap_repo.
     carts="$carts openshift-origin-cartridge-jbosseap"
-
-    # Jenkins server for continuous integration.
-    carts="$carts openshift-origin-cartridge-jenkins"
-
-    # Embedded jenkins client.
-    carts="$carts openshift-origin-cartridge-jenkins-client"
-
-    # Embedded MySQL.
-    carts="$carts openshift-origin-cartridge-mysql"
-
-    # mod_perl support.
-    carts="$carts openshift-origin-cartridge-perl"
-
-    # PHP support.
-    carts="$carts openshift-origin-cartridge-php"
-
-    # Embedded PostgreSQL.
-    carts="$carts openshift-origin-cartridge-postgresql"
-
-    # Python support.
-    carts="$carts openshift-origin-cartridge-python"
-
-    # Ruby Rack support running on Phusion Passenger
-    carts="$carts openshift-origin-cartridge-ruby"
   fi
+
+  # Jenkins server for continuous integration.
+  carts="$carts openshift-origin-cartridge-jenkins"
+
+  # Embedded jenkins client.
+  carts="$carts openshift-origin-cartridge-jenkins-client"
+
+  # Embedded MySQL.
+  carts="$carts openshift-origin-cartridge-mysql"
+
+  # Nodejs support
+  carts="$carts openshift-origin-cartridge-nodejs"
+
+  # mod_perl support.
+  carts="$carts openshift-origin-cartridge-perl"
+
+  # PHP support.
+  carts="$carts openshift-origin-cartridge-php"
+
+  # Embedded PostgreSQL.
+  carts="$carts openshift-origin-cartridge-postgresql"
+
+  # Python support.
+  carts="$carts openshift-origin-cartridge-python"
+
+  # Ruby Rack support running on Phusion Passenger
+  carts="$carts openshift-origin-cartridge-ruby"
 
   # When dependencies are missing, e.g. JBoss subscriptions,
   # still install as much as possible.
   #carts="$carts --skip-broken"
 
   yum_install_or_exit $carts
+}
+
+# Given the filename of a configuration file, the name of a setting,
+# and a value, check whether the configuration file already assigns the
+# given value to the setting.  If it does not, then comment out any
+# existing setting and add the given setting.
+#
+# The search pattern is /^\s*name\s*=\s*value\s*(|#.*)$/.  The
+# added line will be in the form 'name = value' or, if a short comment
+# is specified, 'name = value # short comment'.  If a long comment is
+# specified, a blank line followed by '# long comment' will be added
+# before the line for the setting itself.
+#
+# $1 = configuration file's filename
+# $2 = setting name
+# $3 = value
+# $4 = short comment (optional)
+# $5 = long comment (optional)
+set_conf()
+{
+  if ! grep -q "^\\s*$2\\s*=\\s*$3\\s*\\(\\|#.*\\)$" "$1"
+  then
+    sed -i -e "s/^\\s*$2\\s*=\\s*/#&/" "$1"
+    if [[ -n "$5" ]]
+    then
+      echo >> "$1"
+      echo "# $5" >> "$1"
+    fi
+    echo "$2 = $3${4:+ #$4}" >> "$1"
+  fi
 }
 
 # Fix up SELinux policy on the broker.
@@ -1097,7 +1061,6 @@ configure_selinux_policy_on_node()
 
 
   restorecon -rv /var/run
-  restorecon -rv /usr/sbin/mcollectived /var/log/mcollective.log /var/run/mcollectived.pid
   restorecon -rv /var/lib/openshift /etc/openshift/node.conf /etc/httpd/conf.d/openshift
 }
 
@@ -1146,7 +1109,6 @@ configure_cgroups_on_node()
   restorecon -rv /cgroup
   chkconfig cgconfig on
   chkconfig cgred on
-  chkconfig openshift-cgroups on
 }
 
 configure_quotas_on_node()
@@ -1175,32 +1137,35 @@ configure_quotas_on_node()
   fi
 }
 
+# $1 = setting name
+# $2 = value
+# $3 = long comment
+set_sysctl()
+{
+  set_conf /etc/sysctl.conf "$1" "$2" '' "$3"
+}
+
 # Turn some sysctl knobs.
 configure_sysctl_on_node()
 {
-  # Increase kernel semaphores to accomodate many httpds.
-  echo "kernel.sem = 250  32000 32  4096" >> /etc/sysctl.conf
+  set_sysctl kernel.sem '250  32000 32  4096' 'Accomodate many httpd instances for OpenShift gears.'
 
-  # Move ephemeral port range to accommodate app proxies.
-  echo "net.ipv4.ip_local_port_range = 15000 35530" >> /etc/sysctl.conf
+  set_sysctl net.ipv4.ip_local_port_range '15000 35530' 'Move the ephemeral port range to accomodate the OpenShift port proxy.'
 
-  # Increase the connection tracking table size.
-  echo "net.netfilter.nf_conntrack_max = 1048576" >> /etc/sysctl.conf
+  set_sysctl net.netfilter.nf_conntrack_max 1048576 'Increase the connection tracking table size for the OpenShift port proxy.'
 
-  # Reload sysctl.conf to get the new settings.
-  #
-  # Note: We could add -e here to ignore errors that are caused by
-  # options appearing in sysctl.conf that correspond to kernel modules
-  # that are not yet loaded.  On the other hand, adding -e might cause
-  # us to miss some important error messages.
-  sysctl -p /etc/sysctl.conf
+  set_sysctl net.ipv4.ip_forward 1 'Enable forwarding for the OpenShift port proxy.'
+
+  set_sysctl net.ipv4.conf.all.route_localnet 1 'Allow the OpenShift port proxy to route using loopback addresses.'
 }
 
 
 configure_sshd_on_node()
 {
   # Configure sshd to pass the GIT_SSH environment variable through.
-  echo 'AcceptEnv GIT_SSH' >> /etc/ssh/sshd_config
+  # The newline is needed because cloud-init doesn't add a newline after the
+  # configuration it adds.
+  printf '\nAcceptEnv GIT_SSH' >> /etc/ssh/sshd_config
 
   # Up the limits on the number of connections to a given node.
   sed -i -e "s/^#MaxSessions .*$/MaxSessions 40/" /etc/ssh/sshd_config
@@ -1235,19 +1200,25 @@ execute_mongodb()
   echo "$1"
   echo "---"
 
-  echo "$1" | mongo
+  output="$( echo "$1" | mongo )"
+  echo "$output"
+  if [ "$2" ]; then # test output against regex
+    [[ "$output" =~ $2 ]] || return 1
+  fi
+  return 0
 }
 
 # This configuration step should only be performed if MongoDB is not
 # replicated or if this host is the primary in a replicated setup.
 configure_datastore_add_users()
 {
+  set +x  # just confusing to have everything re-echo
   wait_for_mongod
 
   execute_mongodb "$(
     if [[ ${datastore_replicants} =~ , ]]
     then
-      echo 'while (rs.isMaster().primary == null) { sleep(500); }'
+      echo 'while (rs.isMaster().primary == null) { sleep(5); }'
     fi
     if is_false "$CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST"
     then
@@ -1261,12 +1232,14 @@ configure_datastore_add_users()
     echo "use ${mongodb_name}"
     echo "db.addUser('${mongodb_broker_user}', '${mongodb_broker_password}')"
   )"
+  set -x
 }
 
 # This configuration step should only be performed on the primary in
-# a replicated setup.
+# a replicated setup, and only after the secondary DBs are installed.
 configure_datastore_add_replicants()
 {
+  set +x  # just confusing to have everything re-echo
   wait_for_mongod
 
   # Configure the replica set.
@@ -1290,19 +1263,17 @@ configure_datastore_add_replicants()
     echo
     echo '  ]'
     echo '})'
-  )"
+  )" '"ok" : 1' || abort_install "OpenShift: Failed to form MongoDB replica set; please do this manually."
 
+  configure_datastore_add_users
+  set -x
 }
 
 # $1 = setting name
 # $2 = value
 set_mongodb()
 {
-  if ! grep -q "^\\s*$1\\s*=\\s*$2" /etc/mongodb.conf
-  then
-    sed -i -e "s/^\\s*$1 = /#&/" /etc/mongodb.conf
-    echo "$1 = $2" >> /etc/mongodb.conf
-  fi
+  set_conf /etc/mongodb.conf "$1" "$2"
 }
 
 configure_datastore()
@@ -1349,7 +1320,7 @@ configure_datastore()
     $lokkit --port=27017:tcp
 
     echo 'Configuring mongod to listen on external interfaces...'
-    sed -i -e "s/^bind_ip = .*$/bind_ip = 0.0.0.0/" /etc/mongodb.conf
+    set_mongodb bind_ip 0.0.0.0
   fi
 
   # Configure mongod to start on boot.
@@ -1369,9 +1340,11 @@ configure_datastore()
 # Open up services required on the node for apps and developers.
 configure_port_proxy()
 {
-  lokkit --nostart --port=35531-65535:tcp
-
-  chkconfig openshift-port-proxy on
+  chkconfig openshift-iptables-port-proxy on
+  sed -i '/:OUTPUT ACCEPT \[.*\]/a \
+:rhc-app-comm - [0:0]' /etc/sysconfig/iptables
+  sed -i '/-A INPUT -i lo -j ACCEPT/a \
+-A INPUT -j rhc-app-comm' /etc/sysconfig/iptables
 }
 
 configure_gears()
@@ -1423,8 +1396,8 @@ enable_services_on_broker()
 
   # make sure mcollective client log is created with proper ownership.
   # if root owns it, the broker (apache user) can't log to it.
-  touch /var/log/mcollective-client.log
-  chown apache:root /var/log/mcollective-client.log
+  touch /var/log/ruby193-mcollective-client.log
+  chown apache:root /var/log/ruby193-mcollective-client.log
 }
 
 
@@ -1449,12 +1422,12 @@ plugin.activemq.pool.${num_replicants}.password = ${mcollective_password}
 # Configure mcollective on the broker to use ActiveMQ.
 configure_mcollective_for_activemq_on_broker()
 {
-  cat <<EOF > /etc/mcollective/client.cfg
+  cat <<EOF > /opt/rh/ruby193/root/etc/mcollective/client.cfg
 topicprefix = /topic/
 main_collective = mcollective
 collectives = mcollective
 libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
-logfile = /var/log/mcollective-client.log
+logfile = /var/log/ruby193-mcollective-client.log
 loglevel = debug
 direct_addressing = 1
 
@@ -1467,7 +1440,7 @@ $(generate_mcollective_pools_configuration)
 
 # Facts
 factsource = yaml
-plugin.yaml = /etc/mcollective/facts.yaml
+plugin.yaml = /opt/rh/ruby193/root/etc/mcollective/facts.yaml
 
 EOF
 }
@@ -1476,12 +1449,12 @@ EOF
 # Configure mcollective on the node to use ActiveMQ.
 configure_mcollective_for_activemq_on_node()
 {
-  cat <<EOF > /etc/mcollective/server.cfg
+  cat <<EOF > /opt/rh/ruby193/root/etc/mcollective/server.cfg
 topicprefix = /topic/
 main_collective = mcollective
 collectives = mcollective
 libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
-logfile = /var/log/mcollective.log
+logfile = /var/log/ruby193-mcollective.log
 loglevel = debug
 
 daemonize = 1
@@ -1494,12 +1467,18 @@ plugin.psk = asimplething
 connector = activemq
 $(generate_mcollective_pools_configuration)
 
+# We do not actually use node registration in any way at this time.
+# However, having it configured enables mcollective to recover from
+# dead connections (msg host rebooted, etc.) as a side effect.
+# See https://bugzilla.redhat.com/show_bug.cgi?id=1009887
+registerinterval = 30
+
 # Facts
 factsource = yaml
-plugin.yaml = /etc/mcollective/facts.yaml
+plugin.yaml = /opt/rh/ruby193/root/etc/mcollective/facts.yaml
 EOF
 
-  chkconfig mcollective on
+  chkconfig ruby193-mcollective on
 }
 
 
@@ -1525,9 +1504,9 @@ configure_activemq()
       networkConnectors="$networkConnectors                 ActiveMQ broker.  It is necessary to have separate"$'\n'
       networkConnectors="$networkConnectors                 connectors for topics and queues because we need to"$'\n'
       networkConnectors="$networkConnectors                 leave conduitSubscriptions enabled for topics in order"$'\n'
-      networkConnectors="$networkConnectors                 to avoid duplicate messages and enable it for queues in"$'\n'
-      networkConnectors="$networkConnectors                 order to ensure that JMS selectors are propagated.  In"$'\n'
-      networkConnectors="$networkConnectors                 particular, the OpenShift broker uses the"$'\n'
+      networkConnectors="$networkConnectors                 to avoid duplicate messages and disable it for queues"$'\n'
+      networkConnectors="$networkConnectors                 in order to ensure that JMS selectors are propagated."$'\n'
+      networkConnectors="$networkConnectors                 In particular, the OpenShift broker uses the"$'\n'
       networkConnectors="$networkConnectors                 mcollective.node queue to directly address nodes,"$'\n'
       networkConnectors="$networkConnectors                 which subscribe to the queue using JMS selectors."$'\n'
       networkConnectors="$networkConnectors            -->"$'\n'
@@ -1756,7 +1735,6 @@ install_named_pkgs()
 
 configure_named()
 {
-
   # Ensure we have a key for service named status to communicate with BIND.
   rndc-confgen -a -r /dev/urandom
   restorecon /etc/rndc.* /etc/named.*
@@ -1904,11 +1882,10 @@ ensure_domain()
   fi
 }
 
-# TODO: use oo-register-dns to do this instead.
 add_host_to_zone()
 {
-  # $1 = host; $2 = ip
-  zone="$hosts_domain"
+  # $1 = host; $2 = ip; [ $3 = zone ]
+  zone="${3:-$hosts_domain}"
   nsdb="/var/named/dynamic/${zone}.db"
   # sanity check that $1 isn't an IP, and $2 is.
   ip_regex='^[.0-9]+$' # all numbers and dots = IP (not rigorous)
@@ -1922,6 +1899,8 @@ add_host_to_zone()
 configure_hosts_dns()
 {
   add_host_to_zone "$named_hostname" "$named_ip_addr" # always define self
+  # glue record for NS host in subdomain:
+  [[ "$hosts_domain" == *?"$domain" ]] && add_host_to_zone "$named_hostname" "$named_ip_addr" "$domain"
   if [ -z "$CONF_NAMED_ENTRIES" ]; then
     # Add A records for any other components that are being installed locally.
     broker && add_host_to_zone "$broker_hostname" "$broker_ip_addr"
@@ -1930,16 +1909,30 @@ configure_hosts_dns()
     datastore && add_host_to_zone "$datastore_hostname" "$cur_ip_addr"
   elif [[ "$CONF_NAMED_ENTRIES" =~ : ]]; then
     # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
-    pairs=(${CONF_NAMED_ENTRIES//,/ })
-    for i in "${!pairs[@]}"
-    do
-      host_ip=${pairs[i]}
-      host_ip=(${host_ip//:/ })
-      add_host_to_zone "${host_ip[0]}" "${host_ip[1]}"
+    for host_ip in ${CONF_NAMED_ENTRIES//,/ }; do
+      add_host_to_zone ${host_ip//:/ }
     done
   else # if "none" then just don't add anything
     echo "Not adding named entries; named_entries = $CONF_NAMED_ENTRIES"
   fi
+}
+
+# An alternate method for registering against a running named
+# using oo-register-dns. Not used by default.
+register_named_entries()
+{
+  ip_regex='^[.0-9]+$' # all numbers and dots = IP (not rigorous)
+  failed="false"
+  for host_ip in ${CONF_NAMED_ENTRIES//,/ }; do
+    read host ip <<<$(echo ${host_ip//:/ })
+    if [[ $host =~ $ip_regex || ! $ip =~ $ip_regex ]]; then
+      echo "Not adding DNS record to host zone: '$host' should be a hostname and '$ip' should be an IP address"
+    elif ! oo-register-dns -d "$hosts_domain" -h "${host%.$hosts_domain}" -n $ip; then
+      echo "WARNING: Failed to register host $host with IP $ip"
+      failed="true"
+    fi
+  done
+  is_false $failed && echo "OpenShift: Completed updating host DNS entries."
 }
 
 configure_network()
@@ -1965,7 +1958,7 @@ configure_dns_resolution()
   # will resolve public addresses even when our private named is
   # nonfunctional.  However, our private named must appear first in
   # order for hostnames private to our OpenShift PaaS to resolve.
-  sed -i -e "1i# The named we install for our OpenShift PaaS must appear first.\\nsearch ${hosts_domain}.\\nnameserver ${named_ip_addr}\\n" /etc/resolv.conf
+  sed -i -e "/search/ d; 1i# The named we install for our OpenShift PaaS must appear first.\\nsearch ${hosts_domain}.\\nnameserver ${named_ip_addr}\\n" /etc/resolv.conf
 
   # Append resolution conf to the DHCP configuration.
   cat <<EOF >> /etc/dhcp/dhclient-$iface.conf
@@ -2119,6 +2112,8 @@ __default__ REDIRECT:/console
 __default__/rsync_id_rsa.pub NOPROXY
 __default__/console TOHTTPS:127.0.0.1:8118/console
 __default__/broker TOHTTPS:127.0.0.1:8080/broker
+__default__/admin-console TOHTTPS:127.0.0.1:8080/admin-console
+__default__/assets TOHTTPS:127.0.0.1:8080/assets
 EOF
 
   httxt2dbm -f DB -i /etc/httpd/conf.d/openshift/nodes.txt -o /etc/httpd/conf.d/openshift/nodes.db
@@ -2204,6 +2199,15 @@ configure_node()
              s/^PUBLIC_HOSTNAME=.*$/PUBLIC_HOSTNAME=${hostname}/;
              s/^BROKER_HOST=.*$/BROKER_HOST=${broker_hostname}/" \
       /etc/openshift/node.conf
+
+  case "$node_apache_frontend" in
+    mod_rewrite)
+      # No-op.  node.conf uses mod_rewrite by default
+      ;;
+    vhost)
+      sed -i -e "s/mod-rewrite/vhost/" /etc/openshift/node.conf
+      ;;
+  esac
 
   echo $broker_hostname > /etc/openshift/env/OPENSHIFT_BROKER_HOST
   echo $domain > /etc/openshift/env/OPENSHIFT_CLOUD_DOMAIN
@@ -2397,7 +2401,7 @@ is_false()
 #   CONF_NAMED_IP_ADDR
 #   CONF_NODE_HOSTNAME
 #   CONF_NODE_IP_ADDR
-#   CONF_NODE_V1_ENABLE
+#   CONF_NODE_APACHE_FRONTEND
 #   CONF_REPOS_BASE
 set_defaults()
 {
@@ -2444,6 +2448,7 @@ set_defaults()
   # subscriptions via RHN. Internally we use private systems.
   rhel_repo="$CONF_RHEL_REPO"
   jboss_repo_base="$CONF_JBOSS_REPO_BASE"
+  rhscl_repo_base="$CONF_RHSCL_REPO_BASE"
   rhel_optional_repo="$CONF_RHEL_OPTIONAL_REPO"
   # Where to find the OpenShift repositories; just the base part before
   # splitting out into Infrastructure/Node/etc.
@@ -2454,6 +2459,7 @@ set_defaults()
   if [ "x$cdn_repo_base" != "x" ]; then
     rhel_repo="${rhel_repo:-$cdn_repo_base/os}"
     jboss_repo_base="${jboss_repo_base:-$cdn_repo_base}"
+    rhscl_repo_base="${rhscl_repo_base:-$cdn_repo_base}"
     rhel_optional_repo="${rhel_optional_repo:-$cdn_repo_base/optional/os}"
     ose_repo_base="${ose_repo_base:-$cdn_repo_base}"
     if [ "${cdn_repo_base%/}" == "${ose_repo_base%/}" ]; then # same repo layout
@@ -2515,7 +2521,7 @@ set_defaults()
   # how to label the system when subscribing
   profile_name="${CONF_PROFILE_NAME:-OpenShift-${hostname}-${cur_ip_addr}-${CONF_RHN_USER}}"
 
-  node_v1_enable="${CONF_NODE_V1_ENABLE:-false}"
+  node_apache_frontend="${CONF_NODE_APACHE_FRONTEND:-mod_rewrite}"
 
   # Unless otherwise specified, the named service, data store, and
   # ActiveMQ service are assumed to be the current host if we are
@@ -2564,13 +2570,16 @@ set_defaults()
   # Generate a random session secret for console sessions.
   broker && console_session_secret="${CONF_CONSOLE_SESSION_SECRET:-${randomized}}"
 
-  # If no list of replicants is provided, assume there is only one
-  # datastore host.
+  # If no list of replicants is provided, assume there is only one datastore host.
   datastore_replicants="${CONF_DATASTORE_REPLICANTS:-$datastore_hostname:27017}"
-
   # For each replicant that does not have an explicit port number
   # specified, append :27017 to its host name.
-  datastore_replicants="$(echo "${datastore_replicants}" | sed -e 's/\([^:,]\+\)\(,\|$\)/\1:27017\2/g')"
+  datastore_replicants="$( for repl in ${datastore_replicants//,/ }; do
+                             [[ "$repl" =~ : ]] || repl=$repl:27017
+                             printf ",%s" "${repl}"
+                           done)"
+  datastore_replicants="${datastore_replicants:1}"
+
 
   # If no list of replicants is provided, assume there is only one
   # ActiveMQ host.
@@ -2690,10 +2699,11 @@ install_rpms()
   echo "OpenShift: Begin installing RPMs."
   # we often rely on latest selinux policy and other updates
   echo "OpenShift: yum update"
+  yum $disable_plugin clean all
   yum $disable_plugin update -y || abort_install
   # Install ntp and ntpdate because they may not be present in a RHEL
   # minimal install.
-  yum_install_or_exit ntp ntpdate
+  yum_install_or_exit ntp ntpdate lokkit
 
   # install what we need for various components
   named && install_named_pkgs
