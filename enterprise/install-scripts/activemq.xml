@@ -47,22 +47,26 @@
         <destinationPolicy>
             <policyMap>
               <policyEntries>
-                <policyEntry topic=">" producerFlowControl="true" memoryLimit="1mb">
-                  <pendingSubscriberPolicy>
-                    <vmCursor />
-                  </pendingSubscriberPolicy>
-                </policyEntry>
-                <policyEntry queue=">" producerFlowControl="true" memoryLimit="1mb">
-                  <!-- Use VM cursor for better latency
-                       For more information, see:
+                <!--
+                    The Puppet Labs documentation for MCollective
+                    advises disabling producerFlowControl for all
+                    topics in order to avoid MCollective servers
+                    appearing blocked during heavy traffic.
 
-                       http://activemq.apache.org/message-cursors.html
+                    For more information, see:
+                    http://docs.puppetlabs.com/mcollective/deploy/middleware/activemq.html
+                -->
+		<policyEntry topic=">" producerFlowControl="false" />
+                <!--
+                  The Puppet Labs documentation advises enabling
+                  garbage-collection of queues because MCollective
+                  creates a uniquely named, single-use queue for
+                  each reply.
 
-                  <pendingQueuePolicy>
-                    <vmQueueCursor/>
-                  </pendingQueuePolicy>
-                  -->
-                </policyEntry>
+                  For more information, see:
+                  http://docs.puppetlabs.com/mcollective/deploy/middleware/activemq.html
+                -->
+                <policyEntry queue="*.reply.>" gcInactiveDestinations="true" inactiveTimoutBeforeGC="300000" />
               </policyEntries>
             </policyMap>
         </destinationPolicy>
