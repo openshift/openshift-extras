@@ -782,7 +782,8 @@ configure_subscription()
    need_client_tools_repo && roles="$roles --role client"
    need_node_repo && roles="$roles --role node"
    need_jbosseap_cartridge_repo && roles="$roles --role node-eap"
-   oo-admin-yum-validator -o 1.2 --fix-all $roles || abort_install
+   oo-admin-yum-validator -o 1.2 --fix-all $roles # when fixing, rc is always false
+   oo-admin-yum-validator -o 1.2 $roles || abort_install # so check when fixes are done
 }
 
 configure_rhn_channels()
