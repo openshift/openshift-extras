@@ -1,0 +1,172 @@
+---
+Name: Origin VM Instructions
+Contexts:
+  - origin_vm
+Summary: Take the Admin Tutorial
+Description: Explains how to administer the Origin VM
+ID: vm_tutorial
+WorkflowDir: origin_vm_tasks
+NonDeployment: Y
+ExitOnComplete: N
+Executable: <workflow_path>/vm_tutorial
+---
+Name: Origin VM Console
+Contexts:
+  - origin_vm
+Summary: View the Web Console
+Description: Explains how to view the web console on this VM.
+ID: vm_view_console
+WorkflowDir: origin_vm_tasks
+NonDeployment: Y
+ExitOnComplete: N
+Executable: <workflow_path>/vm_view_console
+---
+Name: OO Deployment from VM
+Contexts:
+  - origin_vm
+Targets:
+  - fedora
+  - rhel
+  - other
+Summary: Install OpenShift Origin on Other Systems
+Description: To install a new OpenShift Origin deployment on one or more target systems, select this option
+ID: origin_deploy
+Executable: <workflow_path>/originator.rb
+RemoteDeployment: Y
+SubscriptionCheck: Y
+Repositories:
+  - repos_base
+  - jboss_repo_base
+  - jenkins_repo_base
+  - os_repo
+  - os_optional_repo
+RequiredComponents:
+  - util:all:puppet
+  - util:broker:dnssec-keygen
+  - util:broker:htpasswd
+  - util:rhel:scl:ruby193
+  - util:other:scl:ruby193
+  - repo:rhel:epel
+  - repo:other:epel
+---
+Name: OO Deployment
+Contexts:
+  - origin
+Targets:
+  - fedora
+  - rhel
+  - other
+Summary: Install OpenShift Origin
+Description: To install a new OpenShift Origin deployment on one or more target systems, select this option
+ID: origin_deploy
+Executable: <workflow_path>/originator.rb
+RemoteDeployment: Y
+SubscriptionCheck: Y
+Repositories:
+  - repos_base
+  - jboss_repo_base
+  - jenkins_repo_base
+  - os_repo
+  - os_optional_repo
+RequiredComponents:
+  - util:all:puppet
+  - util:broker:dnssec-keygen
+  - util:broker:htpasswd
+  - util:rhel:scl:ruby193
+  - util:other:scl:ruby193
+  - repo:rhel:epel
+  - repo:other:epel
+---
+Name: OO Node Instance Deployment
+Contexts:
+  - origin
+Targets:
+  - fedora
+  - rhel
+  - other
+Summary: Add a Node to an OpenShift Origin deployment
+Description: If you have already deployed an OpenShift Enterprise system, use this option to add a new Node host to the existing system.
+ID: origin_add_node
+WorkflowDir: origin_deploy
+Questions:
+  - Text: From your list of Nodes, which instance would you like to deploy?
+    Variable: rolehost
+    AnswerType: rolehost:node
+Executable: <workflow_path>/originator.rb <q:rolehost>
+RemoteDeployment: Y
+SubscriptionCheck: Y
+Repositories:
+  - repos_base
+  - jboss_repo_base
+  - jenkins_repo_base
+  - os_repo
+  - os_optional_repo
+RequiredComponents:
+  - util:all:puppet
+  - util:rhel:scl:ruby193
+  - util:other:scl:ruby193
+  - repo:rhel:epel
+  - repo:other:epel
+---
+Name: Puppet templates
+Contexts:
+  - origin_vm
+Targets:
+  - fedora
+  - rhel
+  - other
+Summary: Generate a Puppet Configuration File
+Description: Make a puppet configuration file that you can use to run an OpenShift Origin installation.
+ID: puppet_template
+WorkflowDir: origin_deploy
+Executable: <workflow_path>/originator.rb nil true
+RemoteDeployment: Y
+SubscriptionCheck: Y
+Repositories:
+  - repos_base
+  - jboss_repo_base
+  - jenkins_repo_base
+  - os_repo
+  - os_optional_repo
+RequiredComponents:
+  - util:broker:dnssec-keygen
+---
+Name: OE Deployment
+Contexts:
+  - ose
+Targets:
+  - rhel
+Summary: Install OpenShift Enterprise
+Description: If you currently have no OpenShift Enterprise 1.2 system, select this option to deploy OpenShift Enterprise to one or more target hosts.
+ID: enterprise_deploy
+WorkflowDir: enterprise_deploy
+Executable: <workflow_path>/launcher.rb
+RemoteDeployment: y
+SubscriptionCheck: y
+Repositories:
+  - repos_base
+  - jboss_repo_base
+  - os_repo
+  - os_optional_repo
+---
+Name: OE Node-Instance Deployment
+Contexts:
+  - ose
+Targets:
+  - rhel
+Summary: Add a Node to OpenShift Enterprise
+Description: If you have already deployed an OpenShift Enterprise 1.2 system, use this option to add a new Node host to the existing system.
+ID: enterprise_add_node
+WorkflowDir: enterprise_deploy
+Questions:
+  - Text: From your list of Nodes, which instance would you like to deploy?
+    Variable: rolehost
+    AnswerType: rolehost:node
+Executable: <workflow_path>/launcher.rb <q:rolehost>
+RemoteDeployment: y
+SubscriptionCheck: y
+Repositories:
+  - repos_base
+  - jboss_repo_base
+  - os_repo
+  - os_optional_repo

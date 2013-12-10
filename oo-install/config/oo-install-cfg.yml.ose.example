@@ -1,0 +1,11 @@
+---
+Name: OpenShift Installer Configuration
+Vendor: OpenShift Origin Community
+Description: This is the configuration file for the OpenShift Installer.
+Version: 0.0.1
+Deployment:
+  Hosts:
+  DNS:
+    app_domain: example.com
+Subscription:
+  type: none

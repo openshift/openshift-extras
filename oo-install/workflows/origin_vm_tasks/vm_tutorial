@@ -1,0 +1,154 @@
+#!/bin/sh
+host=`hostname | tr -d "\n"`
+
+function wait_for_continue {
+echo ""
+read -p "Press [ENTER] to continue..."
+clear
+}
+
+clear
+
+cat <<EOF
+----------------------------------------------------------------------
+OpenShift Origin: Administrator's Tutorial
+----------------------------------------------------------------------
+
+This walkthrough will help to familiarize you with the features of the
+Origin VM from an administrator's perspective. For a more complete
+understanding of OpenShift Origin, refer to the OpenShift
+Administator's Guide:
+
+http://openshift.github.io/documentation/oo_administration_guide.html
+EOF
+
+wait_for_continue
+
+cat <<EOF
+----------------------------------------------------------------------
+1. User Management
+----------------------------------------------------------------------
+The Origin VM ships with a default user already created:
+
+    Username: demo
+    Password: changeme
+
+You can use this account to have a look at the web console (described
+in the Web Console tutorial) without changing anything on the system.
+
+If you want to add more users, use htpasswd from a command prompt as
+shown here:
+
+    htpasswd -c /etc/openshift/htpasswd <username>
+
+You will be prompted to set a password for the new user.
+
+Note that the Origin VM is configured with a very basic form of user
+authentication, but more sophisticated options are available. See the
+Comprehensive Deployment Guide for more information:
+
+http://openshift.github.io/documentation/oo_deployment_guide_comprehensive.html#configure-an-authentication-plugin
+EOF
+
+wait_for_continue
+
+cat <<EOF
+----------------------------------------------------------------------
+2. User Resource Configuration
+----------------------------------------------------------------------
+There are two ways to modify the allocation of resources available to
+users and their applications. Global settings are defined in:
+
+    /etc/openshift/broker.conf
+
+...and allocations for individual users can be modified with:
+
+    oo-admin-ctl-user
+
+For instance, setting:
+
+    DEFAULT_MAX_GEARS=5
+
+in the /etc/openshift/broker.conf sets the default for all new users.
+However, to go back and change the maximum for existing users, you would
+need to run:
+
+    oo-admin-ctl-user -l <username> --setmaxgears 5
+
+for each of them.
+
+For more on user resource management, see this section of the
+Administration Guide:
+
+http://openshift.github.io/documentation/oo_administration_guide.html#user-resource-management
+EOF
+
+wait_for_continue
+
+cat <<EOF
+----------------------------------------------------------------------
+3. OpenShift Services
+----------------------------------------------------------------------
+On this VM, the following services are running as part of the all-in-
+one OpenShift Origin deployment:
+
+* openshift-broker - Central OpenShift management
+* openshift-console - Web console
+* openshift-gears - Gear monitor
+* openshift-tc - Traffic control
+
+The deployment is also supported by these helper services:
+
+* activemq - Message queuing
+* httpd - Web service
+* mongod - Data store
+* mdns - Multicast DNS
+
+If you run into any issues with this VM, check to ensure that these
+services are working correctly. The next section includes additional
+information on troubleshooting your deployment.
+EOF
+
+wait_for_continue
+
+cat <<EOF
+----------------------------------------------------------------------
+4. Troubleshooting
+----------------------------------------------------------------------
+The go-to troubleshooting tool for OpenShift Origin is:
+
+    oo-diagnostics
+
+However, it is also often helpful to watch the openshift log files,
+which can be found at:
+
+    /var/log/openshift
+
+You can find a number of other tips in the OpenShift Troubleshooting
+Guide:
+
+http://openshift.github.io/documentation/oo_troubleshooting_guide.html
+EOF
+
+wait_for_continue
+
+cat <<EOF
+----------------------------------------------------------------------
+5. Need Help?
+----------------------------------------------------------------------
+If you run into any other issues with the Origin VM, please take
+advantage of the many OpenShift resources online:
+
+    * Documentation: http://openshift.github.io/documentation/
+    * Mailing lists: http://lists.openshift.redhat.com/openshiftmm/listinfo/
+    * IRC: http://webchat.freenode.net/?randomnick=1&channels=openshift-dev&uio=d4
+
+That is the end of this tutorial. If you would like to run it again,
+select menu option '1'.
+
+EOF
+
+read -p "Press [ENTER] to leave the tutorial..."
+clear
+
+exit
