@@ -641,7 +641,7 @@ configure_yum_repos()
     eval "need_${repo}_repo && configure_${repo}_repo"
   done
   yum clean metadata
-  yum_install_or_exit openshift-enterprise-release-2.0.0c
+  yum_install_or_exit openshift-enterprise-release
 }
 
 configure_rhel_repo()
@@ -804,7 +804,7 @@ YUM
 configure_subscription()
 {
    # install our release package to enable repo/channel configuration
-   yum_install_or_exit openshift-enterprise-release-2.0.0c
+   yum_install_or_exit openshift-enterprise-release
 
    roles=""  # we will build the list of roles we need, then enable them.
    need_infra_repo && roles="$roles --role broker"
