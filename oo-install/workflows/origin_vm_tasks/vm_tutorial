@@ -28,14 +28,13 @@ cat <<EOF
 ----------------------------------------------------------------------
 1. User Management
 ----------------------------------------------------------------------
-The Origin VM ships with a default user already created:
+The Origin VM ships with a default OpenShift user already created:
 
     Username: demo
     Password: changeme
 
 You can use this account to have a look at the web console (described
 in the Web Console tutorial) without changing anything on the system.
-
 If you want to add more users, use htpasswd from a command prompt as
 shown here:
 
@@ -64,7 +63,11 @@ users and their applications. Global settings are defined in:
 ...and allocations for individual users can be modified with:
 
     oo-admin-ctl-user
+EOF
 
+wait_for_continue
+
+cat <<EOF
 For instance, setting:
 
     DEFAULT_MAX_GEARS=5
@@ -92,17 +95,17 @@ cat <<EOF
 On this VM, the following services are running as part of the all-in-
 one OpenShift Origin deployment:
 
-* openshift-broker - Central OpenShift management
-* openshift-console - Web console
-* openshift-gears - Gear monitor
-* openshift-tc - Traffic control
+  * openshift-broker - Central OpenShift management
+  * openshift-console - Web console
+  * openshift-gears - Gear monitor
+  * openshift-tc - Traffic control
 
 The deployment is also supported by these helper services:
 
-* activemq - Message queuing
-* httpd - Web service
-* mongod - Data store
-* mdns - Multicast DNS
+  * activemq - Message queuing
+  * httpd - Web service
+  * mongod - Data store
+  * mdns - Multicast DNS
 
 If you run into any issues with this VM, check to ensure that these
 services are working correctly. The next section includes additional
