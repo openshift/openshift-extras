@@ -1,0 +1,81 @@
+#!/bin/sh
+host=`hostname | tr -d "\n"`
+ip_addrs=`ip addr list | grep inet | egrep -v inet6 | egrep -v 127.0.0.1 | awk '{print $2}' | cut -d\/ -f 1`
+
+function wait_for_continue {
+echo ""
+read -p "Press [ENTER] to continue..."
+clear
+}
+
+clear
+
+cat <<EOF
+----------------------------------------------------------------------
+Connecting via rhc
+----------------------------------------------------------------------
+
+To use the rhc utility with this VM, follow these steps:
+
+1. If rhc is not already installed on your client system, run:
+
+    gem install rhc
+
+2. Configure rhc to connect to the VM:
+
+    rhc setup --server ${host} -l <username>
+
+   The default user / password combo is demo / changeme
+
+3. Create your first app!
+
+    rhc app create <app_name> -t <app_type>
+EOF
+
+wait_for_continue
+
+cat <<EOF
+----------------------------------------------------------------------
+Connecting via rhc (continued)
+----------------------------------------------------------------------
+
+If you run into problems with step #2, you may be using the VM in an
+environment where mDNS won't work. Try using an IP address instead
+of the hostname:
+
+    rhc_setup --server ${ip_addrs} -l <username>
+
+Again, the default user / password combo is demo / changeme
+
+For more help, refer to the VM Deployment guide:
+
+http://openshift.github.io/documentation/oo_deployment_guide_vm.html
+EOF
+
+wait_for_continue
+
+cat <<EOF
+----------------------------------------------------------------------
+Connecting via the Web Console
+----------------------------------------------------------------------
+
+To connect to the web console on this Origin VM, point your browser at:
+
+    http://${host}/console/
+
+    Username: demo
+    Password: changeme
+
+You may receive a warning about the SSL certificate that the VM uses.
+This is because the Origin VM signs its own SSL certificate. It is
+okay to accept this certificate, though you will want to update it
+with a properly signed certificate if you intend to use this Origin VM
+as the Broker in a permanent OpenShift deployment.
+
+For more info on the web console, refer to the OpenShift User Guide:
+
+http://openshift.github.io/documentation/oo_user_guide.html#the-web-console
+EOF
+
+read -p "Press the [Enter] key to return to the main menu."
+exit

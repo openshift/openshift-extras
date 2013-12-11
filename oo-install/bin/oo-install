@@ -92,7 +92,7 @@ if options[:subscription_type].nil? and (not options[:rh_username].nil? or not o
   puts "Pass a subscription type to associate with the provided username and/or password."
   exit 1
 elsif not options[:subscription_type].nil?
-  subscription_types = Installer::Subscription.valid_types_for_context(get_context)
+  subscription_types = Installer::Subscription.valid_types_for_context
   if not subscription_types.include?(options[:subscription_type].to_sym)
     version = get_context == :ose ? 'Enterprise' : 'Origin'
     valid_types = subscription_types.map{ |t| t.to_s }.join(", ")
