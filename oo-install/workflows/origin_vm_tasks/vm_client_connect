@@ -78,4 +78,6 @@ http://openshift.github.io/documentation/oo_user_guide.html#the-web-console
 EOF
 
 read -p "Press the [Enter] key to return to the main menu."
+clear
+
 exit
