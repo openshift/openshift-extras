@@ -13,13 +13,13 @@ Executable: <workflow_path>/vm_tutorial
 Name: Origin VM Console
 Contexts:
   - origin_vm
-Summary: View the Web Console
+Summary: Connect to this VM via `rhc` or the web console
 Description: Explains how to view the web console on this VM.
 ID: vm_view_console
 WorkflowDir: origin_vm_tasks
 NonDeployment: Y
 ExitOnComplete: N
-Executable: <workflow_path>/vm_view_console
+Executable: <workflow_path>/vm_client_connect
 ---
 Name: OO Deployment from VM
 Contexts:

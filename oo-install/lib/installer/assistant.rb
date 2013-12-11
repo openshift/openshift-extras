@@ -118,6 +118,7 @@ module Installer
       if is_origin_vm?
         say "\n\tHost: #{vm_installer_host.host}"
         say "\tUser: #{vm_installer_host.user}"
+        say "\tPass: changeme"
         say "\t  IP: #{vm_installer_host.ip_addr}"
         puts "\n"
         if @config.new_config? and not @offered_tutorial and concur("It looks like this is your first time using the Origin VM. Would you like to take the administrator's tutorial? If you answer 'no', you can always go back to the main menu and select 'Take the Tutorial' to see it.\n\nTake the tutorial?")
