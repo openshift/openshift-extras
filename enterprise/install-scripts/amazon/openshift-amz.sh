@@ -1969,13 +1969,14 @@ set_defaults()
 
   # There a no defaults for these. Customers should be using
   # subscriptions via RHN. Internally we use private systems.
-  rhel_repo="$CONF_RHEL_REPO"
-  jboss_repo_base="$CONF_JBOSS_REPO_BASE"
-  rhscl_repo_base="$CONF_RHSCL_REPO_BASE"
-  rhel_optional_repo="$CONF_RHEL_OPTIONAL_REPO"
+  rhel_repo="${CONF_RHEL_REPO%/}"
+  jboss_repo_base="${CONF_JBOSS_REPO_BASE%/}"
+  rhscl_repo_base="${CONF_RHSCL_REPO_BASE%/}"
+  rhel_optional_repo="${CONF_RHEL_OPTIONAL_REPO%/}"
   # Where to find the OpenShift repositories; just the base part before
   # splitting out into Infrastructure/Node/etc.
   ose_repo_base="${CONF_OSE_REPO_BASE:-$CONF_REPOS_BASE}"
+  ose_repo_base="${ose_repo_base%/}"
 
   # Use CDN layout as the default for all yum repos if this is set.
   cdn_repo_base="${CONF_CDN_REPO_BASE%/}"
@@ -1985,12 +1986,13 @@ set_defaults()
     rhscl_repo_base="${rhscl_repo_base:-$cdn_repo_base}"
     rhel_optional_repo="${rhel_optional_repo:-$cdn_repo_base/optional/os}"
     ose_repo_base="${ose_repo_base:-$cdn_repo_base}"
-    if [ "${cdn_repo_base%/}" == "${ose_repo_base%/}" ]; then # same repo layout
+    if [ "${cdn_repo_base}" == "${ose_repo_base}" ]; then # same repo layout
       CONF_CDN_LAYOUT=1  # use the CDN layout for OpenShift yum repos
     fi
-  elif [ "${rhel_repo%/}" == "${ose_repo_base%/}/os" ]; then # OSE same repo base as RHEL?
+  elif [ "${rhel_repo}" == "${ose_repo_base}/os" ]; then # OSE same repo base as RHEL?
     CONF_CDN_LAYOUT=1  # use the CDN layout for OpenShift yum repos
   fi
+  rhscl_repo_base="${rhscl_repo_base:-${rhel_repo%/os}}"
   # no need to waste time checking both subscription plugins if using one
   disable_plugin=""
   [[ "$CONF_INSTALL_METHOD" == "rhsm" ]] && disable_plugin='--disableplugin=rhnplugin'
