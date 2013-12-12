@@ -1440,11 +1440,6 @@ enable_services_on_broker()
   chkconfig network on
   is_false "$CONF_NO_NTP" && chkconfig ntpd on
   chkconfig sshd on
-
-  # make sure mcollective client log is created with proper ownership.
-  # if root owns it, the broker (apache user) can't log to it.
-  touch /var/log/ruby193-mcollective-client.log
-  chown apache:root /var/log/ruby193-mcollective-client.log
 }
 
 
@@ -1474,7 +1469,7 @@ topicprefix = /topic/
 main_collective = mcollective
 collectives = mcollective
 libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
-logfile = /var/log/ruby193-mcollective-client.log
+logfile = /var/log/openshift/broker/ruby193-mcollective-client.log
 loglevel = debug
 direct_addressing = 1
 
@@ -1490,6 +1485,11 @@ factsource = yaml
 plugin.yaml = /opt/rh/ruby193/root/etc/mcollective/facts.yaml
 
 EOF
+
+  # make sure mcollective client log is created with proper ownership.
+  # if root owns it, the broker (apache user) can't log to it.
+  touch /var/log/openshift/broker/ruby193-mcollective-client.log
+  chown apache:root /var/log/openshift/broker/ruby193-mcollective-client.log
 }
 
 
@@ -1501,7 +1501,7 @@ topicprefix = /topic/
 main_collective = mcollective
 collectives = mcollective
 libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
-logfile = /var/log/ruby193-mcollective.log
+logfile = /var/log/openshift/node/ruby193-mcollective.log
 loglevel = debug
 
 daemonize = 1
