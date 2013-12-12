@@ -2445,7 +2445,7 @@ set_defaults()
   # Following are some settings used in subsequent steps.
 
   # There a no defaults for these. Customers should be using
-  # subscriptions via RHN. For testing we use internal systems.
+  # subscriptions via RHN. Internally we use private systems.
   rhel_repo="${CONF_RHEL_REPO%/}"
   jboss_repo_base="${CONF_JBOSS_REPO_BASE%/}"
   rhscl_repo_base="${CONF_RHSCL_REPO_BASE%/}"
@@ -2470,8 +2470,7 @@ set_defaults()
     CONF_CDN_LAYOUT=1  # use the CDN layout for OpenShift yum repos
   fi
   rhscl_repo_base="${rhscl_repo_base:-${rhel_repo%/os}}"
-
-  # no need to waste time checking both subscription plugins when only using one
+  # no need to waste time checking both subscription plugins if using one
   disable_plugin=""
   [[ "$CONF_INSTALL_METHOD" == "rhsm" ]] && disable_plugin='--disableplugin=rhnplugin'
   [[ "$CONF_INSTALL_METHOD" == "rhn" ]] && disable_plugin='--disableplugin=subscription-manager'
