@@ -1007,11 +1007,6 @@ install_cartridges()
       carts="$carts openshift-origin-cartridge-jbosseap"
     fi
 
-    # JBossEAP support.
-    # Note: Be sure to subscribe to the JBossEAP entitlements during the
-    # base install or in configure_jbosseap_repo.
-    carts="$carts openshift-origin-cartridge-jbosseap"
-
     # Jenkins server for continuous integration.
     carts="$carts openshift-origin-cartridge-jenkins"
 
