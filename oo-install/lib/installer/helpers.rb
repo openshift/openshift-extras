@@ -97,7 +97,7 @@ module Installer
         host = Installer::HostInstance.new(
           { 'host' => `hostname`.chomp.strip,
             'ssh_host' => 'localhost',
-            'user' => `whoami`.chomp.strip,
+            'user' => 'root',
             'roles' => ['mqserver','dbserver','broker','node'],
             'status' => 'validated',
           }
