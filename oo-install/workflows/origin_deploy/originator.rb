@@ -182,7 +182,7 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
       end
       full_command = "#{htpasswd_cmds[:mkdir_openshift]} && #{htpasswd_cmds[:touch_htpasswd]}"
       if not ssh_host == 'localhost'
-        full_command = "#{@ssh_cmd} #{user}@#{host} '#{full_command}'"
+        full_command = "#{@ssh_cmd} #{user}@#{ssh_host} \"#{full_command}\""
       end
       puts "Setting up htpasswd for default user account."
       system full_command
