@@ -9,7 +9,7 @@ module Installer
     def initialize dns_config
       @app_domain = dns_config['app_domain'] || 'example.com'
       @component_domain = dns_config['component_domain']
-      @register_components = dns_config.has_key?('register_components') and dns_config['register_components'].downcase == 'y'
+      @register_components = dns_config.has_key?('register_components') && dns_config['register_components'].downcase == 'y'
     end
 
     def register_components?
