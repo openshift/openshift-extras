@@ -38,7 +38,7 @@ in the Web Console tutorial) without changing anything on the system.
 If you want to add more users, use htpasswd from a command prompt as
 shown here:
 
-    htpasswd -c /etc/openshift/htpasswd <username>
+    htpasswd /etc/openshift/htpasswd <username>
 
 You will be prompted to set a password for the new user.
 
