@@ -823,8 +823,8 @@ YUM
 
 configure_subscription()
 {
-   # install our release package to enable repo/channel configuration
-   yum_install_or_exit openshift-enterprise-release
+   # install our tool to enable repo/channel configuration
+   yum_install_or_exit openshift-enterprise-yum-validator
 
    roles=""  # we will build the list of roles we need, then enable them.
    need_infra_repo && roles="$roles --role broker"
@@ -833,6 +833,11 @@ configure_subscription()
    need_jbosseap_cartridge_repo && roles="$roles --role node-eap"
    oo-admin-yum-validator -o 1.2 --fix-all $roles # when fixing, rc is always false
    oo-admin-yum-validator -o 1.2 $roles || abort_install # so check when fixes are done
+
+   # Normally we could just install o-e-release and it would pull in yum-validator;
+   # however it turns out the ruby dependencies can sometimes be pulled in from the
+   # wrong channel before yum-validator does its work. So, install it afterward.
+   yum_install_or_exit openshift-enterprise-release
 }
 
 configure_rhn_channels()
