@@ -103,8 +103,11 @@ module Installer
 
     private
     def ui_title
-      ui_newpage
-      say translate(is_origin_vm? ? :vm_title : :title) + (version_text.nil? or version_text.empty? ? '' : " (#{version_text})")
+      title = translate(is_origin_vm? ? :vm_title : :title)
+      if not version_text.nil? and not version_text.empty?
+        title << " (#{version_text})"
+      end
+      say title
       say "#{horizontal_rule}\n\n"
     end
 
