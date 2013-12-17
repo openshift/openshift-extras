@@ -116,7 +116,7 @@
 #    Without this, each gear move will require typing root passwords
 #    for each of the node hosts involved.
 #
-# 3. Copy ssh host keys between the node hosts
+# 3. Copy ssh host keys and httpd key/cert between the node hosts
 #    All node hosts should identify as the same host, so that when gears
 #    are moved between hosts, ssh and git don't give developers spurious
 #    warnings about the host keys changing. So, copy /etc/ssh/ssh_* from
