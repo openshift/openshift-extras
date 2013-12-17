@@ -665,6 +665,18 @@ configure_quotas_on_node()
   fi
 }
 
+configure_idler_on_node()
+{
+  [[ "$CONF_IDLE_INTERVAL" =~ ^[[:digit:]]+$ ]] || return
+  cat <<CRON > /etc/cron.hourly/auto-idler
+(
+  /usr/sbin/oo-last-access
+  /usr/sbin/oo-auto-idler idle --interval $CONF_IDLE_INTERVAL
+) >> /var/log/openshift/node/auto-idler.log 2>&1
+CRON
+  chmod +x /etc/cron.hourly/auto-idler
+}
+
 # $1 = setting name
 # $2 = value
 # $3 = long comment
@@ -2282,6 +2294,7 @@ configure_openshift()
   node && configure_selinux_policy_on_node
   node && configure_sysctl_on_node
   node && configure_sshd_on_node
+  node && configure_idler_on_node
   broker && configure_controller
   broker && configure_remote_user_auth_plugin
   broker && configure_messaging_plugin
