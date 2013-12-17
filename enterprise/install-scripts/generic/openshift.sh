@@ -504,6 +504,13 @@
 # The Krb5KeyTab value of mod_auth_kerb is not configurable -- the keytab
 # is expected in /var/www/openshift/broker/httpd/conf.d/http.keytab
 
+# idle_interval / CONF_IDLE_INTERVAL
+#   Default: do not idle gears on the node
+#   Specify the number of hours after which a gear should be idled if it
+#   has not been accessed. Creates an hourly cron job to check for
+#   inactive gears and idle them.
+#CONF_IDLE_INTERVAL=240
+
 ########################################################################
 
 
@@ -1142,6 +1149,18 @@ configure_quotas_on_node()
     # (re)enable quotas
     quotaon "${geardata_mnt}"
   fi
+}
+
+configure_idler_on_node()
+{
+  [[ "$CONF_IDLE_INTERVAL" =~ ^[[:digit:]]+$ ]] || return
+  cat <<CRON > /etc/cron.hourly/auto-idler
+(
+  /usr/sbin/oo-last-access
+  /usr/sbin/oo-auto-idler idle --interval $CONF_IDLE_INTERVAL
+) >> /var/log/openshift/node/auto-idler.log 2>&1
+CRON
+  chmod +x /etc/cron.hourly/auto-idler
 }
 
 # $1 = setting name
@@ -2761,6 +2780,7 @@ configure_openshift()
   node && configure_selinux_policy_on_node
   node && configure_sysctl_on_node
   node && configure_sshd_on_node
+  node && configure_idler_on_node
   broker && configure_controller
   broker && configure_remote_user_auth_plugin
   broker && configure_messaging_plugin
