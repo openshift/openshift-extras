@@ -5,6 +5,8 @@ require 'net/ssh'
 
 SOCKET_IP_ADDR = 3
 VALID_IP_ADDR_RE = Regexp.new('^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
+@puppet_module_name = 'openshift/openshift_origin'
+@puppet_module_ver = '3.0.0'
 
 # Check ENV for an alternate config file location.
 if ENV.has_key?('OO_INSTALL_CONFIG_FILE')
@@ -36,6 +38,29 @@ def restore_env
   env_backup.each_pair do |name,value|
     ENV[name] = value
   end
+end
+
+def is_older_puppet_module(version)
+  # Knock out the easy comparison first
+  return false if version == @puppet_module_ver
+
+  target = @puppet_module_ver.split('.')
+  comp = version.split('.')
+  for i in 0..(target.length - 1)
+    if comp[i].nil? or comp[i].to_i < target[i].to_i
+      # Comp ran out of numbers before target or
+      # current comp version number is less than
+      # target version number: target is newer.
+      return true
+    elsif comp[i].to_i > target[i].to_i
+      # current comp version number is more than
+      # target version number: comp is newer.
+      return false
+    end
+  end
+  # Still here, meaning comp matches target to this point.
+  # comp may be newer, but it is not older.
+  return false
 end
 
 def components_list host_instance
@@ -277,13 +302,14 @@ host_order.each do |ssh_host|
     :keyget => "cat /var/named/K#{@puppet_map['domain']}*.key",
     :enabledns => 'systemctl enable named.service',
     :enabledns_rhel => 'service named restart',
-    :check => 'puppet module list',
-    :install => 'puppet module install openshift/openshift_origin',
+    :check => 'puppet module list --render-as yaml',
+    :install => "puppet module install -v #{@puppet_module_ver} #{@puppet_module_name}",
+    :upgrade => "puppet module upgrade --version=#{@puppet_module_ver} #{@puppet_module_name}",
     :yum_clean => 'yum clean all',
     :apply => "puppet apply --verbose /tmp/#{hostfile}",
     :clear => "rm /tmp/#{hostfile}",
   }
-  puppet_commands = [:check,:install,:apply]
+  puppet_commands = [:check,:install,:upgrade,:apply]
   # We have to prep and run :typecheck first.
   command_list = commands.keys
   if not command_list[0] == :typecheck
@@ -419,16 +445,21 @@ host_order.each do |ssh_host|
   # Good to go; step through the puppet setup now.
   @child_pids << Process.fork do
     has_openshift_module = false
+    openshift_module_needs_upgrade = false
     [:check,:install,:yum_clean,:apply,:clear].each do |action|
       if action == :clear and @keep_assets
         puts "Keeping #{hostfile}"
         next
       end
-      if action == :install and has_openshift_module
+      if action == :install and has_openshift_module and not openshift_module_needs_upgrade
         puts "Skipping module installation."
         next
       end
       command = commands[action]
+      if action == :install and openshift_module_needs_upgrade
+        puts "OpenShift Puppet module will be upgraded to version #{@puppet_module_ver}."
+        command = commands[:upgrade]
+      end
       puts "\nRunning \"#{command}\"..."
       if ssh_host == 'localhost'
         clear_env
@@ -443,8 +474,18 @@ host_order.each do |ssh_host|
         # Note errors here but don't break; Puppet throws ignorable errors right now and we need to figure out how to deal with them
         saw_deployment_error = true
       end
-      if action == :check and output.match('openshift')
-        has_openshift_module = true
+      if action == :check
+        # The gsub prevents ruby from trying to turn these back into Puppet::Module objects
+        puppet_info = YAML::load(output.gsub(/\!ruby\/object:/, 'ruby_object: '))
+        puppet_info.keys.each do |puppet_dir|
+          puppet_info[puppet_dir].each do |puppet_module|
+            next if not puppet_module['forge_name'] == @puppet_module_name
+            has_openshift_module = true
+            if is_older_puppet_module(puppet_module['version'])
+              openshift_module_needs_upgrade = true
+            end
+          end
+        end
       end
     end
     if saw_deployment_error
