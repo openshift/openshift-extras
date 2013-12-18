@@ -40,7 +40,7 @@ def add_haproxy(appname, namespace, ip, port)
   scope = "#{appname}-#{namespace}"
   file = File.join(CONF_DIR, "#{scope}.conf")
   if File.exist?(file)
-    `sed -i 's/upstream #{scope} {/&\\n      server #{ip}:#{port}' #{file}`
+    `sed -i 's/upstream #{scope} {/&\\n      server #{ip}:#{port};/' #{file}`
   else
     # write a new one
     template = <<-EOF
