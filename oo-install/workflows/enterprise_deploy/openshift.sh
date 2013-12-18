@@ -116,12 +116,16 @@
 #    Without this, each gear move will require typing root passwords
 #    for each of the node hosts involved.
 #
-# 3. Copy ssh host keys between the node hosts
+# 3. Copy ssh host keys and httpd key/cert between the node hosts
 #    All node hosts should identify as the same host, so that when gears
 #    are moved between hosts, ssh and git don't give developers spurious
 #    warnings about the host keys changing. So, copy /etc/ssh/ssh_* from
 #    one node host to all the rest (or, if using the same image for all
-#    hosts, just keep the keys from the image).
+#    hosts, just keep the keys from the image). Similarly, https access
+#    to moved gears will prompt errors if the certificate is not
+#    identical across nodes, so copy /etc/pki/tls/private/localhost.key
+#    and /etc/pki/tls/certs/localhost.crt (which are re-created by the
+#    installation) to be the same across all nodes.
 
 
 # PARAMETER DESCRIPTIONS
@@ -500,6 +504,13 @@
 # The Krb5KeyTab value of mod_auth_kerb is not configurable -- the keytab
 # is expected in /var/www/openshift/broker/httpd/conf.d/http.keytab
 
+# idle_interval / CONF_IDLE_INTERVAL
+#   Default: do not idle gears on the node
+#   Specify the number of hours after which a gear should be idled if it
+#   has not been accessed. Creates an hourly cron job to check for
+#   inactive gears and idle them.
+#CONF_IDLE_INTERVAL=240
+
 ########################################################################
 
 
@@ -752,8 +763,8 @@ YUM
 
 configure_subscription()
 {
-   # install our release package to enable repo/channel configuration
-   yum_install_or_exit openshift-enterprise-release
+   # install our tool to enable repo/channel configuration
+   yum_install_or_exit openshift-enterprise-yum-validator
 
    roles=""  # we will build the list of roles we need, then enable them.
    need_infra_repo && roles="$roles --role broker"
@@ -762,6 +773,11 @@ configure_subscription()
    need_jbosseap_cartridge_repo && roles="$roles --role node-eap"
    oo-admin-yum-validator -o 2.0 --fix-all $roles # when fixing, rc is always false
    oo-admin-yum-validator -o 2.0 $roles || abort_install # so check when fixes are done
+
+   # Normally we could just install o-e-release and it would pull in yum-validator;
+   # however it turns out the ruby dependencies can sometimes be pulled in from the
+   # wrong channel before yum-validator does its work. So, install it afterward.
+   yum_install_or_exit openshift-enterprise-release
 }
 
 configure_rhn_channels()
@@ -1135,6 +1151,18 @@ configure_quotas_on_node()
   fi
 }
 
+configure_idler_on_node()
+{
+  [[ "$CONF_IDLE_INTERVAL" =~ ^[[:digit:]]+$ ]] || return
+  cat <<CRON > /etc/cron.hourly/auto-idler
+(
+  /usr/sbin/oo-last-access
+  /usr/sbin/oo-auto-idler idle --interval $CONF_IDLE_INTERVAL
+) >> /var/log/openshift/node/auto-idler.log 2>&1
+CRON
+  chmod +x /etc/cron.hourly/auto-idler
+}
+
 # $1 = setting name
 # $2 = value
 # $3 = long comment
@@ -1391,11 +1419,6 @@ enable_services_on_broker()
   chkconfig network on
   is_false "$CONF_NO_NTP" && chkconfig ntpd on
   chkconfig sshd on
-
-  # make sure mcollective client log is created with proper ownership.
-  # if root owns it, the broker (apache user) can't log to it.
-  touch /var/log/ruby193-mcollective-client.log
-  chown apache:root /var/log/ruby193-mcollective-client.log
 }
 
 
@@ -1425,7 +1448,7 @@ topicprefix = /topic/
 main_collective = mcollective
 collectives = mcollective
 libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
-logfile = /var/log/ruby193-mcollective-client.log
+logfile = /var/log/openshift/broker/ruby193-mcollective-client.log
 loglevel = debug
 direct_addressing = 1
 
@@ -1441,6 +1464,11 @@ factsource = yaml
 plugin.yaml = /opt/rh/ruby193/root/etc/mcollective/facts.yaml
 
 EOF
+
+  # make sure mcollective client log is created with proper ownership.
+  # if root owns it, the broker (apache user) can't log to it.
+  touch /var/log/openshift/broker/ruby193-mcollective-client.log
+  chown apache:root /var/log/openshift/broker/ruby193-mcollective-client.log
 }
 
 
@@ -1452,7 +1480,7 @@ topicprefix = /topic/
 main_collective = mcollective
 collectives = mcollective
 libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
-logfile = /var/log/ruby193-mcollective.log
+logfile = /var/log/openshift/node/ruby193-mcollective.log
 loglevel = debug
 
 daemonize = 1
@@ -2444,13 +2472,14 @@ set_defaults()
 
   # There a no defaults for these. Customers should be using
   # subscriptions via RHN. Internally we use private systems.
-  rhel_repo="$CONF_RHEL_REPO"
-  jboss_repo_base="$CONF_JBOSS_REPO_BASE"
-  rhscl_repo_base="$CONF_RHSCL_REPO_BASE"
-  rhel_optional_repo="$CONF_RHEL_OPTIONAL_REPO"
+  rhel_repo="${CONF_RHEL_REPO%/}"
+  jboss_repo_base="${CONF_JBOSS_REPO_BASE%/}"
+  rhscl_repo_base="${CONF_RHSCL_REPO_BASE%/}"
+  rhel_optional_repo="${CONF_RHEL_OPTIONAL_REPO%/}"
   # Where to find the OpenShift repositories; just the base part before
   # splitting out into Infrastructure/Node/etc.
   ose_repo_base="${CONF_OSE_REPO_BASE:-$CONF_REPOS_BASE}"
+  ose_repo_base="${ose_repo_base%/}"
 
   # Use CDN layout as the default for all yum repos if this is set.
   cdn_repo_base="${CONF_CDN_REPO_BASE%/}"
@@ -2460,12 +2489,13 @@ set_defaults()
     rhscl_repo_base="${rhscl_repo_base:-$cdn_repo_base}"
     rhel_optional_repo="${rhel_optional_repo:-$cdn_repo_base/optional/os}"
     ose_repo_base="${ose_repo_base:-$cdn_repo_base}"
-    if [ "${cdn_repo_base%/}" == "${ose_repo_base%/}" ]; then # same repo layout
+    if [ "${cdn_repo_base}" == "${ose_repo_base}" ]; then # same repo layout
       CONF_CDN_LAYOUT=1  # use the CDN layout for OpenShift yum repos
     fi
-  elif [ "${rhel_repo%/}" == "${ose_repo_base%/}/os" ]; then # OSE same repo base as RHEL?
+  elif [ "${rhel_repo}" == "${ose_repo_base}/os" ]; then # OSE same repo base as RHEL?
     CONF_CDN_LAYOUT=1  # use the CDN layout for OpenShift yum repos
   fi
+  rhscl_repo_base="${rhscl_repo_base:-${rhel_repo%/os}}"
   # no need to waste time checking both subscription plugins if using one
   disable_plugin=""
   [[ "$CONF_INSTALL_METHOD" == "rhsm" ]] && disable_plugin='--disableplugin=rhnplugin'
@@ -2750,6 +2780,7 @@ configure_openshift()
   node && configure_selinux_policy_on_node
   node && configure_sysctl_on_node
   node && configure_sshd_on_node
+  node && configure_idler_on_node
   broker && configure_controller
   broker && configure_remote_user_auth_plugin
   broker && configure_messaging_plugin
