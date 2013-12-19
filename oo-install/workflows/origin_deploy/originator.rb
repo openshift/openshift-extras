@@ -6,7 +6,7 @@ require 'net/ssh'
 SOCKET_IP_ADDR = 3
 VALID_IP_ADDR_RE = Regexp.new('^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
 @puppet_module_name = 'openshift/openshift_origin'
-@puppet_module_ver = '3.0.0'
+@puppet_module_ver = '3.0.1'
 
 # Check ENV for an alternate config file location.
 if ENV.has_key?('OO_INSTALL_CONFIG_FILE')
