@@ -883,20 +883,21 @@ configure_datastore()
     chmod -v 400 /etc/mongodb.keyfile
   fi
 
-  # Iff mongod is running on a separate host from the broker, open up
-  # the firewall to allow the broker host to connect.
-  if broker
+  # If mongod is running on a separate host from the broker OR
+  # we are configuring a replica set, open up the firewall to allow
+  # other broker or datastore hosts to connect.
+  if broker && ! [[ ${datastore_replicants} =~ , ]]
   then
     echo 'The broker and data store are on the same host.'
     echo 'Skipping firewall and mongod configuration;'
-    echo 'mongod will only be accessible over localhost).'
+    echo 'mongod will only be accessible over localhost.'
   else
-    echo 'The broker and data store are on separate hosts.'
+    echo 'The data store needs to be accessible externally.'
 
     echo 'Configuring the firewall to allow connections to mongod...'
     $lokkit --port=27017:tcp
 
-    echo 'Configuring mongod to listen on external interfaces...'
+    echo 'Configuring mongod to listen on all interfaces...'
     sed -i -e "s/^bind_ip = .*$/bind_ip = 0.0.0.0/" /etc/mongodb.conf
   fi
 
