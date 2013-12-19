@@ -43,7 +43,11 @@ If you run into problems with step #2, you may be using the VM in an
 environment where mDNS won't work. Try using an IP address instead
 of the hostname:
 
-    rhc_setup --server ${ip_addrs} -l <username>
+    rhc_setup --server <IP address> -l <username>
+
+This VM has the following IP address(es):
+
+${ip_addrs}
 
 Again, the default user / password combo is demo / changeme
 
