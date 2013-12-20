@@ -2028,9 +2028,9 @@ configure_controller()
     echo "SESSION_SECRET=${console_session_secret}" >> /etc/openshift/console.conf
   fi
 
-  if ! datastore
+  if [[ ${datastore_replicants} =~ , ]] || ! datastore
   then
-    #mongo not installed locally, so point to given hostname
+    #mongo installed remotely or replicated, so configure with given hostname(s)
     sed -i -e "s/^MONGO_HOST_PORT=.*$/MONGO_HOST_PORT=\"${datastore_replicants}\"/" /etc/openshift/broker.conf
   fi
 
