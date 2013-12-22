@@ -1099,18 +1099,10 @@ configure_activemq()
     <!--
         The <broker> element is used to configure the ActiveMQ broker.
     -->
-    <broker xmlns="http://activemq.apache.org/schema/core" brokerName="${activemq_hostname}" dataDirectory="\${activemq.data}">
-
-        <!--
-            For better performances use VM cursor and small memory limit.
-            For more information, see:
-
-            http://activemq.apache.org/message-cursors.html
-
-            Also, if your producer is "hanging", it's probably due to producer flow control.
-            For more information, see:
-            http://activemq.apache.org/producer-flow-control.html
-        -->
+    <broker xmlns="http://activemq.apache.org/schema/core"
+            brokerName="${activemq_hostname}"
+            dataDirectory="\${activemq.data}"
+            schedulePeriodForDestinationPurge="60000">
 
         <destinationPolicy>
             <policyMap>
