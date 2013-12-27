@@ -389,7 +389,7 @@ install_broker_pkgs()
   pkgs="$pkgs rubygem-openshift-origin-dns-nsupdate"
   pkgs="$pkgs openshift-origin-console"
   pkgs="$pkgs rubygem-openshift-origin-admin-console"
-
+  is_true "$CONF_ROUTING_PLUGIN" && pkgs="$pkgs rubygem-openshift-origin-routing-activemq"
 
   yum_install_or_exit $pkgs
 }
@@ -1165,6 +1165,10 @@ $networkConnectors
                <authenticationUser username="${mcollective_user}" password="${mcollective_password}" groups="mcollective,everyone"/>
                ${authenticationUser_amq}
                <authenticationUser username="admin" password="${activemq_admin_password}" groups="mcollective,admin,everyone"/>
+               $( if is_true "$CONF_ROUTING_PLUGIN"; then
+                    echo "<authenticationUser username=\"$routing_plugin_user\" password=\"$routing_plugin_pass\" groups=\"routinginfo,everyone\"/>"
+                  fi
+               )
              </users>
           </simpleAuthenticationPlugin>
           <authorizationPlugin>
@@ -1176,6 +1180,11 @@ $networkConnectors
                   <authorizationEntry topic="mcollective.>" write="mcollective" read="mcollective" admin="mcollective" />
                   <authorizationEntry queue="mcollective.>" write="mcollective" read="mcollective" admin="mcollective" />
                   <authorizationEntry topic="ActiveMQ.Advisory.>" read="everyone" write="everyone" admin="everyone"/>
+                  $( if is_true "$CONF_ROUTING_PLUGIN"; then
+                       echo '<authorizationEntry topic="routinginfo.>" write="routinginfo" read="routinginfo" admin="routinginfo" />'
+                       echo '<authorizationEntry queue="routinginfo.>" write="routinginfo" read="routinginfo" admin="routinginfo" />'
+                     fi
+                  )
                 </authorizationEntries>
               </authorizationMap>
             </map>
@@ -1634,6 +1643,21 @@ configure_httpd_auth()
   # TODO: In the future, we will want to edit
   # /etc/openshift/plugins.d/openshift-origin-auth-remote-user.conf to
   # put in a random salt.
+}
+
+configure_routing_plugin()
+{
+  if is_true "$CONF_ROUTING_PLUGIN"; then
+    conffile=/etc/openshift/plugins.d/openshift-origin-routing-activemq.conf
+    sed -e '/^ACTIVEMQ_\(USERNAME\|PASSWORD\|HOST\)/ d' $conffile.example > $conffile
+    routinghost="${activemq_replicants%%,*}" # use the first by default
+    for host in ${activemq_replicants//,/ } ; do # use self if appropriate
+      [[ "$host" == "$activemq_hostname" ]] && routinghost="$host"
+    done
+    echo "ACTIVEMQ_HOST='$routinghost'" >> $conffile
+    echo "ACTIVEMQ_USERNAME='$routing_plugin_user'" >> $conffile
+    echo "ACTIVEMQ_PASSWORD='$routing_plugin_pass'" >> $conffile
+  fi
 }
 
 # if the broker and node are on the same machine we need to manually update the
@@ -2164,6 +2188,10 @@ set_defaults()
   #   installation (or just use a different auth method).
   broker && openshift_user1="${CONF_OPENSHIFT_USER1:-demo}"
   broker && openshift_password1="${CONF_OPENSHIFT_PASSWORD1:-changeme}"
+
+  # auth info for the topic from the sample routing SPI plugin
+  routing_plugin_user="${CONF_ROUTING_PLUGIN_USER:-routinginfo}"
+  routing_plugin_pass="${CONF_ROUTING_PLUGIN_PASS:-routinginfopassword}"
 }
 
 
@@ -2293,6 +2321,7 @@ configure_openshift()
   broker && configure_messaging_plugin
   broker && configure_dns_plugin
   broker && configure_httpd_auth
+  broker && configure_routing_plugin
   broker && configure_broker_ssl_cert
   broker && configure_access_keys_on_broker
   broker && configure_rhc
