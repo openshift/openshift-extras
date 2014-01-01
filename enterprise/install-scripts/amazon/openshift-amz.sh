@@ -182,11 +182,11 @@ fi
 
 ose_yum_repo_url()
 {
-    channel=$1 #one of: Client,Infrastructure,Node,JBoss_EAP6_Cartridge
+    channel=$1 #one of: RHOSE-CLIENT-1.2,RHOSE-INFRA-1.2,RHOSE-NODE-1.2,RHOSE-JBOSSEAP-1.2
     if is_true "$CONF_CDN_LAYOUT"
     then # use the release CDN layout for OSE URLs
       declare -A map
-      map=([Client]=ose-rhc [Infrastructure]=ose-infra [Node]=ose-node [JBoss_EAP6_Cartridge]=ose-jbosseap)
+      map=([RHOSE-CLIENT-1.2]=ose-rhc [RHOSE-INFRA-1.2]=ose-infra [RHOSE-NODE-1.2]=ose-node [RHOSE-JBOSSEAP-1.2]=ose-jbosseap)
       echo "$ose_repo_base/${map[$channel]}/1.2/os"
     else # use the nightly puddle URLs
       echo "$ose_repo_base/$channel/x86_64/os/"
@@ -199,7 +199,7 @@ configure_client_tools_repo()
   cat > /etc/yum.repos.d/openshift-client.repo <<YUM
 [openshift_client]
 name=OpenShift Client
-baseurl=$(ose_yum_repo_url Client)
+baseurl=$(ose_yum_repo_url RHOSE-CLIENT-1.2)
 enabled=1
 gpgcheck=0
 sslverify=false
@@ -215,7 +215,7 @@ configure_infra_repo()
   cat > /etc/yum.repos.d/openshift-infrastructure.repo <<YUM
 [openshift_infrastructure]
 name=OpenShift Infrastructure
-baseurl=$(ose_yum_repo_url Infrastructure)
+baseurl=$(ose_yum_repo_url RHOSE-INFRA-1.2)
 enabled=1
 gpgcheck=0
 sslverify=false
@@ -231,7 +231,7 @@ configure_node_repo()
   cat > /etc/yum.repos.d/openshift-node.repo <<YUM
 [openshift_node]
 name=OpenShift Node
-baseurl=$(ose_yum_repo_url Node)
+baseurl=$(ose_yum_repo_url RHOSE-NODE-1.2)
 enabled=1
 gpgcheck=0
 sslverify=false
@@ -247,7 +247,7 @@ configure_jbosseap_cartridge_repo()
   cat > /etc/yum.repos.d/openshift-jboss.repo <<YUM
 [openshift_jbosseap]
 name=OpenShift JBossEAP
-baseurl=$(ose_yum_repo_url JBoss_EAP6_Cartridge)
+baseurl=$(ose_yum_repo_url RHOSE-JBOSSEAP-1.2)
 enabled=1
 gpgcheck=0
 sslverify=false
