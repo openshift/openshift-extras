@@ -42,7 +42,7 @@ configure_repos()
   # functions.
 
   # Make need_${repo}_repo return false by default.
-  for repo in optional infra node jbosseap_cartridge client_tools jbosseap jbossews
+  for repo in optional infra node jbosseap_cartridge client_tools jbosseap jbossews rhscl
   do
       eval "need_${repo}_repo() { false; }"
   done
@@ -66,12 +66,16 @@ configure_repos()
   then
     # We install the rhc client tool on the broker host.
     need_client_tools_repo() { :; }
+    # The rhscl channel is needed for the ruby193 software collection.
+    need_rhscl_repo() { :; }
   fi
 
   if node
   then
     # The ose-node channel has node packages including all the cartridges.
     need_node_repo() { :; }
+    # The rhscl channel is needed for several cartridge platforms.
+    need_rhscl_repo() { :; }
 
     if is_false "${CONF_NO_JBOSSEAP}"; then
       need_jbosseap_cartridge_repo() { :; }
@@ -114,7 +118,7 @@ configure_yum_repos()
 {
 #  configure_rhel_repo
 
-  for repo in optional infra node jbosseap_cartridge jbosseap jbossews client_tools;
+  for repo in optional infra node jbosseap_cartridge jbosseap jbossews client_tools rhscl;
   do eval "need_${repo}_repo && configure_${repo}_repo"
   done
 }
@@ -152,6 +156,24 @@ enabled=1
 gpgcheck=0
 sslverify=false
 priority=2
+sslverify=false
+
+YUM
+fi
+}
+
+configure_rhscl_repo()
+{
+  # RHSCL channel provides the updates now instead of OSE shipping SCL pkgs
+if [ "${rhel_repo}x" != "x" ]; then
+  cat > /etc/yum.repos.d/rhscl.repo <<YUM
+[rhscl]
+name=RHEL 6 SCL
+baseurl=${rhscl_repo_base}/rhscl/1/os/
+enabled=1
+gpgcheck=0
+sslverify=false
+priority=1
 sslverify=false
 
 YUM
@@ -307,11 +329,12 @@ configure_rhn_channels()
     set -x
   fi
 
-  # OSE packages are first priority
+  # OSE and RHSCL packages are first priority
   need_client_tools_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-rhc priority=1
   need_infra_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-infrastructure priority=1
   need_node_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-node priority=1
   need_jbosseap_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-jbosseap priority=1
+  need_rhscl_repo && rhn_setopt rhel-x86_64-server-6-rhscl-1 priority=1
 
   # RHEL packages are second priority
   rhn_setopt rhel-x86_64-server-6 priority=2 "exclude=tomcat6*"
@@ -372,6 +395,8 @@ configure_rhsm_channels()
    need_client_tools_repo && ycm_setopt rhel-server-ose-1.2-rhc-6-rpms priority=1
    need_node_repo && ycm_setopt rhel-server-ose-1.2-node-6-rpms priority=1
    need_jbosseap_cartridge_repo && ycm_setopt rhel-server-ose-1.2-jbosseap-6-rpms priority=1
+   # and RHSCL subscription
+   need_rhscl_repo && ycm_setopt rhel-server-rhscl-6-rpms priority=1
 
    # and JBoss subscriptions for the node
    if need_jbosseap_repo; then
@@ -2003,28 +2028,33 @@ set_defaults()
   # Following are some settings used in subsequent steps.
 
   # There a no defaults for these. Customers should be using
-  # subscriptions via RHN. Internally we use private systems.
-  rhel_repo="$CONF_RHEL_REPO"
-  jboss_repo_base="$CONF_JBOSS_REPO_BASE"
-  rhel_optional_repo="$CONF_RHEL_OPTIONAL_REPO"
+  # subscriptions via RHN. For testing we use internal systems.
+  rhel_repo="${CONF_RHEL_REPO%/}"
+  jboss_repo_base="${CONF_JBOSS_REPO_BASE%/}"
+  rhscl_repo_base="${CONF_RHSCL_REPO_BASE%/}"
+  rhel_optional_repo="${CONF_RHEL_OPTIONAL_REPO%/}"
   # Where to find the OpenShift repositories; just the base part before
   # splitting out into Infrastructure/Node/etc.
   ose_repo_base="${CONF_OSE_REPO_BASE:-$CONF_REPOS_BASE}"
+  ose_repo_base="${ose_repo_base%/}"
 
   # Use CDN layout as the default for all yum repos if this is set.
   cdn_repo_base="${CONF_CDN_REPO_BASE%/}"
   if [ "x$cdn_repo_base" != "x" ]; then
     rhel_repo="${rhel_repo:-$cdn_repo_base/os}"
     jboss_repo_base="${jboss_repo_base:-$cdn_repo_base}"
+    rhscl_repo_base="${rhscl_repo_base:-$cdn_repo_base}"
     rhel_optional_repo="${rhel_optional_repo:-$cdn_repo_base/optional/os}"
     ose_repo_base="${ose_repo_base:-$cdn_repo_base}"
-    if [ "${cdn_repo_base%/}" == "${ose_repo_base%/}" ]; then # same repo layout
+    if [ "${cdn_repo_base}" == "${ose_repo_base}" ]; then # same repo layout
       CONF_CDN_LAYOUT=1  # use the CDN layout for OpenShift yum repos
     fi
-  elif [ "${rhel_repo%/}" == "${ose_repo_base%/}/os" ]; then # OSE same repo base as RHEL?
+  elif [ "${rhel_repo}" == "${ose_repo_base}/os" ]; then # OSE same repo base as RHEL?
     CONF_CDN_LAYOUT=1  # use the CDN layout for OpenShift yum repos
   fi
-  # no need to waste time checking both subscription plugins if using one
+  rhscl_repo_base="${rhscl_repo_base:-${rhel_repo%/os}}"
+
+  # no need to waste time checking both subscription plugins when only using one
   disable_plugin=""
   [[ "$CONF_INSTALL_METHOD" == "rhsm" ]] && disable_plugin='--disableplugin=rhnplugin'
   [[ "$CONF_INSTALL_METHOD" == "rhn" ]] && disable_plugin='--disableplugin=subscription-manager'
