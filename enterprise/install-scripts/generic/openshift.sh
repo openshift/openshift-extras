@@ -170,11 +170,12 @@
 #   Choose from the following ways to provide packages:
 #     none - install sources are already set up when the script executes (DEFAULT)
 #     yum - set up yum repos based on config
-#       ose_repo_base / CONF_OSE_REPO_BASE -- see below
 #       rhel_repo / CONF_RHEL_REPO -- see below
+#       rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO -- see below
 #       jboss_repo_base / CONF_JBOSS_REPO_BASE -- see below
 #       rhscl_repo_base / CONF_RHSCL_REPO_BASE -- see below
-#       rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO -- see below
+#       ose_repo_base / CONF_OSE_REPO_BASE -- see below
+#       ose_extra_repo_base / CONF_OSE_EXTRA_REPO_BASE -- see below
 #     rhsm - use subscription-manager
 #       rhn_user / CONF_RHN_USER
 #       rhn_pass / CONF_RHN_PASS
@@ -246,14 +247,14 @@
 
 # cdn_repo_base / CONF_CDN_REPO_BASE
 #   Default base URL for all repositories used for the "yum" install method (see above).
-#CONF_CDN_REPO_BASE=http://.../6Server/x86_64
+#CONF_CDN_REPO_BASE=https://.../6Server/x86_64
 
 # ose_repo_base / CONF_OSE_REPO_BASE
-#   The base URL for the OpenShift repositories used for the "yum"
-#   install method - the part before Infrastructure/Node/etc.
+#   If defined, will define yum repos under the yum,rhsm,rhn install methods.
+#   The base URL for the OpenShift yum repositories - the part before RHOSE-*
 #   Note that if this is the same as CONF_CDN_REPO_BASE, then the
 #   CDN format will be used instead, e.g. x86_64/ose-node/1.2/os
-#CONF_OSE_REPO_BASE="https://mirror.openshift.com/pub/origin-server/nightly/enterprise/<latest>"
+#CONF_OSE_REPO_BASE="https://.../6Server/x86_64"
 
 # rhel_repo / CONF_RHEL_REPO
 #   The URL for a RHEL 6 yum repository used with the "yum" install method.
@@ -271,6 +272,12 @@
 # rhscl_repo_base / CONF_RHSCL_REPO_BASE
 #   The base URL for the SCL repositories used with the "yum"
 #   install method - the part before rhscl - ends in /6Server/x86_64
+
+# ose_extra_repo_base / CONF_OSE_EXTRA_REPO_BASE -- see below
+#   If defined, will define yum repos under the yum,rhsm,rhn install methods.
+#   These parallel the regular OSE channels/repos at the same priority and use
+#   the same (non-CDN) layout as ose_repo_base. These are intended to supply RPMs
+#   that augment or update the contents of the normal channels/repos.
 
 # # # # # # # # # # # domains, DNS, hostnames, and IPs # # # # # # # # # # # # # # # # #
 #
@@ -602,16 +609,31 @@ configure_yum_repos()
 {
   configure_rhel_repo
 
-  for repo in optional infra node jbosseap_cartridge jbosseap jbossews client_tools rhscl;
-  do eval "need_${repo}_repo && configure_${repo}_repo"
+  for repo in optional jbosseap jbossews rhscl; do
+    eval "need_${repo}_repo && configure_${repo}_repo"
   done
+  configure_ose_yum_repos
   yum clean metadata
   yum_install_or_exit openshift-enterprise-release
 }
 
+configure_ose_yum_repos()
+{ # define plain yum repos if the parameters are given
+  # this can be useful even if the main subscription is via RHN
+  for repo in infra node jbosseap_cartridge client_tools; do
+    if [ "$ose_repo_base" != "" ]; then
+      layout=puddle; [ -n "$CONF_CDN_LAYOUT" ] && layout=cdn
+      eval "need_${repo}_repo && def_ose_yum_repo $ose_repo_base $layout $repo"
+    fi
+    if [ "$ose_extra_repo_base" != "" ]; then
+      eval "need_${repo}_repo && def_ose_yum_repo $ose_extra_repo_base extra $repo"
+    fi
+  done
+}
+
 configure_rhel_repo()
 {
-  # In order for the %post section to succeed, it must have a way of 
+  # In order for the %post section to succeed, it must have a way of
   # installing from RHEL. The post section cannot access the method that
   # was used in the base install. This configures a RHEL yum repo which
   # you must supply.
@@ -622,7 +644,7 @@ name=RHEL 6 base OS
 baseurl=${rhel_repo}
 enabled=1
 gpgcheck=0
-priority=2
+priority=20
 sslverify=false
 exclude=tomcat6*
 
@@ -639,98 +661,37 @@ name=RHEL 6 Optional
 baseurl=${rhel_optional_repo}
 enabled=1
 gpgcheck=0
-priority=2
+priority=20
 sslverify=false
 
 YUM
 fi
 }
 
-configure_rhscl_repo()
+def_ose_yum_repo()
 {
-  # RHSCL channel provides the updates now instead of OSE shipping SCL pkgs
-if [ "${rhel_repo}x" != "x" ]; then
-  cat > /etc/yum.repos.d/rhscl.repo <<YUM
-[rhscl]
-name=RHEL 6 SCL
-baseurl=${rhscl_repo_base}/rhscl/1/os/
+  repo_base=$1
+  layout=$2  # one of: puddle, extra, cdn
+  channel=$3 # one of: client_tools, infra, node, jbosseap_cartridge
+
+  declare -A map
+  case $layout in
+  puddle | extra)
+    map=([client_tools]=RHOSE-CLIENT-1.2 [infra]=RHOSE-INFRA-1.2 [node]=RHOSE-NODE-1.2 [jbosseap_cartridge]=RHOSE-JBOSSEAP-1.2)
+    url="$repo_base/${map[$channel]}/x86_64/os/"
+    ;;
+  cdn | * )
+    map=([client_tools]=ose-rhc [infra]=ose-infra [node]=ose-node [jbosseap_cartridge]=ose-jbosseap)
+    url="$repo_base/${map[$channel]}/1.2/os"
+    ;;
+  esac
+  cat > "/etc/yum.repos.d/openshift-${channel}-${layout}.repo" <<YUM
+[openshift_${channel}_${layout}]
+name=OpenShift $channel $layout
+baseurl=$url
 enabled=1
 gpgcheck=0
-priority=1
-sslverify=false
-
-YUM
-fi
-}
-
-ose_yum_repo_url()
-{
-    channel=$1 #one of: RHOSE-CLIENT-1.2,RHOSE-INFRA-1.2,RHOSE-NODE-1.2,RHOSE-JBOSSEAP-1.2
-    if is_true "$CONF_CDN_LAYOUT"
-    then # use the release CDN layout for OSE URLs
-      declare -A map
-      map=([RHOSE-CLIENT-1.2]=ose-rhc [RHOSE-INFRA-1.2]=ose-infra [RHOSE-NODE-1.2]=ose-node [RHOSE-JBOSSEAP-1.2]=ose-jbosseap)
-      echo "$ose_repo_base/${map[$channel]}/1.2/os"
-    else # use the nightly puddle URLs
-      echo "$ose_repo_base/$channel/x86_64/os/"
-    fi
-}
-
-configure_client_tools_repo()
-{
-  # Enable repo with the puddle for broker packages.
-  cat > /etc/yum.repos.d/openshift-client.repo <<YUM
-[openshift_client]
-name=OpenShift Client
-baseurl=$(ose_yum_repo_url RHOSE-CLIENT-1.2)
-enabled=1
-gpgcheck=0
-priority=1
-sslverify=false
-
-YUM
-}
-
-configure_infra_repo()
-{
-  # Enable repo with the puddle for broker packages.
-  cat > /etc/yum.repos.d/openshift-infrastructure.repo <<YUM
-[openshift_infrastructure]
-name=OpenShift Infrastructure
-baseurl=$(ose_yum_repo_url RHOSE-INFRA-1.2)
-enabled=1
-gpgcheck=0
-priority=1
-sslverify=false
-
-YUM
-}
-
-configure_node_repo()
-{
-  # Enable repo with the puddle for node packages.
-  cat > /etc/yum.repos.d/openshift-node.repo <<YUM
-[openshift_node]
-name=OpenShift Node
-baseurl=$(ose_yum_repo_url RHOSE-NODE-1.2)
-enabled=1
-gpgcheck=0
-priority=1
-sslverify=false
-
-YUM
-}
-
-configure_jbosseap_cartridge_repo()
-{
-  # Enable repo with the puddle for the JBossEAP cartridge package.
-  cat > /etc/yum.repos.d/openshift-jboss.repo <<YUM
-[openshift_jbosseap]
-name=OpenShift JBossEAP
-baseurl=$(ose_yum_repo_url RHOSE-JBOSSEAP-1.2)
-enabled=1
-gpgcheck=0
-priority=1
+priority=10
 sslverify=false
 
 YUM
@@ -740,15 +701,13 @@ configure_jbosseap_repo()
 {
   # The JBossEAP cartridge depends on Red Hat's JBoss packages.
 
-  if [ "x${jboss_repo_base}" != "x" ]
-  then
-  ## configure JBossEAP repo
+  if [ "x${jboss_repo_base}" != "x" ]; then
     cat <<YUM > /etc/yum.repos.d/jbosseap.repo
 [jbosseap]
 name=jbosseap
 baseurl=${jboss_repo_base}/jbeap/6/os
 enabled=1
-priority=3
+priority=30
 gpgcheck=0
 
 YUM
@@ -759,15 +718,29 @@ YUM
 configure_jbossews_repo()
 {
   # The JBossEWS cartridge depends on Red Hat's JBoss packages.
-  if [ "x${jboss_repo_base}" != "x" ]
-  then
-  ## configure JBossEWS repo
+  if [ "x${jboss_repo_base}" != "x" ]; then
     cat <<YUM > /etc/yum.repos.d/jbossews.repo
 [jbossews]
 name=jbossews
 baseurl=${jboss_repo_base}/jbews/2/os
 enabled=1
-priority=3
+priority=30
+gpgcheck=0
+
+YUM
+
+  fi
+}
+
+configure_rhscl_repo()
+{
+  if [ "x${rhscl_repo_base}" != "x" ]; then
+    cat <<YUM > /etc/yum.repos.d/rhscl.repo
+[rhscl]
+name=rhscl
+baseurl=${rhscl_repo_base}/rhscl/1/os/
+enabled=1
+priority=30
 gpgcheck=0
 
 YUM
@@ -777,6 +750,7 @@ YUM
 
 configure_subscription()
 {
+   configure_ose_yum_repos # if requested
    # install our tool to enable repo/channel configuration
    yum_install_or_exit openshift-enterprise-yum-validator
 
@@ -792,6 +766,7 @@ configure_subscription()
    # however it turns out the ruby dependencies can sometimes be pulled in from the
    # wrong channel before yum-validator does its work. So, install it afterward.
    yum_install_or_exit openshift-enterprise-release
+   configure_ose_yum_repos # refresh if overwritten by validator
 }
 
 configure_rhn_channels()
@@ -836,8 +811,8 @@ configure_rhsm_channels()
   done
 
   # Enable the node or infrastructure repo to enable installing the release RPM
-  if need_node_repo; then subscription-manager repos --enable=rhel-6-server-ose-1.2-node-rpms || abort_install
-  else subscription-manager repos --enable=rhel-6-server-ose-1.2-infra-rpms || abort_install
+  if need_node_repo; then subscription-manager repos --enable=rhel-server-ose-1.2-node-6-rpms || abort_install
+  else subscription-manager repos --enable=rhel-server-ose-1.2-infra-6-rpms || abort_install
   fi
   configure_subscription
 }
@@ -2388,6 +2363,7 @@ is_false()
 #   nameservers
 #   node_hostname
 #   ose_repo_base
+#   ose_extra_repo_base
 #
 # This function makes use of variables that may be set by parse_kernel_cmdline
 # based on the content of /proc/cmdline or may be hardcoded by modifying
@@ -2410,7 +2386,8 @@ is_false()
 #   CONF_NODE_HOSTNAME
 #   CONF_NODE_IP_ADDR
 #   CONF_NODE_V1_ENABLE
-#   CONF_REPOS_BASE
+#   CONF_OSE_REPO_BASE
+#   CONF_OSE_ERRATA_BASE
 set_defaults()
 {
   # By default, we run do_all_actions, which performs all the steps of
@@ -2477,6 +2454,7 @@ set_defaults()
   elif [ "${rhel_repo}" == "${ose_repo_base}/os" ]; then # OSE same repo base as RHEL?
     CONF_CDN_LAYOUT=1  # use the CDN layout for OpenShift yum repos
   fi
+  ose_extra_repo_base="${CONF_OSE_EXTRA_REPO_BASE%/}"
   rhscl_repo_base="${rhscl_repo_base:-${rhel_repo%/os}}"
   # no need to waste time checking both subscription plugins if using one
   disable_plugin=""
@@ -2708,7 +2686,7 @@ install_rpms()
   yum $disable_plugin update -y || abort_install
   # Install ntp and ntpdate because they may not be present in a RHEL
   # minimal install.
-  yum_install_or_exit ntp ntpdate
+  yum_install_or_exit ntp ntpdate lokkit
 
   # install what we need for various components
   named && install_named_pkgs
