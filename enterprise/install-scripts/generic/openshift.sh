@@ -1876,8 +1876,8 @@ ${zone}		IN SOA	$named_hostname. hostmaster.$zone. (
 				1800       ; expire (30 minutes)
 				10         ; minimum (10 seconds)
 				)
-			NS	$named_hostname.
-			MX	10 mail.$zone.
+				IN NS	$named_hostname.
+				IN MX	10 mail.$zone.
 \$ORIGIN ${zone}.
 EOF
 
