@@ -1963,7 +1963,7 @@ add_host_to_zone()
   if [[ $1 =~ $ip_regex || ! $2 =~ $ip_regex ]]; then
     echo "Not adding DNS record to host zone: '$1' should be a hostname and '$2' should be an IP address"
   else
-    echo "${1%.${zone}}			A	$2" >> $nsdb
+    echo "${1%.${zone}}			IN A	$2" >> $nsdb
   fi
 }
 
