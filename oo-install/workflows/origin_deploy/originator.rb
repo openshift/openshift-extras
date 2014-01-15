@@ -186,7 +186,11 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
       @role_map[role].each do |puppet_cfg|
         @puppet_map[puppet_cfg['env_hostname']] = host_info['host']
         if puppet_cfg.has_key?('env_ip_addr')
-          @puppet_map[puppet_cfg['env_ip_addr']] = host_info['ip_addr']
+          if puppet_cfg['env_ip_addr'] == 'named_ip_addr' and host_info.has_key?('named_ip_addr')
+            @puppet_map[puppet_cfg['env_ip_addr']] = host_info['named_ip_addr']
+          else
+            @puppet_map[puppet_cfg['env_ip_addr']] = host_info['ip_addr']
+          end
         end
       end
     end
