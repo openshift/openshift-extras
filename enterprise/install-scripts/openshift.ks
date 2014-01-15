@@ -2227,7 +2227,7 @@ configure_access_keys_on_broker()
   # location on httpd:
   cp /root/.ssh/rsync_id_rsa.pub /var/www/html/
   # The node install script can retrieve this or it can be performed manually:
-  #   # wget -q -O- --no-check-certificate https://${broker_hostname}/rsync_id_rsa.pub >> /root/.ssh/authorized_keys
+  #   # wget -q -O- --no-check-certificate https://${broker_hostname}/rsync_id_rsa.pub?host=${node_hostname} >> /root/.ssh/authorized_keys
   # In order to enable this during the install, we turn on httpd.
   service httpd start
 }
@@ -2323,7 +2323,7 @@ install_rsync_pub_key()
   mkdir -p /root/.ssh
   chmod 700 /root/.ssh
   # Get key hosted on broker machine
-  wget -q -O- --no-check-certificate "https://${broker_hostname}/rsync_id_rsa.pub" \
+  wget -q -O- --no-check-certificate "https://${broker_hostname}/rsync_id_rsa.pub?host=${node_hostname}" \
     >> /root/.ssh/authorized_keys \
     || echo "WARNING: could not install rsync_id_rsa.pub key; please do it manually."
   chmod 644 /root/.ssh/authorized_keys
