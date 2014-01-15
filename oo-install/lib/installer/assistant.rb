@@ -824,7 +824,7 @@ module Installer
             break
           end
         end
-        # Finally, set up the IP info
+        # Set up the IP info
         if proceed_though_unreachable
           manual_ip_info_for_host_instance(host_instance, [])
         else
@@ -870,6 +870,14 @@ module Installer
               manual_ip_info_for_host_instance(host_instance, ip_addrs)
             end
           end
+        end
+        # Optionally allow the user to set a distinct named_ip_addr for their broker.
+        if host_instance.is_broker?
+          host_instance.named_ip_addr = ask("\nNormally, the BIND DNS server that is installed on this Broker will be reachable from other OpenShift components using the Broker's configured IP address (#{host_instance.ip_addr}).\n\nIf that will work in your deployment, press <enter> to accept the default value. Otherwise, provide an alternate IP address that will enable other OpenShift components to reach the BIND DNS service on the Broker: ") { |q|
+            q.default = host_instance.ip_addr
+            q.validate = lambda { |p| is_valid_ip_addr?(p) }
+            q.responses[:not_valid] = "Enter a valid IP address for the BIND DNS service"
+          }.to_s
         end
         host_instance_is_valid = true
       end
@@ -962,7 +970,11 @@ module Installer
             end
             value = has_roles.length > 0 ? has_roles.join(', ') : '[unset]'
           end
-          t.add_row [attr.to_s.split('_').map{ |word| ['db','ssh','ip'].include?(word) ? word.upcase : word.capitalize}.join(' '), value]
+          if attr == :named_ip_addr
+            t.add_row ['BIND DNS Addr', value]
+          else
+            t.add_row [attr.to_s.split('_').map{ |word| ['db','ssh','ip'].include?(word) ? word.upcase : word.capitalize }.join(' '), value]
+          end
         end
       end
       puts table
