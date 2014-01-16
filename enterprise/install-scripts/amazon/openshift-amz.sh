@@ -58,10 +58,11 @@ configure_repos()
 
     # The rhscl channel is needed for the ruby193 software collection.
     need_rhscl_repo() { :; }
-  fi
 
-  # We install the rhc client tool on the broker host.
-  broker && need_client_tools_repo() { :; }
+    # In openshift-enterprise-yum-validator the broker role maps to all
+    # infrastructure packages.  It also assumes the client repo is available.
+    need_client_tools_repo() { :; }
+  fi
 
   if node; then
     # The ose-node channel has node packages including all the cartridges.
