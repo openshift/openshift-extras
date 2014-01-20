@@ -570,11 +570,13 @@ configure_repos()
 
     # The rhscl channel is needed for the ruby193 software collection.
     need_rhscl_repo() { :; }
-
-    # In openshift-enterprise-yum-validator the broker role maps to all
-    # infrastructure packages.  It also assumes the client repo is available.
-    need_client_tools_repo() { :; }
   fi
+
+  # Bug 1054405 Currently oo-admin-yum-validator enables the client tools repo
+  # whenever the broker role is selected (even if the goal is only to install
+  # support infrastructure like activemq).  Until that is fixed we must always
+  # install the client tools repo along with the infrastructure repo.
+  need_infra_repo && need_client_tools_repo() { :; }
 
   if node; then
     # The ose-node channel has node packages including all the cartridges.
