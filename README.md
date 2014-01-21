@@ -15,6 +15,12 @@ Contributing
 Contributions via pull request are welcome and may be included under the
 same license as below.
 
+See the following additional pages for details on contributing to the various
+subprojects in this repository:
+
+* [openshift.sh](https://github.com/openshift/openshift-extras/blob/enterprise-2.0/enterprise/install-scripts/README.md#contributing)
+* [oo-install](https://github.com/brenton/openshift-extras/blob/enterprise-2.0/oo-install/README.md#contributing)
+
 Copyright
 ----------------------
 
