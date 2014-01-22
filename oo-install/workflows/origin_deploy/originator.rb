@@ -480,15 +480,20 @@ host_order.each do |ssh_host|
       end
       if action == :check
         # The gsub prevents ruby from trying to turn these back into Puppet::Module objects
-        puppet_info = YAML::load(output.gsub(/\!ruby\/object:/, 'ruby_object: '))
-        puppet_info.keys.each do |puppet_dir|
-          puppet_info[puppet_dir].each do |puppet_module|
-            next if not puppet_module['forge_name'] == @puppet_module_name
-            has_openshift_module = true
-            if is_older_puppet_module(puppet_module['version'])
-              openshift_module_needs_upgrade = true
+        begin
+          puppet_info = YAML::load(output.gsub(/\!ruby\/object:/, 'ruby_object: '))
+          puppet_info.keys.each do |puppet_dir|
+            puppet_info[puppet_dir].each do |puppet_module|
+              next if not puppet_module['forge_name'] == @puppet_module_name
+              has_openshift_module = true
+              if is_older_puppet_module(puppet_module['version'])
+                openshift_module_needs_upgrade = true
+              end
             end
           end
+        rescue Psych::SyntaxError => e
+          has_openshift_module = false
+          openshift_module_needs_upgrade = false
         end
       end
     end

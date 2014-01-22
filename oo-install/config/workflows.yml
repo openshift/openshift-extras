@@ -42,12 +42,15 @@ Repositories:
   - os_optional_repo
 RequiredComponents:
   - util:all:puppet
+  - util:all:augtool
   - util:broker:dnssec-keygen
   - util:broker:htpasswd
   - util:rhel:scl:ruby193
   - util:other:scl:ruby193
   - repo:rhel:epel
   - repo:other:epel
+IncompatibleComponents:
+  - pkg:all:firewalld
 ---
 Name: OO Deployment
 Contexts:
@@ -70,12 +73,15 @@ Repositories:
   - os_optional_repo
 RequiredComponents:
   - util:all:puppet
+  - util:all:augtool
   - util:broker:dnssec-keygen
   - util:broker:htpasswd
   - util:rhel:scl:ruby193
   - util:other:scl:ruby193
   - repo:rhel:epel
   - repo:other:epel
+IncompatibleComponents:
+  - pkg:all:firewalld
 ---
 Name: OO Node Instance Deployment
 Contexts:
@@ -103,10 +109,13 @@ Repositories:
   - os_optional_repo
 RequiredComponents:
   - util:all:puppet
+  - util:all:augtool
   - util:rhel:scl:ruby193
   - util:other:scl:ruby193
   - repo:rhel:epel
   - repo:other:epel
+IncompatibleComponents:
+  - pkg:all:firewalld
 ---
 Name: Puppet templates
 Contexts:
