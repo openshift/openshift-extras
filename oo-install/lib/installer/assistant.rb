@@ -1055,16 +1055,19 @@ module Installer
 
         # Check for all required components
         workflow.components.each do |component|
+          incompatible = false
           check_on_role = :all
           check_on_type = :all
           repo = nil
           util = nil
+          pkg = nil
           sub_util = nil
 
           # Figure out the kind of check we're doing
           component_info = component.split(":")
-          check_type = component_info[0].to_sym
-          role_or_type = component_info[1].to_sym
+          incompatible = component_info[0] == 'incompatible' ? true : false
+          check_type = component_info[1].to_sym
+          role_or_type = component_info[2].to_sym
           if not role_or_type == :all
             if supported_targets.has_key?(role_or_type)
               check_on_type = role_or_type
@@ -1072,17 +1075,21 @@ module Installer
               check_on_role = role_or_type
             end
           end
-          if check_type == :util
-            util = component_info[2]
-            sub_util = component_info[3]
-          elsif check_type == :repo
-            repo = component_info[2]
-          end
 
           # Move along if this host doesn't match the role / type relevant to the test
           if (not check_on_role == :all and not host_instance.roles.include?(check_on_role)) or
             (not check_on_type == :all and not host_instance.host_type == check_on_type)
             next
+          end
+
+          # Set check values based on check type
+          if check_type == :util
+            util = component_info[3]
+            sub_util = component_info[4]
+          elsif check_type == :repo
+            repo = component_info[3]
+          elsif check_type == :pkg
+            pkg = component_info[3]
           end
 
           # Handle repo checks
@@ -1093,10 +1100,41 @@ module Installer
               say "* ERROR: Could not perform repo check for #{repo}. Try running `#{repo_cmd}` manually to troubleshoot."
               deployment_good = false
             elsif not cmd_result[:stdout].match(/#{repo}/)
-              say "* ERROR: The '#{repo}' repository isn't available via yum. Install / enable this repository and try again."
-              deployment_good = false
+              if not incompatible
+                say "* ERROR: The '#{repo}' repository isn't available via yum. Install / enable this repository and try again."
+                deployment_good = false
+              end
             else
-              say "* #{repo} repository is present and enabled"
+              if not incompatible
+                say "* #{repo} repository is present and enabled"
+              else
+                say "* ERROR: The '#{repo}' repository is enabled on this host. OpenShift has known incompatibility issues with it, so please disable it and then rerun the installer."
+                deployment_good = false
+              end
+            end
+            next
+          end
+
+          if not pkg.nil?
+            pkg_cmd = "yum list installed | grep #{pkg}"
+            cmd_result = host_instance.exec_on_host!(pkg_cmd)
+            if not cmd_result[:exit_code] == 0
+              if not incompatible
+                say "* ERROR: Could not perform package check for #{pkg}. Try running `#{pkg_cmd}` manually to troubleshoot."
+                deployment_good = false
+              end
+            elsif not cmd_result[:stdout].match(/#{pkg}/)
+              if not incompatible
+                say "* ERROR: The '#{pkg}' package is not installed on this host. Try running `yum install #{pkg}` and then try again."
+                deployment_good = false
+              end
+            else
+              if not incompatible
+                say "* #{repo} repository is present and enabled"
+              else
+                say "* ERROR: The '#{pkg}' package is installed on this host. OpenShift has known incompatibility issues with it, so please remove it (`yum remove #{pkg}`) and then rerun the installer."
+                deployment_good = false
+              end
             end
             next
           end
@@ -1109,25 +1147,32 @@ module Installer
             cmd_result = host_instance.exec_on_host!("command -v #{util}")
           end
           if not cmd_result[:exit_code] == 0
-            say "* ERROR: Could not locate #{util}... "
-            find_result = host_instance.exec_on_host!("yum -q provides */#{util}")
-            if not find_result[:exit_code] == 0
-              say "no suggestions available"
-            else
-              ui_suggest_rpms(find_result[:stdout])
-            end
-            deployment_good = false
-          else
-            if not host_instance.root_user?
-              say "* Located #{util}... "
-              if not host_instance.can_sudo_execute?(util)
-                say "ERROR - cannot not invoke '#{util}' with sudo"
-                deployment_good = false
+            if not incompatible
+              say "* ERROR: Could not locate #{util}... "
+              find_result = host_instance.exec_on_host!("yum -q provides */#{util}")
+              if not find_result[:exit_code] == 0
+                say "no suggestions available"
               else
-                say "can invoke '#{util}' with sudo"
+                ui_suggest_rpms(find_result[:stdout])
               end
+              deployment_good = false
+            end
+          else
+            if incompatible
+              say "* ERROR: The #{util} utility is installed on this host. OpenShift has known incompatibility issues with it, so please remove it and then rerun the installer."
+              deployment_good = false
             else
-              say "* Located #{util}"
+              if not host_instance.root_user?
+                say "* Located #{util}... "
+                if not host_instance.can_sudo_execute?(util)
+                  say "ERROR - cannot not invoke '#{util}' with sudo"
+                  deployment_good = false
+                else
+                  say "can invoke '#{util}' with sudo"
+                end
+              else
+                say "* Located #{util}"
+              end
             end
           end
           # SELinux configuration check

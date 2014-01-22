@@ -148,9 +148,12 @@ module Installer
       end
 
       @executable = Installer::Executable.new(self, config['Executable'])
-      @components = ['util:all:getenforce','util:all:yum']
+      @components = ['component:util:all:getenforce','component:util:all:yum']
       if config.has_key?('RequiredComponents')
-        @components.concat(config['RequiredComponents'])
+        @components.concat(config['RequiredComponents'].map{ |comp| "component:#{comp}" })
+      end
+      if config.has_key?('IncompatibleComponents')
+        @components.concat(config['IncompatibleComponents'].map{ |comp| "incompatible:#{comp}" })
       end
     end
 
