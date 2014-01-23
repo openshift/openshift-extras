@@ -840,7 +840,7 @@ configure_rhn_channels()
 
   # Enable the node or infrastructure channel to enable installing the release RPM
   repos=('rhel-x86_64-server-6-rhscl-1')
-  if [ ! need_node_repo ] || need_infra_repo ; then
+  if ! need_node_repo || need_infra_repo ; then
     repos+=('rhel-x86_64-server-6-ose-2.0-infrastructure')
   fi
   need_node_repo && repos+=('rhel-x86_64-server-6-ose-2.0-node' 'jb-ews-2-x86_64-server-6-rpm')
