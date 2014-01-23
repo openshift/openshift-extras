@@ -276,37 +276,58 @@ configure_rhn_channels()
   if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
     echo "OpenShift: Register to RHN Classic using an activation key"
     rhnreg_ks --force --activationkey="${CONF_RHN_REG_ACTKEY}" --profilename="$profile_name" || abort_install
-  else
+  elif [[ "${CONF_RHN_USER}" && "${CONF_RHN_PASS}" ]]
+  then
     echo "OpenShift: Register to RHN Classic with username and password"
     set +x # don't log password
     rhnreg_ks --force --profilename="$profile_name" --username "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
     set -x
+  else
+    echo "OpenShift: No credentials given for RHN Classic; assuming already configured"
   fi
 
-  # Enable the node or infrastructure channel to enable installing the release RPM
-  repos=('rhel-x86_64-server-6-rhscl-1')
-  if ! need_node_repo || need_infra_repo ; then
-    repos+=('rhel-x86_64-server-6-ose-2.0-infrastructure')
-  fi
-  need_node_repo && repos+=('rhel-x86_64-server-6-ose-2.0-node' 'jb-ews-2-x86_64-server-6-rpm')
-  need_client_tools_repo && repos+=('rhel-x86_64-server-6-ose-2.0-rhc')
-  need_jbosseap_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.0-jbosseap' 'jbappplatform-6-x86_64-server-6-rpm')
+  if [[ "${CONF_RHN_USER}" && "${CONF_RHN_PASS}" ]]
+  then
+    # Enable the node or infrastructure channel to enable installing the release RPM
+    repos=('rhel-x86_64-server-6-rhscl-1')
+    if ! need_node_repo || need_infra_repo ; then
+      repos+=('rhel-x86_64-server-6-ose-2.0-infrastructure')
+    fi
+    need_node_repo && repos+=('rhel-x86_64-server-6-ose-2.0-node' 'jb-ews-2-x86_64-server-6-rpm')
+    need_client_tools_repo && repos+=('rhel-x86_64-server-6-ose-2.0-rhc')
+    need_jbosseap_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.0-jbosseap' 'jbappplatform-6-x86_64-server-6-rpm')
 
-  set +x # don't log password
-  for repo in "${repos[@]}"; do
-    [[ "$(rhn-channel -l)" == *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
-  done
-  set -x
+    set +x # don't log password
+    for repo in "${repos[@]}"; do
+      [[ "$(rhn-channel -l)" == *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
+    done
+    set -x
+  fi
 
   configure_subscription
 }
 
 configure_rhsm_channels()
 {
-  echo "OpenShift: Register with RHSM"
-  set +x # don't log password
-  subscription-manager register --force --username="$CONF_RHN_USER" --password="$CONF_RHN_PASS" --name "$profile_name" || abort_install
-  set -x
+  if [[ "${CONF_RHN_USER}" && "${CONF_RHN_PASS}" ]]
+  then
+    echo "OpenShift: Register with RHSM"
+    set +x # don't log password
+    subscription-manager register --force --username="$CONF_RHN_USER" --password="$CONF_RHN_PASS" --name "$profile_name" || abort_install
+    set -x
+  else
+    echo "OpenShift: No credentials given for RHSM; assuming already configured"
+  fi
+
+  if [[ "${CONF_SM_REG_POOL}" ]]
+  then
+    echo "OpenShift: Removing all current subscriptions"
+    subscription-manager remove --all
+  else
+    echo "OpenShift: No pool ids were given, so none are being registered"
+  fi
+
+  # If CONF_SM_REG_POOL was not specified, this for loop is a no-op.
   for poolid in ${CONF_SM_REG_POOL//[, :+\/-]/ }; do
     echo "OpenShift: Registering subscription from pool id $poolid"
     subscription-manager attach --pool "$poolid" || abort_install
@@ -2236,16 +2257,19 @@ validate_preflight()
 {
   echo "OpenShift: Begin preflight validation."
   preflight_failure=
+
   # Test that this isn't RHEL < 6 or Fedora
   if ! grep -q "Enterprise.* 6" /etc/redhat-release; then
     echo "OpenShift: This process needs to begin with Enterprise Linux 6 installed."
     preflight_failure=1
   fi
+
   # Test that SELinux is at least present and not Disabled
   if ! command -v getenforce || ! [[ $(getenforce) =~ Enforcing|Permissive ]] ; then
     echo "OpenShift: SELinux needs to be installed and enabled."
     preflight_failure=1
   fi
+
   # Test that rpm/yum exists and isn't totally broken
   if ! command -v rpm || ! command -v yum; then
     echo "OpenShift: rpm and yum must be installed."
@@ -2255,25 +2279,67 @@ validate_preflight()
     echo "OpenShift: rpm command failed; there may be a problem with the RPM DB."
     preflight_failure=1
   fi
+
   # test that subscription parameters are available if needed
-  if [[ "$CONF_INSTALL_METHOD" =~ rhn|rhsm ]]; then
-    set +x # don't log password
-    if [ ! "$CONF_RHN_USER" -o ! "$CONF_RHN_PASS" ]; then
-      echo "OpenShift: Install method $CONF_INSTALL_METHOD requires an RHN user and password."
+  if [[ "$CONF_INSTALL_METHOD" = rhn ]]; then
+    # Check whether we are already registered with RHN and already have
+    # ose-2.0 channels added.  If we are not, we will need RHN
+    # credentials so that we can register and add channels ourselves.
+    #
+    # Note: With RHN, we need credentials both for registration and
+    # adding channels.
+    if ! [[ -f /etc/sysconfig/rhn/systemid ]] || ! rhn-channel -l | grep -q '^rhel-x86_64-server-6-ose-2.0-\(node\|infrastructure\)'
+    then
+      set +x # don't log password
+      if [ ! "$CONF_RHN_USER" -o ! "$CONF_RHN_PASS" ]; then
+        echo "OpenShift: Install method rhn requires an RHN user and password."
+        preflight_failure=1
+      fi
+      set -x
+    fi
+  fi
+
+  if [[ "$CONF_INSTALL_METHOD" = rhsm ]]; then
+    # Check whether we are already registered with RHSM.  If we are not,
+    # we will need credentials so that we can register ourselves.
+    #
+    # Note: With RHSM, we need credentials for registration but not for
+    # adding channels.
+    if ! subscription-manager identity | grep -q 'identity is:'; then
+      set +x # don't log password
+      if [ ! "$CONF_RHN_USER" -o ! "$CONF_RHN_PASS" ]; then
+        echo "OpenShift: Install method rhsm requires an RHN user and password."
+        preflight_failure=1
+      fi
+      set -x
+    fi
+
+    # If we are not given a pool id, we will not be able to attach any
+    # pools, so make sure we already have access to the ose-2.0 repos,
+    # and we also need to make sure that we have NOT been given RHN
+    # credentials because that would cause configure_rhsm_channels to
+    # re-register and lose access to those repos.
+    #
+    # In the pipeline below, tac is a hack to make sure that
+    # subscription-manager gets to write all of its plentiful output
+    # before grep closes the pipeline.  Without it, we will get
+    # a harmless but possibly alarming "Broken pipe" error message.
+    if [[ ! "$CONF_SM_REG_POOL" ]] &&
+        ( [[ "$CONF_RHN_USER" && "$CONF_RHN_PASS" ]] ||
+          ! subscription-manager repos | tac | grep -q '\<rhel-6-server-ose-2.0-\(infra\|node\)-rpms$' ); then
+      echo "OpenShift: Install method rhsm requires a poolid."
       preflight_failure=1
     fi
-    set -x
   fi
-  if [ "$CONF_INSTALL_METHOD" = rhsm -a ! "$CONF_SM_REG_POOL" ]; then
-    echo "OpenShift: Install method rhsm requires a poolid."
-    preflight_failure=1
-  fi
+
   if [ "$CONF_INSTALL_METHOD" = yum -a ! "$ose_repo_base" ]; then
     echo "OpenShift: Install method yum requires providing URLs for at least OpenShift repos."
     preflight_failure=1
   fi
+
   # Test that known problematic RPMs aren't present
   # ... ?
+
   [ "$preflight_failure" ] && abort_install
   echo "OpenShift: Completed preflight validation."
 }
