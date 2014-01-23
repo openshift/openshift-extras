@@ -2051,10 +2051,6 @@ configure_controller()
     echo "Warning: broker authentication salt is empty!"
   fi
 
-  # Configure the console with the correct domain
-  sed -i -e "s/^DOMAIN_SUFFIX=.*$/DOMAIN_SUFFIX=${domain}/" \
-      /etc/openshift/console.conf
-
   # Configure the broker with the correct domain name, and use random salt
   # to the data store (the host running MongoDB).
   sed -i -e "s/^CLOUD_DOMAIN=.*$/CLOUD_DOMAIN=${domain}/" \
