@@ -621,8 +621,11 @@ configure_repos()
     need_rhscl_repo() { :; }
   fi
 
-  # We install the rhc client tool on the broker host.
-  broker && need_client_tools_repo() { :; }
+  # Bug 1054405 Currently oo-admin-yum-validator enables the client tools repo
+  # whenever the broker role is selected (even if the goal is only to install
+  # support infrastructure like activemq).  Until that is fixed we must always
+  # install the client tools repo along with the infrastructure repo.
+  need_infra_repo && need_client_tools_repo() { :; }
 
   if node; then
     # The ose-node channel has node packages including all the cartridges.
