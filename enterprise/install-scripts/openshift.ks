@@ -149,12 +149,45 @@
 
 # no_jbossews / CONF_NO_JBOSSEWS
 # no_jbosseap / CONF_NO_JBOSSEAP
-#   Default: false; do install JBoss cartridges
-#   If set, skips the parts of the installation that are necessary for
-#   using the JBoss EAP or EWS cartridge, including channels and RPMs.
-#   This makes it easier to install without JBoss channels/repos.
-#CONF_NO_JBOSSEWS=1
-#CONF_NO_JBOSSEAP=1
+#   Deprecated; see CONF_CARTRIDGES.
+
+# cartridges / CONF_CARTRIDGES
+#   Comma-separated selections from the following:
+#     all - all cartridges;
+#     standard - all cartridges except for JBossEWS or JBossEAP;
+#     cron - embedded cron support;
+#     diy - do-it-yourself cartridge;
+#     haproxy - haproxy support for scalable apps;
+#     jbossews - JBossEWS support;
+#     jobsseap - JBossEAP support;
+#     jboss - alias for jbossews and jbosseap;
+#     jenkins - Jenkins client and server for continuous integration;
+#     mysql - MySQL;
+#     nodejs - NodeJS;
+#     perl - mod_perl support;
+#     php - PHP support;
+#     postgresql - PostgreSQL support;
+#     postgres - alias for postgresql;
+#     python - Python support;
+#     ruby - Ruby Rack support running on Phusion Passenger.
+#
+#   You may prepend a minus sign '-' to any one of the above to negate it.
+#   For example, all,-jbossews enables all cartridges except for jbossews.
+#
+#   You may also specify a package name; any selection that is not in the above
+#   list will be assumed to be a package name and will be added to (or removed
+#   from) the list of packages to install, verbatim.
+#
+#   Selections are read from left to right.  For example, all,-jboss,jbossews
+#   enables all cartridges except for JBoss cartridges, except for JBossEWS (so
+#   JBossEWS _will_ be enabled but JBossEAP will _not_ be enabled).  However,
+#   all,jbossews,-jboss would install all cartridges except for JBoss cartridges
+#   (so neither JBossEWS nor JBossEAP will be installed).
+#
+#   If JBossEAP support is selected, this script will ensure that the required
+#   channels or repositories are enabled.
+#
+#   Default: standard
 
 # install_method / CONF_INSTALL_METHOD
 #   Choose from the following ways to provide packages:
@@ -196,7 +229,7 @@
 #   this setting can be left at its default value.
 #
 #   Some helpful actions:
-#     init_message,validate_preflight,configure_repos,
+#     init_message,validate_preflight,parse_cartridges,configure_repos,
 #     install_rpms,configure_host,configure_openshift,
 #     configure_datastore_add_replicants,reboot_after
 #
@@ -603,7 +636,7 @@ configure_repos()
   # functions.
 
   # Make need_${repo}_repo return false by default.
-  for repo in optional infra node jbosseap_cartridge client_tools jbosseap jbossews; do
+  for repo in optional infra node client_tools jbosseap; do
       eval "need_${repo}_repo() { false; }"
   done
 
@@ -633,12 +666,7 @@ configure_repos()
 
     # The jbosseap and jbossas cartridges require the jbossas packages
     # in the jbappplatform channel.
-    is_false "${CONF_NO_JBOSSEAP}" \
-             && need_jbosseap_cartridge_repo() { :; } \
-             && need_jbosseap_repo() { :; }
-
-    # The jbossews cartridge requires the tomcat packages in the jb-ews channel.
-    is_false "${CONF_NO_JBOSSEWS}" && need_jbossews_repo() { :; }
+    is_false "${CONF_NO_JBOSSEAP}" && need_jbosseap_repo() { :; }
 
     # The rhscl channel is needed for several cartridge platforms.
     need_rhscl_repo() { :; }
@@ -815,7 +843,7 @@ configure_subscription()
    need_infra_repo && roles="$roles --role broker"
    need_client_tools_repo && roles="$roles --role client"
    need_node_repo && roles="$roles --role node"
-   need_jbosseap_cartridge_repo && roles="$roles --role node-eap"
+   need_jbosseap_repo && roles="$roles --role node-eap"
    oo-admin-yum-validator -o 2.0 --fix-all $roles # when fixing, rc is always false
    oo-admin-yum-validator -o 2.0 $roles || abort_install # so check when fixes are done
 
@@ -845,7 +873,7 @@ configure_rhn_channels()
   fi
   need_node_repo && repos+=('rhel-x86_64-server-6-ose-2.0-node' 'jb-ews-2-x86_64-server-6-rpm')
   need_client_tools_repo && repos+=('rhel-x86_64-server-6-ose-2.0-rhc')
-  need_jbosseap_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.0-jbosseap' 'jbappplatform-6-x86_64-server-6-rpm')
+  need_jbosseap_repo && repos+=('rhel-x86_64-server-6-ose-2.0-jbosseap' 'jbappplatform-6-x86_64-server-6-rpm')
 
   set +x # don't log password
   for repo in "${repos[@]}"; do
@@ -966,64 +994,103 @@ remove_abrt_addon_python()
   fi
 }
 
+# Parse the list of cartridges that the user has specified should be
+# installed in order to derive the list of packages that we must install
+# as well as to determine whether or not we will need JBoss
+# subscriptions.
+#
+# The following variable is used:
+#
+#   cartridges - comma-delimited list of cartridges to install; should
+#     be set by set_defaults (see also CONF_CARTRIDGES / cartridges).
+#
+# The following variable will be assigned:
+#
+#   install_pkgs - space-delimited string of packages to install; intended to be
+#     used by install_cartridges.
+#   CONF_NO_JBOSSEAP - Boolean value indicating whether or not JBossEAP will be
+#     installed; intended to be used by configure_repos.
+parse_cartridges()
+{
+  # $p maps a cartridge specification to a comma-delimited list a packages.
+  local -A p=(
+    [cron]=openshift-origin-cartridge-cron
+    [diy]=openshift-origin-cartridge-diy
+    [haproxy]=openshift-origin-cartridge-haproxy
+    [jbossews]=openshift-origin-cartridge-jbossews
+    [jbosseap]=openshift-origin-cartridge-jbosseap
+    [jenkins]='openshift-origin-cartridge-jenkins-client openshift-origin-cartridge-jenkins'
+    [mysql]=openshift-origin-cartridge-mysql
+    [nodejs]=openshift-origin-cartridge-nodejs
+    [perl]=openshift-origin-cartridge-perl
+    [php]=openshift-origin-cartridge-php
+    [postgresql]=openshift-origin-cartridge-postgresql
+    [python]=openshift-origin-cartridge-python
+    [ruby]=openshift-origin-cartridge-ruby
+  )
+
+  # Save the list of all packages before we add mappings that will
+  # introduce duplicates into the range of p.
+  local -a all=( ${p[@]} )
+
+  # Set some package groups and aliases to provide shortcuts to the user.
+  p[standard]="${all[@]//*jboss*}"
+  p[jboss]="${p[jbossews]} ${p[jbosseap]}"
+  p[postgres]="${p[postgresql]}"
+  p[all]="${all[@]}"
+
+  # Build the list of packages to install ($pkgs) based on the list of
+  # cartridges that the user instructs us to install ($cartridges).  See
+  # the documentation on the CONF_CARTRIDGES / cartridges options for
+  # the rules governing how $cartridges will be passed.
+  local pkgs=( )
+  for cart_spec in ${cartridges//,/ }
+  do
+    if [[ "${cart_spec:0:1}" = - ]]
+    then
+      # Remove every package indicated by the cart_spec, or remove the package
+      # with name equal to $cart_spec itself if the cart_spec does not map to
+      # anything in $p.
+      for pkg in ${p[${cart_spec:1}]:-${cart_spec:1}}
+      do
+        for k in ${!pkgs[@]}
+        do [[ ${pkgs[$k]} = $pkg ]] && unset "pkgs[$k]"
+        done
+      done
+    else
+      # Append all packages indicated by the cart_spec, or append
+      # $cart_spec itself if it does not map to anything in $p.
+      pkgs+=( ${p[$cart_spec]:-$cart_spec} )
+    fi
+  done
+
+  [[ ${CONF_NO_JBOSSEAP+1} ]] && echo 'WARNING: CONF_NO_JBOSSEAP is deprecated.  Use CONF_CARTRIDGES instead.'
+  [[ ${CONF_NO_JBOSSEWS+1} ]] && echo 'WARNING: CONF_NO_JBOSSEWS is deprecated.  Use CONF_CARTRIDGES instead.'
+
+  # Set CONF_NO_JBOSSEAP=0 if $pkgs includes the JBossEAP cartridges,
+  # CONF_NO_JBOSSEAP=1 otherwise, so that configure_repos will enable
+  # only the appropriate channels.
+  [[ "${pkgs[@]}" = *"${p[jbosseap]}"* ]]
+  CONF_NO_JBOSSEAP=$?
+
+  # Uniquify (and, as a side effect, sort) pkgs and assign the result to
+  # install_pkgs for install_cartridges to use.
+  install_pkgs="$( echo $(printf '%s\n' "${pkgs[@]}" | sort -u) )"
+}
+
 # Install any cartridges developers may want.
+#
+# The following variable is used:
+#
+#   install_pkgs - space-delimited string of packages to install; should be set
+#     by parse_cartridges.
 install_cartridges()
 {
-  # Embedded cron support.
-  carts="openshift-origin-cartridge-cron"
-
-  # diy app.
-  carts="$carts openshift-origin-cartridge-diy"
-
-  # haproxy support.
-  carts="$carts openshift-origin-cartridge-haproxy"
-
-  if is_false "$CONF_NO_JBOSSEWS"; then
-    # JBossEWS support.
-    # Note: Be sure to subscribe to the JBossEWS entitlements during the
-    # base install or in configure_jbossews_repo.
-    carts="$carts openshift-origin-cartridge-jbossews"
-  fi
-
-  if is_false "$CONF_NO_JBOSSEAP"; then
-    # JBossEAP support.
-    # Note: Be sure to subscribe to the JBossEAP entitlements during the
-    # base install or in configure_jbosseap_repo.
-    carts="$carts openshift-origin-cartridge-jbosseap"
-  fi
-
-  # Jenkins server for continuous integration.
-  carts="$carts openshift-origin-cartridge-jenkins"
-
-  # Embedded jenkins client.
-  carts="$carts openshift-origin-cartridge-jenkins-client"
-
-  # Embedded MySQL.
-  carts="$carts openshift-origin-cartridge-mysql"
-
-  # Nodejs support
-  carts="$carts openshift-origin-cartridge-nodejs"
-
-  # mod_perl support.
-  carts="$carts openshift-origin-cartridge-perl"
-
-  # PHP support.
-  carts="$carts openshift-origin-cartridge-php"
-
-  # Embedded PostgreSQL.
-  carts="$carts openshift-origin-cartridge-postgresql"
-
-  # Python support.
-  carts="$carts openshift-origin-cartridge-python"
-
-  # Ruby Rack support running on Phusion Passenger
-  carts="$carts openshift-origin-cartridge-ruby"
-
   # When dependencies are missing, e.g. JBoss subscriptions,
   # still install as much as possible.
-  #carts="$carts --skip-broken"
+  #install_pkgs="${install_pkgs} --skip-broken"
 
-  yum_install_or_exit $carts
+  yum_install_or_exit "${install_pkgs}"
 }
 
 # Given the filename of a configuration file, the name of a setting,
@@ -2531,6 +2598,9 @@ set_defaults()
 
   # Following are some settings used in subsequent steps.
 
+  # The list of packages to install.
+  cartridges="${CONF_CARTRIDGES:-standard}"
+
   # There a no defaults for these. Customers should be using
   # subscriptions via RHN. Internally we use private systems.
   rhel_repo="${CONF_RHEL_REPO%/}"
@@ -2879,6 +2949,7 @@ do_all_actions()
 {
   init_message
   validate_preflight
+  parse_cartridges
   configure_repos
   install_rpms
   configure_host
