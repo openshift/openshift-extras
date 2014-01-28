@@ -18,6 +18,9 @@ end
 # Check to see if we need to preserve generated files.
 @keep_assets = ENV.has_key?('OO_INSTALL_KEEP_ASSETS') and ENV['OO_INSTALL_KEEP_ASSETS'] == 'true'
 
+# Check to see if we are installing the puppet module on the target hosts
+@keep_puppet = ENV.has_key?('OO_INSTALL_KEEP_PUPPET') and ENV['OO_INSTALL_KEEP_PUPPET'] == 'true'
+
 @ssh_cmd = 'ssh -t -q'
 @scp_cmd = 'scp -q'
 if ENV.has_key?('OO_INSTALL_DEBUG') and ENV['OO_INSTALL_DEBUG'] == 'true'
@@ -228,8 +231,9 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
 
   # DNS Settings
   @puppet_map['domain'] = config_dns['app_domain']
-  @puppet_map['hosts_domain'] = ''
-  @puppet_map['hosts_dns_list'] = ''
+  # TODO: Awaiting support from puppet module
+  #@puppet_map['hosts_domain'] = ''
+  #@puppet_map['hosts_dns_list'] = ''
   if 'Y' == config_dns['register_components']
     if not config_dns.has_key?('component_domain')
       puts "Error: The config specifies registering OpenShift component hosts with OpenShift DNS, but no OpenShift component host domain has been specified. Exiting."
@@ -238,8 +242,9 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
     if config_dns['component_domain'] == config_dns['app_domain']
       @puppet_map['register_host_with_named'] = true
     else
-      @puppet_map['hosts_domain'] = config_dns['component_domain']
-      @puppet_map['hosts_dns_list'] = named_hosts.join(',')
+      # TODO: Awaiting support from puppet module
+      #@puppet_map['hosts_domain'] = config_dns['component_domain']
+      #@puppet_map['hosts_dns_list'] = named_hosts.join(',')
     end
   else
   end
@@ -364,7 +369,7 @@ host_order.each do |ssh_host|
       end
     end
     if action == :typecheck
-      output = `#{commands[:typecheck]}`
+      output = `#{commands[:typecheck]} 2>&1`
       if not output.chomp.strip.downcase.start_with?('fedora')
         host_type = :other
       end
@@ -393,12 +398,12 @@ host_order.each do |ssh_host|
 
     dns_jobs.each do |dns_job|
       puts "\nChecking for #{dns_job[:domain]} DNS key(s) on #{ssh_host}..."
-      output = `#{dns_job[:check]}`
+      output = `#{dns_job[:check]} 2>&1`
       chkstatus = $?.exitstatus
       if chkstatus > 0
         # No key; build one.
         puts "...none found; attempting to generate one.\n"
-        output = `#{dns_job[:generate]}`
+        output = `#{dns_job[:generate]} 2>&1`
         genstatus = $?.exitstatus
         if genstatus > 0
           puts "Could not generate a DNS key. Exiting."
@@ -411,7 +416,7 @@ host_order.each do |ssh_host|
       end
 
       # Copy the public key info to the config file.
-      key_text = `#{dns_job[:get]}`
+      key_text = `#{dns_job[:get]} 2>&1`
       getstatus = $?.exitstatus
       if getstatus > 0 or key_text.nil? or key_text == ''
         puts "Could not read DNS key data from /var/named/K#{dns_job[:domain]}*.key. Exiting."
@@ -428,12 +433,12 @@ host_order.each do |ssh_host|
     break if saw_deployment_error
 
     # Finally, make sure the named service is enabled.
-    output = `#{commands[:enabledns]}`
+    output = `#{commands[:enabledns]} 2>&1`
     dnsstatus = $?.exitstatus
     if dnsstatus > 0
       # This may be RHEL (or at least, not systemd)
       puts "Command 'systemctl' didn't work; trying older style..."
-      output = `#{commands[:enabledns_rhel]}`
+      output = `#{commands[:enabledns_rhel]} 2>&1`
       dnsstatus = $?.exitstatus
       if dnsstatus > 0
         puts "Could not enable named using command '#{commands[:enabledns]}'. Exiting."
@@ -485,29 +490,35 @@ host_order.each do |ssh_host|
   # Handle the config file copying and delete the original.
   if not ssh_host == 'localhost'
     puts "Copying Puppet configuration script to target #{ssh_host}.\n"
-    system "#{@scp_cmd} #{hostfilepath} #{user}@#{ssh_host}:#{hostfilepath}"
+    scp_output = `#{@scp_cmd} #{hostfilepath} #{user}@#{ssh_host}:#{hostfilepath} 2>&1`
     if not $?.exitstatus == 0
-      puts "Could not copy Puppet config to remote host. Exiting."
+      puts "Could not copy Puppet config to remote host. Exiting.\n"
       saw_deployment_error = true
       break
     end
   end
 
-  puts "\nRunning Puppet deployment"
+  puts "\nRunning Puppet deployment\n"
 
   # Good to go; step through the puppet setup now.
   @child_pids << Process.fork do
     [:uninstall,:install,:yum_clean,:apply,:clear].each do |action|
+      if @keep_puppet and [:uninstall, :install].include?(action)
+        if action == :uninstall
+          puts "User specified that the openshift/openshift_origin module is already installed.\n"
+        end
+        next
+      end
       if action == :clear and @keep_assets
-        puts "Keeping #{hostfile}"
+        puts "Keeping #{hostfile}\n"
         next
       end
       command = commands[action]
-      puts "\nRunning \"#{command}\"..."
+      puts "\nRunning: #{command}\n"
       if ssh_host == 'localhost'
         clear_env
       end
-      output = `#{command}`
+      output = `#{command} 2>&1`
       if ssh_host == 'localhost'
         restore_env
       end
@@ -515,7 +526,7 @@ host_order.each do |ssh_host|
         puts "Command completed.\n"
       else
         if action == :uninstall
-          puts "Command failed; this is expected if the puppet module wasn't previously installed."
+          puts "Uninstall command failed; this is expected if the puppet module wasn't previously installed.\n"
         else
           # Note errors here but don't break; Puppet throws ignorable errors right now and we need to figure out how to deal with them
           saw_deployment_error = true

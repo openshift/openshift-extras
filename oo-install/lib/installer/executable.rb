@@ -33,6 +33,10 @@ module Installer
         env_vars['OO_INSTALL_CONFIG_FILE'] = config_file_path
       end
 
+      if keep_puppet?
+        env_vars['OO_INSTALL_KEEP_PUPPET'] = 'true'
+      end
+
       # Set up a pile of env variables
       env_vars.each do |env,val|
         ENV[env] = val
