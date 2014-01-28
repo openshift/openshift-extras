@@ -67,6 +67,14 @@ module Installer
       Installer::DEBUG
     end
 
+    def set_keep_puppet(keep_puppet)
+      Installer.const_set("KEEP_PUPPET", keep_puppet)
+    end
+
+    def keep_puppet?
+      Installer::KEEP_PUPPET
+    end
+
     # SOURCE for #which:
     # http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
     def which(cmd)
