@@ -153,6 +153,7 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
   config_hosts = config['Deployment']['Hosts']
   config_dns = config['Deployment']['DNS']
 
+  named_hosts = []
   config_hosts.each do |host_info|
     # Basic config file sanity check
     ['ssh_host','host','user','roles','ip_addr'].each do |attr|
@@ -160,6 +161,9 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
       puts "One of the hosts in the configuration is missing the '#{attr}' setting. Exiting."
       exit 1
     end
+
+    # Save the fqdn:ipaddr for potential named use
+    named_hosts << "#{host_info['host']}:#{host_info['ip_addr']}"
 
     # Map hosts by ssh alias
     @hosts[host_info['ssh_host']] = host_info
@@ -221,7 +225,24 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
       end
     end
   end
+
+  # DNS Settings
   @puppet_map['domain'] = config_dns['app_domain']
+  @puppet_map['hosts_domain'] = ''
+  @puppet_map['hosts_dns_list'] = ''
+  if 'Y' == config_dns['register_components']
+    if not config_dns.has_key?('component_domain')
+      puts "Error: The config specifies registering OpenShift component hosts with OpenShift DNS, but no OpenShift component host domain has been specified. Exiting."
+      exit 1
+    end
+    if config_dns['component_domain'] == config_dns['app_domain']
+      @puppet_map['register_host_with_named'] = true
+    else
+      @puppet_map['hosts_domain'] = config_dns['component_domain']
+      @puppet_map['hosts_dns_list'] = named_hosts.join(',')
+    end
+  else
+  end
 end
 
 if @hosts.empty?
@@ -302,18 +323,20 @@ host_order.each do |ssh_host|
   commands = {
     :typecheck => "export LC_CTYPE=en_US.utf8 && cat /etc/redhat-release",
     :keycheck => "ls /var/named/K#{@puppet_map['domain']}*.key",
+    :hosts_keycheck => "ls /var/named/K#{@puppet_map['hosts_domain']}*.key",
     :keygen => "dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named #{@puppet_map['domain']}",
+    :hosts_keygen => "dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named #{@puppet_map['hosts_domain']}",
     :keyget => "cat /var/named/K#{@puppet_map['domain']}*.key",
+    :hosts_keyget => "cat /var/named/K#{@puppet_map['hosts_domain']}*.key",
     :enabledns => 'systemctl enable named.service',
     :enabledns_rhel => 'service named restart',
-    :check => 'puppet module list --render-as yaml',
+    :uninstall => "puppet module uninstall -f #{@puppet_module_name}",
     :install => "puppet module install -v #{@puppet_module_ver} #{@puppet_module_name}",
-    :upgrade => "puppet module upgrade --version=#{@puppet_module_ver} #{@puppet_module_name}",
     :yum_clean => 'yum clean all',
     :apply => "puppet apply --verbose /tmp/#{hostfile}",
     :clear => "rm /tmp/#{hostfile}",
   }
-  puppet_commands = [:check,:install,:upgrade,:apply]
+  puppet_commands = [:uninstall,:install,:apply]
   # We have to prep and run :typecheck first.
   command_list = commands.keys
   if not command_list[0] == :typecheck
@@ -348,36 +371,62 @@ host_order.each do |ssh_host|
     end
   end
 
-  # Figure out the DNS key before we write the puppet config file
+  # Figure out the DNS key(s) before we write the puppet config file
   if @hosts[ssh_host]['roles'].include?('broker')
-    puts "\nChecking for DNS key on #{ssh_host}..."
-    output = `#{commands[:keycheck]}`
-    chkstatus = $?.exitstatus
-    if chkstatus > 0
-      # No key; build one.
-      puts "...none found; attempting to generate one.\n"
-      output = `#{commands[:keygen]}`
-      genstatus = $?.exitstatus
-      if genstatus > 0
-        puts "Could not generate a DNS key. Exiting."
+    dns_jobs = [
+      { :check => commands[:keycheck],
+        :domain => @puppet_map['domain'],
+        :generate => commands[:keygen],
+        :get => commands[:keyget],
+        :cfg_key => 'bind_key'
+      }
+    ]
+    if not @puppet_map['hosts_domain'].nil? and not @puppet_map['hosts_domain'].empty?
+      dns_jobs << {
+        :check => commands[:hosts_keycheck],
+        :domain => @puppet_map['hosts_domain'],
+        :generate => commands[:hosts_keygen],
+        :get => commands[:hosts_keyget],
+        :cfg_key => 'hosts_bind_key'
+      }
+    end
+
+    dns_jobs.each do |dns_job|
+      puts "\nChecking for #{dns_job[:domain]} DNS key(s) on #{ssh_host}..."
+      output = `#{dns_job[:check]}`
+      chkstatus = $?.exitstatus
+      if chkstatus > 0
+        # No key; build one.
+        puts "...none found; attempting to generate one.\n"
+        output = `#{dns_job[:generate]}`
+        genstatus = $?.exitstatus
+        if genstatus > 0
+          puts "Could not generate a DNS key. Exiting."
+          saw_deployment_error = true
+          break
+        end
+        puts "Key generation successful."
+      else
+        puts "...found at /var/named/K#{dns_job[:domain]}*.key\n"
+      end
+
+      # Copy the public key info to the config file.
+      key_text = `#{dns_job[:get]}`
+      getstatus = $?.exitstatus
+      if getstatus > 0 or key_text.nil? or key_text == ''
+        puts "Could not read DNS key data from /var/named/K#{dns_job[:domain]}*.key. Exiting."
         saw_deployment_error = true
         break
       end
-      puts "Key generation successful."
-    else
-      puts "...found at /var/named/K#{@puppet_map['domain']}*.key\n"
+
+      # Format the public key correctly.
+      key_vals = key_text.strip.split(' ')
+      @puppet_map[dns_job[:cfg_key]] = "#{key_vals[6]}#{key_vals[7]}"
     end
-    # Copy the public key info to the config file.
-    key_text = `#{commands[:keyget]}`
-    getstatus = $?.exitstatus
-    if getstatus > 0 or key_text.nil? or key_text == ''
-      puts "Could not read DNS key data from /var/named/K#{@puppet_map['domain']}*.key. Exiting."
-      saw_deployment_error = true
-      break
-    end
-    # Format the public key correctly.
-    key_vals = key_text.strip.split(' ')
-    @puppet_map['bind_key'] = "#{key_vals[6]}#{key_vals[7]}"
+
+    # Bail out if we hit problems with DNS key gen.
+    break if saw_deployment_error
+
     # Finally, make sure the named service is enabled.
     output = `#{commands[:enabledns]}`
     dnsstatus = $?.exitstatus
@@ -448,22 +497,12 @@ host_order.each do |ssh_host|
 
   # Good to go; step through the puppet setup now.
   @child_pids << Process.fork do
-    has_openshift_module = false
-    openshift_module_needs_upgrade = false
-    [:check,:install,:yum_clean,:apply,:clear].each do |action|
+    [:uninstall,:install,:yum_clean,:apply,:clear].each do |action|
       if action == :clear and @keep_assets
         puts "Keeping #{hostfile}"
         next
       end
-      if action == :install and has_openshift_module and not openshift_module_needs_upgrade
-        puts "Skipping module installation."
-        next
-      end
       command = commands[action]
-      if action == :install and openshift_module_needs_upgrade
-        puts "OpenShift Puppet module will be upgraded to version #{@puppet_module_ver}."
-        command = commands[:upgrade]
-      end
       puts "\nRunning \"#{command}\"..."
       if ssh_host == 'localhost'
         clear_env
@@ -473,10 +512,14 @@ host_order.each do |ssh_host|
         restore_env
       end
       if $?.exitstatus == 0
-        puts "Command completed."
+        puts "Command completed.\n"
       else
-        # Note errors here but don't break; Puppet throws ignorable errors right now and we need to figure out how to deal with them
-        saw_deployment_error = true
+        if action == :uninstall
+          puts "Command failed; this is expected if the puppet module wasn't previously installed."
+        else
+          # Note errors here but don't break; Puppet throws ignorable errors right now and we need to figure out how to deal with them
+          saw_deployment_error = true
+        end
       end
       if action == :check
         # The gsub prevents ruby from trying to turn these back into Puppet::Module objects
