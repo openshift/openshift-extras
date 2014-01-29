@@ -187,7 +187,7 @@
 #   If JBossEAP support is selected, this script will ensure that the required
 #   channels or repositories are enabled.
 #
-#   Default: standard
+#   Default: all
 
 # install_method / CONF_INSTALL_METHOD
 #   Choose from the following ways to provide packages:
@@ -2599,7 +2599,7 @@ set_defaults()
   # Following are some settings used in subsequent steps.
 
   # The list of packages to install.
-  cartridges="${CONF_CARTRIDGES:-standard}"
+  cartridges="${CONF_CARTRIDGES:-all}"
 
   # There a no defaults for these. Customers should be using
   # subscriptions via RHN. Internally we use private systems.

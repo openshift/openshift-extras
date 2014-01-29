@@ -2011,7 +2011,7 @@ set_defaults()
   # Following are some settings used in subsequent steps.
 
   # The list of packages to install.
-  cartridges="${CONF_CARTRIDGES:-standard}"
+  cartridges="${CONF_CARTRIDGES:-all}"
 
   # There a no defaults for these. Customers should be using
   # subscriptions via RHN. Internally we use private systems.
