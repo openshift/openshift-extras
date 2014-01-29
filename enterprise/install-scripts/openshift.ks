@@ -636,7 +636,7 @@ configure_repos()
   # functions.
 
   # Make need_${repo}_repo return false by default.
-  for repo in optional infra node client_tools jbosseap; do
+  for repo in optional infra node jbosseap_cartridge client_tools jbosseap jbossews; do
       eval "need_${repo}_repo() { false; }"
   done
 
@@ -666,7 +666,12 @@ configure_repos()
 
     # The jbosseap and jbossas cartridges require the jbossas packages
     # in the jbappplatform channel.
-    is_false "${CONF_NO_JBOSSEAP}" && need_jbosseap_repo() { :; }
+    is_false "${CONF_NO_JBOSSEAP}" \
+             && need_jbosseap_cartridge_repo() { :; } \
+             && need_jbosseap_repo() { :; }
+
+    # The jbossews cartridge requires the tomcat packages in the jb-ews channel.
+    is_false "${CONF_NO_JBOSSEWS}" && need_jbossews_repo() { :; }
 
     # The rhscl channel is needed for several cartridge platforms.
     need_rhscl_repo() { :; }
@@ -843,7 +848,7 @@ configure_subscription()
    need_infra_repo && roles="$roles --role broker"
    need_client_tools_repo && roles="$roles --role client"
    need_node_repo && roles="$roles --role node"
-   need_jbosseap_repo && roles="$roles --role node-eap"
+   need_jbosseap_cartridge_repo && roles="$roles --role node-eap"
    oo-admin-yum-validator -o 2.0 --fix-all $roles # when fixing, rc is always false
    oo-admin-yum-validator -o 2.0 $roles || abort_install # so check when fixes are done
 
@@ -873,7 +878,7 @@ configure_rhn_channels()
   fi
   need_node_repo && repos+=('rhel-x86_64-server-6-ose-2.0-node' 'jb-ews-2-x86_64-server-6-rpm')
   need_client_tools_repo && repos+=('rhel-x86_64-server-6-ose-2.0-rhc')
-  need_jbosseap_repo && repos+=('rhel-x86_64-server-6-ose-2.0-jbosseap' 'jbappplatform-6-x86_64-server-6-rpm')
+  need_jbosseap_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.0-jbosseap' 'jbappplatform-6-x86_64-server-6-rpm')
 
   set +x # don't log password
   for repo in "${repos[@]}"; do
@@ -1010,6 +1015,8 @@ remove_abrt_addon_python()
 #     used by install_cartridges.
 #   CONF_NO_JBOSSEAP - Boolean value indicating whether or not JBossEAP will be
 #     installed; intended to be used by configure_repos.
+#   CONF_NO_JBOSSEWS - Boolean value indicating whether or not JBossEWS will be
+#     installed; intended to be used by configure_repos.
 parse_cartridges()
 {
   # $p maps a cartridge specification to a comma-delimited list a packages.
@@ -1072,6 +1079,12 @@ parse_cartridges()
   # only the appropriate channels.
   [[ "${pkgs[@]}" = *"${p[jbosseap]}"* ]]
   CONF_NO_JBOSSEAP=$?
+
+  # Set CONF_NO_JBOSSEWS=0 if $pkgs includes the JBossEWS cartridges,
+  # CONF_NO_JBOSSEWS=1 otherwise, so that configure_repos will enable
+  # only the appropriate channels.
+  [[ "${pkgs[@]}" = *"${p[jbossews]}"* ]]
+  CONF_NO_JBOSSEWS=$?
 
   # Uniquify (and, as a side effect, sort) pkgs and assign the result to
   # install_pkgs for install_cartridges to use.
