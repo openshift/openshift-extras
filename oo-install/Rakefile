@@ -33,7 +33,7 @@ task :package do
       :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
       :context => :origin,
       :base => true,
-      :branch => 'enterprise-2.0',
+      :branch => 'master',
     },
     { :version => 'ose',
       :version_text => 'OpenShift Enterprise 2.0',
