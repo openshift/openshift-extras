@@ -1012,7 +1012,7 @@ remove_abrt_addon_python()
 #
 # The following variable will be assigned:
 #
-#   install_pkgs - space-delimited string of packages to install; intended to be
+#   install_cart_pkgs - space-delimited string of packages to install; intended to be
 #     used by install_cartridges.
 #   CONF_NO_JBOSSEAP - Boolean value indicating whether or not JBossEAP will be
 #     installed; intended to be used by configure_repos.
@@ -1048,11 +1048,11 @@ parse_cartridges()
   p[all]="${all[@]}"
 
   # replicate previous CONF_NO_JBOSS* behavior by removing corresponding carts
-  if is_true $CONF_NO_JBOSSEAP ; then
+  if is_true "$CONF_NO_JBOSSEAP" ; then
     echo 'WARNING: CONF_NO_JBOSSEAP is deprecated.  Use CONF_CARTRIDGES instead.'
     cartridges="$cartridges,-jbosseap"
   fi
-  if is_true $CONF_NO_JBOSSEWS ; then
+  if is_true "$CONF_NO_JBOSSEWS" ; then
     echo 'WARNING: CONF_NO_JBOSSEWS is deprecated.  Use CONF_CARTRIDGES instead.'
     cartridges="$cartridges,-jbossews"
   fi
@@ -1095,23 +1095,23 @@ parse_cartridges()
   CONF_NO_JBOSSEWS=$?
 
   # Uniquify (and, as a side effect, sort) pkgs and assign the result to
-  # install_pkgs for install_cartridges to use.
-  install_pkgs="$( echo $(printf '%s\n' "${pkgs[@]}" | sort -u) )"
+  # install_cart_pkgs for install_cartridges to use.
+  install_cart_pkgs="$( echo $(printf '%s\n' "${pkgs[@]}" | sort -u) )"
 }
 
 # Install any cartridges developers may want.
 #
 # The following variable is used:
 #
-#   install_pkgs - space-delimited string of packages to install; should be set
+#   install_cart_pkgs - space-delimited string of packages to install; should be set
 #     by parse_cartridges.
 install_cartridges()
 {
   # When dependencies are missing, e.g. JBoss subscriptions,
   # still install as much as possible.
-  #install_pkgs="${install_pkgs} --skip-broken"
+  #install_cart_pkgs="${install_cart_pkgs} --skip-broken"
 
-  yum_install_or_exit "${install_pkgs}"
+  yum_install_or_exit "${install_cart_pkgs}"
 }
 
 # Given the filename of a configuration file, the name of a setting,
@@ -2094,7 +2094,7 @@ register_named_entries()
       failed="true"
     fi
   done
-  is_false $failed && echo "OpenShift: Completed updating host DNS entries."
+  is_false "$failed" && echo "OpenShift: Completed updating host DNS entries."
 }
 
 configure_network()
@@ -2814,6 +2814,9 @@ set_defaults()
   # auth info for the topic from the sample routing SPI plugin
   routing_plugin_user="${CONF_ROUTING_PLUGIN_USER:-routinginfo}"
   routing_plugin_pass="${CONF_ROUTING_PLUGIN_PASS:-routinginfopassword}"
+
+  # need to know the list of cartridges in various places.
+  parse_cartridges
 }
 
 
@@ -2967,10 +2970,12 @@ reboot_after()
 }
 
 do_all_actions()
-{
+{ # Avoid adding or removing these top-level actions.
+  # oo-install invokes these individually in separate phases.
+  # So, they should not assume the others ran previously in
+  # the same invocation.
   init_message
   validate_preflight
-  parse_cartridges
   configure_repos
   install_rpms
   configure_host
