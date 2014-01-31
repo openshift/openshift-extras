@@ -119,6 +119,7 @@ IncompatibleComponents:
 ---
 Name: Puppet templates
 Contexts:
+  - origin
   - origin_vm
 Targets:
   - fedora

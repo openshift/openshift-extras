@@ -157,6 +157,7 @@ module Installer
     def ui_workflow id
       @workflow = Installer::Workflow.find(id)
       @workflow_cfg = config.get_workflow_cfg(id)
+      @workflow_id = id
       ui_newpage
 
       # Deployment check
@@ -1021,6 +1022,14 @@ module Installer
     def check_deployment
       deployment_good = true
       deployment.hosts.each do |host_instance|
+        # If this is an "Add a Node deployment", skip checks for all standalone
+        # nodes that are not the one being added.
+        next if (
+          ['origin_add_node','enterprise_add_node'].include?(@workflow_id) and
+          workflow_cfg.has_key?('rolehost') and
+          host_instance.is_basic_node? and
+          not host_instance.host == workflow_cfg['rolehost']
+        )
         say "\nChecking #{host_instance.host}:"
         # Attempt SSH connection for remote hosts
         if not host_instance.localhost?
