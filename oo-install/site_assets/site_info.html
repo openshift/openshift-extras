@@ -3,6 +3,7 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Install OpenShift Today!</title>
+  <link rel="icon" href="https://www.openshift.com/sites/all/themes/openshift-theme/favicon.ico" type="image/x-icon" />
   <link href="/bootstrap.min.css" rel="stylesheet">
   <style type="text/css">
   html, body {
@@ -132,16 +133,40 @@
     </div>
   </div>
 </div>
-  <footer>
-    <div class="container">
-    <hr />
-      <h3>Need more help? We're here for you.</h3>
-      <ul>
-        <li>The <a href="http://openshift.github.io/documentation/oo_install_users_guide.html">oo-install User's Guide</a> is available at the <a href="http://openshift.github.io/documentation/">OpenShift Origin documentation site</a>.</li>
-        <li>Familiar with IRC? OpenShift superstars can be found on the <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift&uio=d4">#openshift</a> and <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift-dev&uio=d4">#openshift-dev</a> channels on <a href="http://www.freenode.net/">FreeNode</a>.</li>
-        <li>You can also join the <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/users">Users</a> or <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/dev">Developers</a> mailing list.</li>
-      </ul>
-    </div>
-  </footer>
+<footer>
+  <div class="container">
+  <hr />
+    <h3>Need more help? We're here for you.</h3>
+    <ul>
+      <li>The <a href="http://openshift.github.io/documentation/oo_install_users_guide.html">oo-install User's Guide</a> is available at the <a href="http://openshift.github.io/documentation/">OpenShift Origin documentation site</a>.</li>
+      <li>Familiar with IRC? OpenShift superstars can be found on the <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift&uio=d4">#openshift</a> and <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift-dev&uio=d4">#openshift-dev</a> channels on <a href="http://www.freenode.net/">FreeNode</a>.</li>
+      <li>You can also join the <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/users">Users</a> or <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/dev">Developers</a> mailing list.</li>
+    </ul>
+  </div>
+</footer>
+<!-- Google Analytics -->
+<script type="text/javascript">
+var _gaq = _gaq || [];
+_gaq.push(['_setAccount', 'UA-40375612-1']);
+_gaq.push(['_setDomainName', 'openshift.github.io']);
+_gaq.push(['_trackPageview']);
+
+(function() {
+    var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+    ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+})();
+
+$(document).ready(function() {
+    _gaq.push(function() {
+        $('a[href^="http"]').on("click", function(e) {
+			e.preventDefault();
+			var link = $(this).attr("href");
+			_gaq.push(["_trackEvent", "Outbound Links", "click", link]);
+			setTimeout('document.location = "' + link + '"', 100);
+		});
+	});
+});
+</script>
 </body>
 </html>

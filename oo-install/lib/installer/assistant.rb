@@ -1103,6 +1103,10 @@ module Installer
 
           # Handle repo checks
           if not repo.nil?
+            if tgt_subscription.subscription_type == :none
+              say "* Skipping repo check for #{repo}; assuming necessary software is installed."
+              next
+            end
             repo_cmd = "yum repolist"
             cmd_result = host_instance.exec_on_host!(repo_cmd)
             if not cmd_result[:exit_code] == 0
@@ -1157,6 +1161,11 @@ module Installer
           end
           if not cmd_result[:exit_code] == 0
             if not incompatible
+              if tgt_subscription.subscription_type == :none
+                say "* ERROR: Could not locate utility #{util}."
+                deployment_good = false
+                next
+              end
               say "* ERROR: Could not locate #{util}... "
               find_result = host_instance.exec_on_host!("yum -q provides */#{util}")
               if not find_result[:exit_code] == 0
