@@ -150,7 +150,8 @@
 
 # no_jbossews / CONF_NO_JBOSSEWS
 # no_jbosseap / CONF_NO_JBOSSEAP
-#   Deprecated; see CONF_CARTRIDGES.
+#   Deprecated; see CONF_CARTRIDGES. Setting to true has the same
+#   effect as negating the corresponding cartridge in the list.
 
 # cartridges / CONF_CARTRIDGES
 #   Comma-separated selections from the following:
@@ -997,6 +998,16 @@ parse_cartridges()
   p[postgres]="${p[postgresql]}"
   p[all]="${all[@]}"
 
+  # replicate previous CONF_NO_JBOSS* behavior by removing corresponding carts
+  if is_true "$CONF_NO_JBOSSEAP" ; then
+    echo 'WARNING: CONF_NO_JBOSSEAP is deprecated.  Use CONF_CARTRIDGES instead.'
+    cartridges="$cartridges,-jbosseap"
+  fi
+  if is_true "$CONF_NO_JBOSSEWS" ; then
+    echo 'WARNING: CONF_NO_JBOSSEWS is deprecated.  Use CONF_CARTRIDGES instead.'
+    cartridges="$cartridges,-jbossews"
+  fi
+
   # Build the list of packages to install ($pkgs) based on the list of
   # cartridges that the user instructs us to install ($cartridges).  See
   # the documentation on the CONF_CARTRIDGES / cartridges options for
@@ -1021,9 +1032,6 @@ parse_cartridges()
       pkgs+=( ${p[$cart_spec]:-$cart_spec} )
     fi
   done
-
-  [[ ${CONF_NO_JBOSSEAP+1} ]] && echo 'WARNING: CONF_NO_JBOSSEAP is deprecated.  Use CONF_CARTRIDGES instead.'
-  [[ ${CONF_NO_JBOSSEWS+1} ]] && echo 'WARNING: CONF_NO_JBOSSEWS is deprecated.  Use CONF_CARTRIDGES instead.'
 
   # Set CONF_NO_JBOSSEAP=0 if $pkgs includes the JBossEAP cartridges,
   # CONF_NO_JBOSSEAP=1 otherwise, so that configure_repos will enable
@@ -2037,7 +2045,7 @@ register_named_entries()
       failed="true"
     fi
   done
-  is_false $failed && echo "OpenShift: Completed updating host DNS entries."
+  is_false "$failed" && echo "OpenShift: Completed updating host DNS entries."
 }
 
 configure_network()
