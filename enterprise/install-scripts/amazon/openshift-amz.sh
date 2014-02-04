@@ -1396,7 +1396,7 @@ configure_named_zone()
   if [ "x$bind_key" = x ]; then
     # Generate a new secret key
     rm -f /var/named/K${zone}*
-    dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named ${zone}
+    dnssec-keygen -a ${bind_keyalgorithm} -b ${bind_keysize} -n USER -r /dev/urandom -K /var/named ${zone}
     bind_key="$(grep Key: /var/named/K${zone}*.private | cut -d ' ' -f 2)"
     rm -f /var/named/K${zone}*
   fi
@@ -1404,7 +1404,7 @@ configure_named_zone()
   # Install the key where BIND and oo-register-dns expect it.
   cat <<EOF > /var/named/${zone}.key
 key ${zone} {
-  algorithm HMAC-MD5;
+  algorithm "${bind_keyalgorithm}";
   secret "${bind_key}";
 };
 EOF
@@ -1601,8 +1601,8 @@ configure_dns_plugin()
   if [ "x$bind_key" = x ] && [ "x$bind_krb_keytab" = x ]
   then
     echo 'WARNING: Neither key nor keytab has been set for communication'
-    echo 'with BIND. You will need to modify the value of BIND_KEYVALUE in'
-    echo '/etc/openshift/plugins.d/openshift-origin-dns-nsupdate.conf'
+    echo 'with BIND. You will need to modify the value of BIND_KEYVALUE'
+    echo 'and BIND_KEYALGORITHM in /etc/openshift/plugins.d/openshift-origin-dns-nsupdate.conf'
     echo 'after installation.'
   fi
 
@@ -1617,6 +1617,7 @@ EOF
     cat <<EOF >> /etc/openshift/plugins.d/openshift-origin-dns-nsupdate.conf
 BIND_KEYNAME="${domain}"
 BIND_KEYVALUE="${bind_key}"
+BIND_KEYALGORITHM="${bind_keyalgorithm}"
 EOF
   else
     cat <<EOF >> /etc/openshift/plugins.d/openshift-origin-dns-nsupdate.conf
@@ -1969,6 +1970,8 @@ is_false()
 #   CONF_ACTIONS
 #   CONF_ACTIVEMQ_HOSTNAME
 #   CONF_BIND_KEY
+#   CONF_BIND_KEYALGORITHM
+#   CONF_BIND_KEYVALUE
 #   CONF_BROKER_HOSTNAME
 #   CONF_BROKER_IP_ADDR
 #   CONF_DATASTORE_HOSTNAME
@@ -2134,6 +2137,8 @@ set_defaults()
   bind_krb_principal="$CONF_BIND_KRB_PRINCIPAL"
   else
   bind_key="$CONF_BIND_KEY"
+  bind_keyalgorithm="${CONF_BIND_KEYALGORITHM:-HMAC-SHA256}"
+  bind_keysize="${CONF_BIND_KEYSIZE:-256}"
   fi
 
   # Set $conf_valid_gear_sizes to $CONF_VALID_GEAR_SIZES
