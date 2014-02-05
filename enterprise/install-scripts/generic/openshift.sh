@@ -1765,11 +1765,13 @@ $networkConnectors
     </broker>
 
     <!--
-        Enable web consoles, REST and Ajax APIs and demos
+	Enable web consoles, REST and Ajax APIs and demos. Unneeded for
+        OpenShift Enterprise and therefore disabled by default.
 
         Take a look at \${ACTIVEMQ_HOME}/conf/jetty.xml for more details
+
+        <import resource="jetty.xml"/>
     -->
-    <import resource="jetty.xml"/>
 
 </beans>
 <!-- END SNIPPET: example -->
