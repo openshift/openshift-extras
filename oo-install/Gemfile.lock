@@ -2,9 +2,12 @@ PATH
   remote: .
   specs:
     oo-install (0.0.1)
+      bundler
       highline
       i18n
       net-ssh
+      rake
+      rspec
       terminal-table
 
 GEM
