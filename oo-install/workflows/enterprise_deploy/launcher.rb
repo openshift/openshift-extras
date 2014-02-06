@@ -9,7 +9,7 @@ COMPONENT_INSTALL_ORDER = %w[ named datastore activemq broker node ]
 INSTALL_STEPS = %w[ . prepare install configure define_hosts ]
 INSTALL_STATES = %w[ new prepared installed completed completed validated broken ]
 INSTALL_ACTIONS = %w[ .
-                      init_message,validate_preflight,parse_cartridges,configure_repos
+                      init_message,validate_preflight,configure_repos
                       install_rpms
                       configure_host,configure_openshift
                       register_named_entries
