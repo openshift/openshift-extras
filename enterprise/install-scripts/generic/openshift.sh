@@ -1765,28 +1765,21 @@ $networkConnectors
     </broker>
 
     <!--
-        Enable web consoles, REST and Ajax APIs and demos
+	Enable web consoles, REST and Ajax APIs and demos. Unneeded for
+        OpenShift Enterprise and therefore disabled by default.
 
         Take a look at \${ACTIVEMQ_HOME}/conf/jetty.xml for more details
+
+        If enabling the web console, you should make sure to require 
+        authentication in jetty.xml and configure the admin/user
+        passwords in jetty-realm.properties.
+
+        <import resource="jetty.xml"/>
     -->
-    <import resource="jetty.xml"/>
 
 </beans>
 <!-- END SNIPPET: example -->
 EOF
-
-  # secure the ActiveMQ console
-  sed -i -e '/name="authenticate"/s/false/true/' /etc/activemq/jetty.xml
-
-  # only add the host property if it's not already there
-  # (so you can run the script multiple times)
-  grep '<property name="host" value="127.0.0.1" />' /etc/activemq/jetty.xml > /dev/null
-  if [ $? -ne 0 ]; then
-    sed -i -e '/name="port"/a<property name="host" value="127.0.0.1" />' /etc/activemq/jetty.xml
-  fi
-
-  sed -i -e "/admin:/s/admin,/${activemq_admin_password},/" /etc/activemq/jetty-realm.properties
-
 
   # Allow connections to ActiveMQ.
   $lokkit --port=61613:tcp
