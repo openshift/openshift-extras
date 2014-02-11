@@ -120,7 +120,20 @@
 #    are moved between hosts, ssh and git don't give developers spurious
 #    warnings about the host keys changing. So, copy /etc/ssh/ssh_* from
 #    one node host to all the rest (or, if using the same image for all
-#    hosts, just keep the keys from the image).
+#    hosts, just keep the keys from the image). Similarly, https access
+#    to moved gears will prompt errors if the certificate is not
+#    identical across nodes, so copy /etc/pki/tls/private/localhost.key
+#    and /etc/pki/tls/certs/localhost.crt (which are re-created by the
+#    installation) to be the same across all nodes.
+#
+# 4. When multiple broker hosts are deployed, copy the auth keys between
+#    them so that they are the same (/etc/openshift/server_*.pem as
+#    specified in broker.conf) and so is the broker.conf:AUTH_SALT (which
+#    can be specified in this script with the CONF_BROKER_AUTH_SALT
+#    parameter). Failure to synchronize these will result in failures in
+#    scenarios where gears make requests to a broker while using
+#    credentials created by a different broker - auto-scaling, Jenkins
+#    builds, and recording deployments.
 
 
 # PARAMETER DESCRIPTIONS
