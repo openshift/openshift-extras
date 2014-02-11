@@ -125,6 +125,15 @@
 #    identical across nodes, so copy /etc/pki/tls/private/localhost.key
 #    and /etc/pki/tls/certs/localhost.crt (which are re-created by the
 #    installation) to be the same across all nodes.
+#
+# 4. When multiple broker hosts are deployed, copy the auth keys between
+#    them so that they are the same (/etc/openshift/server_*.pem as
+#    specified in broker.conf) and so is the broker.conf:AUTH_SALT (which
+#    can be specified in this script with the CONF_BROKER_AUTH_SALT
+#    parameter). Failure to synchronize these will result in failures in
+#    scenarios where gears make requests to a broker while using
+#    credentials created by a different broker - auto-scaling, Jenkins
+#    builds, and recording deployments.
 
 
 # PARAMETER DESCRIPTIONS
