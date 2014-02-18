@@ -367,15 +367,18 @@
 #CONF_BIND_KEY=""
 
 # bind_keyalgorithm / CONF_BIND_KEYALGORITHM
+#   Default: HMAC-MD5
 #   Specify a key algorithm to use when generating a bind key. Or if specifying
 #   a bind_key, this should be set to the algorithm which was used when the
 #   bind_key was generated.
 #CONF_BIND_KEYALGORITHM="HMAC-SHA265"
 
 # bind_keysize / CONF_BIND_KEYSIZE
+#   Default: 512
 #   Specify a key size to use for generating a bind key. Or if specifying
 #   a bind_key, this should be set to the key size used when the bind_key was
-#   generated.
+#   generated.  Be sure to use a key size that is appropriate for the
+#   key algorithm.
 #CONF_BIND_KEYSIZE="256"
 
 # bind_krb_keytab / CONF_BIND_KRB_KEYTAB
@@ -2698,8 +2701,8 @@ set_defaults()
   bind_krb_principal="$CONF_BIND_KRB_PRINCIPAL"
   else
   bind_key="$CONF_BIND_KEY"
-  bind_keyalgorithm="${CONF_BIND_KEYALGORITHM:-HMAC-SHA256}"
-  bind_keysize="${CONF_BIND_KEYSIZE:-256}"
+  bind_keyalgorithm="${CONF_BIND_KEYALGORITHM:-HMAC-MD5}"
+  bind_keysize="${CONF_BIND_KEYSIZE:-512}"
   fi
 
   # Set $conf_valid_gear_sizes to $CONF_VALID_GEAR_SIZES
