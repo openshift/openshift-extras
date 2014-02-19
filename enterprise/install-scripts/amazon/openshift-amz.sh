@@ -275,12 +275,13 @@ configure_rhn_channels()
 {
   if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
     echo "OpenShift: Register to RHN Classic using an activation key"
-    rhnreg_ks --force --activationkey="${CONF_RHN_REG_ACTKEY}" --profilename="$profile_name" || abort_install
+    eval "rhnreg_ks --force --activationkey=${CONF_RHN_REG_ACTKEY} --profilename='$profile_name' ${CONF_RHN_REG_OPTS}" || abort_install
   elif [[ "${CONF_RHN_USER}" && "${CONF_RHN_PASS}" ]]
   then
     echo "OpenShift: Register to RHN Classic with username and password"
     set +x # don't log password
-    rhnreg_ks --force --profilename="$profile_name" --username "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
+    echo "rhnreg_ks --force --profilename='$profile_name' --username '${CONF_RHN_USER}' ${CONF_RHN_REG_OPTS}"
+    eval "rhnreg_ks --force --profilename='$profile_name' --username '${CONF_RHN_USER}' --password '${CONF_RHN_PASS}' ${CONF_RHN_REG_OPTS}" || abort_install
     set -x
   else
     echo "OpenShift: No credentials given for RHN Classic; assuming already configured"
@@ -311,9 +312,10 @@ configure_rhsm_channels()
 {
   if [[ "${CONF_RHN_USER}" && "${CONF_RHN_PASS}" ]]
   then
-    echo "OpenShift: Register with RHSM"
     set +x # don't log password
-    subscription-manager register --force --username="$CONF_RHN_USER" --password="$CONF_RHN_PASS" --name "$profile_name" || abort_install
+    echo "OpenShift: Register with RHSM"
+    echo "subscription-manager register --force --username='$CONF_RHN_USER' --name '$profile_name' ${CONF_RHN_REG_OPTS}"
+    eval "subscription-manager register --force --username='$CONF_RHN_USER' --password='$CONF_RHN_PASS' --name '$profile_name' ${CONF_RHN_REG_OPTS}" || abort_install
     set -x
   else
     echo "OpenShift: No credentials given for RHSM; assuming already configured"
