@@ -2158,8 +2158,8 @@ set_defaults()
   bind_krb_principal="$CONF_BIND_KRB_PRINCIPAL"
   else
   bind_key="$CONF_BIND_KEY"
-  bind_keyalgorithm="${CONF_BIND_KEYALGORITHM:-HMAC-SHA256}"
-  bind_keysize="${CONF_BIND_KEYSIZE:-256}"
+  bind_keyalgorithm="${CONF_BIND_KEYALGORITHM:-HMAC-MD5}"
+  bind_keysize="${CONF_BIND_KEYSIZE:-512}"
   fi
 
   # Set $conf_valid_gear_sizes to $CONF_VALID_GEAR_SIZES
