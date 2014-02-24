@@ -2392,7 +2392,10 @@ configure_host()
   sed -i -e 's/^timeout=.*/timeout=1/' /etc/grub.conf;
 
   # Remove VirtualHost from the default httpd ssl.conf to prevent a warning
-  sed -i '/VirtualHost/,/VirtualHost/ d' /etc/httpd/conf.d/ssl.conf
+  if broker || node
+  then
+    sed -i '/VirtualHost/,/VirtualHost/ d' /etc/httpd/conf.d/ssl.conf
+  fi
 
   echo "OpenShift: Completed configuring host."
 }
