@@ -1327,7 +1327,7 @@ configure_sshd_on_node()
   # Configure sshd to pass the GIT_SSH environment variable through.
   # The newline is needed because cloud-init doesn't add a newline after the
   # configuration it adds.
-  printf '\nAcceptEnv GIT_SSH' >> /etc/ssh/sshd_config
+  printf '\nAcceptEnv GIT_SSH\n' >> /etc/ssh/sshd_config
 
   # Up the limits on the number of connections to a given node.
   sed -i -e "s/^#MaxSessions .*$/MaxSessions 40/" /etc/ssh/sshd_config
