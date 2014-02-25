@@ -313,6 +313,18 @@ class CheckSources(object):
                 print "Package %s was not found in any repository."
                 return None
 
+    def installed_package_matching(self, name):
+        """Returns the package object for the first installed package matching
+        the specified name
+        """
+        pkgs = self.yum_base.doPackageLists(pkgnarrow='installed',
+                                            patterns=[name])
+        try:
+            return pkgs.installed[0]
+        except IndexError:
+            return None
+        return None
+
     def all_packages_matching(self, pkg_names, disable_priorities = False):
         """Return a List of all packages from all enabled repos which match
            the package names in the provided List
