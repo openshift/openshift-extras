@@ -42,54 +42,47 @@ configure_repos()
   # functions.
 
   # Make need_${repo}_repo return false by default.
-  for repo in optional infra node jbosseap_cartridge client_tools jbosseap jbossews rhscl
-  do
+  for repo in optional infra node jbosseap_cartridge client_tools jbosseap jbossews; do
       eval "need_${repo}_repo() { false; }"
   done
 
-  if is_true "$CONF_OPTIONAL_REPO"
-  then
-    need_optional_repo() { :; }
-  fi
+  is_true "$CONF_OPTIONAL_REPO" && need_optional_repo() { :; }
 
-  if activemq || broker || datastore || named
-  then
+  if activemq || broker || datastore || named; then
     # The ose-infrastructure channel has the activemq, broker, and mongodb
     # packages.  The ose-infrastructure and ose-node channels also include
     # the yum-plugin-priorities package, which is needed for the installation
-    # script itself, so we also enable ose-infrastructure here if we are
-    # installing named.
+    # script itself, so we require ose-infrastructure here even if we are
+    # only installing named.
     need_infra_repo() { :; }
-  fi
 
-  if broker
-  then
-    # We install the rhc client tool on the broker host.
-    need_client_tools_repo() { :; }
     # The rhscl channel is needed for the ruby193 software collection.
     need_rhscl_repo() { :; }
   fi
 
-  if node
-  then
+  # Bug 1054405 Currently oo-admin-yum-validator enables the client tools repo
+  # whenever the broker role is selected (even if the goal is only to install
+  # support infrastructure like activemq).  Until that is fixed we must always
+  # install the client tools repo along with the infrastructure repo.
+  need_infra_repo && need_client_tools_repo() { :; }
+
+  if node; then
     # The ose-node channel has node packages including all the cartridges.
     need_node_repo() { :; }
     # The rhscl channel is needed for several cartridge platforms.
     need_rhscl_repo() { :; }
 
-    if is_false "${CONF_NO_JBOSSEAP}"; then
-      need_jbosseap_cartridge_repo() { :; }
+    # The jbosseap and jbossas cartridges require the jbossas packages
+    # in the jbappplatform channel.
+    is_false "${CONF_NO_JBOSSEAP}" \
+             && need_jbosseap_cartridge_repo() { :; } \
+             && need_jbosseap_repo() { :; }
 
-      # The jbosseap and jbossas cartridges require the jbossas packages
-      # in the jbappplatform channel.
-      need_jbosseap_repo() { :; }
-    fi
+    # The jbossews cartridge requires the tomcat packages in the jb-ews channel.
+    is_false "${CONF_NO_JBOSSEWS}" && need_jbossews_repo() { :; }
 
-    if is_false "${CONF_NO_JBOSSEWS}"; then
-      # The jbossews cartridge requires the tomcat packages in the jb-ews
-      # channel.
-      need_jbossews_repo() { :; }
-    fi
+    # The rhscl channel is needed for several cartridge platforms.
+    need_rhscl_repo() { :; }
   fi
 
   # The configure_yum_repos, configure_rhn_channels, and
@@ -107,10 +100,6 @@ configure_repos()
       ;;
   esac
 
-  # Install yum-plugin-priorities
-  yum $disable_plugin clean all
-  echo "Installing yum-plugin-priorities; if something goes wrong here, check your install source."
-  yum_install_or_exit yum-plugin-priorities
   echo "OpenShift: Completed configuring repos."
 }
 
@@ -118,14 +107,31 @@ configure_yum_repos()
 {
 #  configure_rhel_repo
 
-  for repo in optional infra node jbosseap_cartridge jbosseap jbossews client_tools rhscl;
-  do eval "need_${repo}_repo && configure_${repo}_repo"
+  for repo in optional jbosseap jbossews rhscl; do
+    eval "need_${repo}_repo && configure_${repo}_repo"
+  done
+  configure_ose_yum_repos
+  yum clean metadata
+  yum_install_or_exit openshift-enterprise-release
+}
+
+configure_ose_yum_repos()
+{ # define plain yum repos if the parameters are given
+  # this can be useful even if the main subscription is via RHN
+  for repo in infra node jbosseap_cartridge client_tools; do
+    if [ "$ose_repo_base" != "" ]; then
+      layout=puddle; [ -n "$CONF_CDN_LAYOUT" ] && layout=cdn
+      eval "need_${repo}_repo && def_ose_yum_repo $ose_repo_base $layout $repo"
+    fi
+    if [ "$ose_extra_repo_base" != "" ]; then
+      eval "need_${repo}_repo && def_ose_yum_repo $ose_extra_repo_base extra $repo"
+    fi
   done
 }
 
 configure_rhel_repo()
 {
-  # In order for the %post section to succeed, it must have a way of 
+  # In order for the %post section to succeed, it must have a way of
   # installing from RHEL. The post section cannot access the method that
   # was used in the base install. This configures a RHEL yum repo which
   # you must supply.
@@ -137,7 +143,7 @@ baseurl=${rhel_repo}
 enabled=1
 gpgcheck=0
 sslverify=false
-priority=2
+priority=20
 sslverify=false
 exclude=tomcat6*
 
@@ -155,103 +161,38 @@ baseurl=${rhel_optional_repo}
 enabled=1
 gpgcheck=0
 sslverify=false
-priority=2
+priority=20
 sslverify=false
 
 YUM
 fi
 }
 
-configure_rhscl_repo()
+def_ose_yum_repo()
 {
-  # RHSCL channel provides the updates now instead of OSE shipping SCL pkgs
-if [ "${rhel_repo}x" != "x" ]; then
-  cat > /etc/yum.repos.d/rhscl.repo <<YUM
-[rhscl]
-name=RHEL 6 SCL
-baseurl=${rhscl_repo_base}/rhscl/1/os/
+  repo_base=$1
+  layout=$2  # one of: puddle, extra, cdn
+  channel=$3 # one of: client_tools, infra, node, jbosseap_cartridge
+
+  declare -A map
+  case $layout in
+  puddle | extra)
+    map=([client_tools]=RHOSE-CLIENT-1.2 [infra]=RHOSE-INFRA-1.2 [node]=RHOSE-NODE-1.2 [jbosseap_cartridge]=RHOSE-JBOSSEAP-1.2)
+    url="$repo_base/${map[$channel]}/x86_64/os/"
+    ;;
+  cdn | * )
+    map=([client_tools]=ose-rhc [infra]=ose-infra [node]=ose-node [jbosseap_cartridge]=ose-jbosseap)
+    url="$repo_base/${map[$channel]}/1.2/os"
+    ;;
+  esac
+  cat > "/etc/yum.repos.d/openshift-${channel}-${layout}.repo" <<YUM
+[openshift_${channel}_${layout}]
+name=OpenShift $channel $layout
+baseurl=$url
 enabled=1
 gpgcheck=0
 sslverify=false
-priority=1
-sslverify=false
-
-YUM
-fi
-}
-
-ose_yum_repo_url()
-{
-    channel=$1 #one of: Client,Infrastructure,Node,JBoss_EAP6_Cartridge
-    if is_true "$CONF_CDN_LAYOUT"
-    then # use the release CDN layout for OSE URLs
-      declare -A map
-      map=([Client]=ose-rhc [Infrastructure]=ose-infra [Node]=ose-node [JBoss_EAP6_Cartridge]=ose-jbosseap)
-      echo "$ose_repo_base/${map[$channel]}/1.2/os"
-    else # use the nightly puddle URLs
-      echo "$ose_repo_base/$channel/x86_64/os/"
-    fi
-}
-
-configure_client_tools_repo()
-{
-  # Enable repo with the puddle for broker packages.
-  cat > /etc/yum.repos.d/openshift-client.repo <<YUM
-[openshift_client]
-name=OpenShift Client
-baseurl=$(ose_yum_repo_url Client)
-enabled=1
-gpgcheck=0
-sslverify=false
-priority=1
-sslverify=false
-
-YUM
-}
-
-configure_infra_repo()
-{
-  # Enable repo with the puddle for broker packages.
-  cat > /etc/yum.repos.d/openshift-infrastructure.repo <<YUM
-[openshift_infrastructure]
-name=OpenShift Infrastructure
-baseurl=$(ose_yum_repo_url Infrastructure)
-enabled=1
-gpgcheck=0
-sslverify=false
-priority=1
-sslverify=false
-
-YUM
-}
-
-configure_node_repo()
-{
-  # Enable repo with the puddle for node packages.
-  cat > /etc/yum.repos.d/openshift-node.repo <<YUM
-[openshift_node]
-name=OpenShift Node
-baseurl=$(ose_yum_repo_url Node)
-enabled=1
-gpgcheck=0
-sslverify=false
-priority=1
-sslverify=false
-
-YUM
-}
-
-configure_jbosseap_cartridge_repo()
-{
-  # Enable repo with the puddle for the JBossEAP cartridge package.
-  cat > /etc/yum.repos.d/openshift-jboss.repo <<YUM
-[openshift_jbosseap]
-name=OpenShift JBossEAP
-baseurl=$(ose_yum_repo_url JBoss_EAP6_Cartridge)
-enabled=1
-gpgcheck=0
-sslverify=false
-priority=1
+priority=10
 sslverify=false
 
 YUM
@@ -261,15 +202,13 @@ configure_jbosseap_repo()
 {
   # The JBossEAP cartridge depends on Red Hat's JBoss packages.
 
-  if [ "x${jboss_repo_base}" != "x" ]
-  then
-  ## configure JBossEAP repo
+  if [ "x${jboss_repo_base}" != "x" ]; then
     cat <<YUM > /etc/yum.repos.d/jbosseap.repo
 [jbosseap]
 name=jbosseap
 baseurl=${jboss_repo_base}/jbeap/6/os
 enabled=1
-priority=3
+priority=30
 gpgcheck=0
 sslverify=false
 
@@ -281,15 +220,13 @@ YUM
 configure_jbossews_repo()
 {
   # The JBossEWS cartridge depends on Red Hat's JBoss packages.
-  if [ "x${jboss_repo_base}" != "x" ]
-  then
-  ## configure JBossEWS repo
+  if [ "x${jboss_repo_base}" != "x" ]; then
     cat <<YUM > /etc/yum.repos.d/jbossews.repo
 [jbossews]
 name=jbossews
 baseurl=${jboss_repo_base}/jbews/2/os
 enabled=1
-priority=3
+priority=30
 gpgcheck=0
 sslverify=false
 
@@ -298,23 +235,42 @@ YUM
   fi
 }
 
-rhn_setopt() # e.g. rhn_setopt myrepo foo=bar
+configure_rhscl_repo()
 {
-  # RHN method for setting yum priorities and excludes:
-  RHNPLUGINCONF="/etc/yum/pluginconf.d/rhnplugin.conf"
+  if [ "x${rhscl_repo_base}" != "x" ]; then
+    cat <<YUM > /etc/yum.repos.d/rhscl.repo
+[rhscl]
+name=rhscl
+baseurl=${rhscl_repo_base}/rhscl/1/os/
+enabled=1
+priority=30
+gpgcheck=0
+sslverify=false
 
-  repo=$1; shift
-  echo "setting $@ on channel $repo"
-  # subscribe to channel if not already
-  set +x # don't log password
-  [[ "$(rhn-channel -l)" == *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
-  set -x
-  # NOTE: this next bit could go haywire with repo names that include special regex chars
-  sed -i "/^\\[$repo\\]/,/^\\[/{ /^\\[/ !d }" $RHNPLUGINCONF   # remove previous [repo] section if there
-  sed -i "/^\\[$repo\\]/ d" $RHNPLUGINCONF   # remove previous section header if there
-  echo "[$repo]" >> $RHNPLUGINCONF
-  for opt in "$@"; do echo "$opt" >> $RHNPLUGINCONF; done
-  echo >> $RHNPLUGINCONF
+YUM
+
+  fi
+}
+
+configure_subscription()
+{
+   configure_ose_yum_repos # if requested
+   # install our tool to enable repo/channel configuration
+   yum_install_or_exit openshift-enterprise-yum-validator
+
+   roles=""  # we will build the list of roles we need, then enable them.
+   need_infra_repo && roles="$roles --role broker"
+   need_client_tools_repo && roles="$roles --role client"
+   need_node_repo && roles="$roles --role node"
+   need_jbosseap_cartridge_repo && roles="$roles --role node-eap"
+   oo-admin-yum-validator -o 1.2 --fix-all $roles # when fixing, rc is always false
+   oo-admin-yum-validator -o 1.2 $roles || abort_install # so check when fixes are done
+
+   # Normally we could just install o-e-release and it would pull in yum-validator;
+   # however it turns out the ruby dependencies can sometimes be pulled in from the
+   # wrong channel before yum-validator does its work. So, install it afterward.
+   yum_install_or_exit openshift-enterprise-release
+   configure_ose_yum_repos # refresh if overwritten by validator
 }
 
 configure_rhn_channels()
@@ -329,85 +285,40 @@ configure_rhn_channels()
     set -x
   fi
 
-  # OSE and RHSCL packages are first priority
-  need_client_tools_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-rhc priority=1
-  need_infra_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-infrastructure priority=1
-  need_node_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-node priority=1
-  need_jbosseap_repo && rhn_setopt rhel-x86_64-server-6-ose-1.2-jbosseap priority=1
-  need_rhscl_repo && rhn_setopt rhel-x86_64-server-6-rhscl-1 priority=1
+  # Enable the node or infrastructure channel to enable installing the release RPM
+  repos=('rhel-x86_64-server-6-rhscl-1')
+  if [ ! need_node_repo ] || need_infra_repo ; then
+    repos+=('rhel-x86_64-server-6-ose-1.2-infrastructure')
+  fi
+  need_node_repo && repos+=('rhel-x86_64-server-6-ose-1.2-node' 'jb-ews-2-x86_64-server-6-rpm')
+  need_client_tools_repo && repos+=('rhel-x86_64-server-6-ose-1.2-rhc')
+  need_jbosseap_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-1.2-jbosseap' 'jbappplatform-6-x86_64-server-6-rpm')
 
-  # RHEL packages are second priority
-  rhn_setopt rhel-x86_64-server-6 priority=2 "exclude=tomcat6*"
-
-  # JBoss packages are third priority -- and all else is lower
-  need_jbosseap_repo && rhn_setopt jbappplatform-6-x86_64-server-6-rpm priority=3
-  need_jbossews_repo && rhn_setopt jb-ews-2-x86_64-server-6-rpm priority=3
-
-  need_optional_repo && rhn_setopt rhel-x86_64-server-optional-6
-}
-
-ycm_setopt() # e.g. ycm_setopt myrepo foo=bar; must have an option to do anything
-{
-  repo=$1; shift
-  echo "setting $@ on repo $repo"
-  # Note: yum-config-manager never indicates errors with a return code. We will check the output
-  # to determine when these fail due to subscription problems etc.
-  yum-config-manager $disable_plugin "$repo" --enable | grep -q '^enabled = \(1\|True\)' \
-     || abort_install "Failed to enable $repo."
-  for repo_opt in "$@"; do
-    # The obvious way to set options would be yum-config-manager. Sadly, against our 1.2 repos,
-    # this is currently broken. https://bugzilla.redhat.com/show_bug.cgi?id=1024111
-    # For a workaround we edit the repo file directly.
-    # In the repo foo=bar becomes "foo = bar"
-    option_name="${repo_opt//=*/}"
-    repo_opt="${repo_opt//=/ = }"
-    NL=$'\n'
-    # NOTE: this next bit could go haywire with repo names that include special regex chars
-    sed -i "/^\\[$repo\\]/,/^\\[/ { /^$option_name =/d; /^\\[$repo\\]/ a${repo_opt}$NL  }" /etc/yum.repos.d/redhat.repo
+  set +x # don't log password
+  for repo in "${repos[@]}"; do
+    [[ "$(rhn-channel -l)" == *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
   done
+  set -x
+
+  configure_subscription
 }
 
 configure_rhsm_channels()
 {
-   echo "OpenShift: Register with RHSM"
-   set +x # don't log password
-   subscription-manager register --force --username="$CONF_RHN_USER" --password="$CONF_RHN_PASS" --name "$profile_name" || abort_install
-   set -x
-   for poolid in ${CONF_SM_REG_POOL//[, :+\/-]/ }; do
-     echo "OpenShift: Registering subscription from pool id $poolid"
-     subscription-manager attach --pool "$poolid" || abort_install
-   done
+  echo "OpenShift: Register with RHSM"
+  set +x # don't log password
+  subscription-manager register --force --username="$CONF_RHN_USER" --password="$CONF_RHN_PASS" --name "$profile_name" || abort_install
+  set -x
+  for poolid in ${CONF_SM_REG_POOL//[, :+\/-]/ }; do
+    echo "OpenShift: Registering subscription from pool id $poolid"
+    subscription-manager attach --pool "$poolid" || abort_install
+  done
 
-   # The yum-config-manager command is provided by the yum-utils package.
-   # We also need the priorities plugin before we start setting priorities, or that fails.
-   # We need to ensure the right channel is enabled in order to get the priorities plugin.
-   if need_node_repo; then subscription-manager repos --enable=rhel-server-ose-1.2-node-6-rpms || abort_install
-   else subscription-manager repos --enable=rhel-server-ose-1.2-infra-6-rpms || abort_install
-   fi
-   yum_install_or_exit yum-plugin-priorities yum-utils
-
-   # configure the RHEL subscription
-   ycm_setopt rhel-6-server-rpms priority=2 "exclude=tomcat6*"
-   need_optional_repo && ycm_setopt rhel-6-server-optional-rpms enabled=True
-
-   # and the OpenShift subscription
-   need_infra_repo && ycm_setopt rhel-server-ose-1.2-infra-6-rpms priority=1
-   need_client_tools_repo && ycm_setopt rhel-server-ose-1.2-rhc-6-rpms priority=1
-   need_node_repo && ycm_setopt rhel-server-ose-1.2-node-6-rpms priority=1
-   need_jbosseap_cartridge_repo && ycm_setopt rhel-server-ose-1.2-jbosseap-6-rpms priority=1
-   # and RHSCL subscription
-   need_rhscl_repo && ycm_setopt rhel-server-rhscl-6-rpms priority=1
-
-   # and JBoss subscriptions for the node
-   if need_jbosseap_repo; then
-     ycm_setopt jb-eap-6-for-rhel-6-server-rpms priority=3
-     yum-config-manager $disable_plugin --disable jb-eap-5-for-rhel-6-server-rpms > /dev/null
-   fi
-
-   if need_jbossews_repo; then
-     ycm_setopt jb-ews-2-for-rhel-6-server-rpms priority=3
-     yum-config-manager $disable_plugin --disable jb-ews-1-for-rhel-6-server-rpms > /dev/null
-   fi
+  # Enable the node or infrastructure repo to enable installing the release RPM
+  if need_node_repo; then subscription-manager repos --enable=rhel-server-ose-1.2-node-6-rpms || abort_install
+  else subscription-manager repos --enable=rhel-server-ose-1.2-infra-6-rpms || abort_install
+  fi
+  configure_subscription
 }
 
 abort_install()
@@ -1956,6 +1867,7 @@ is_false()
 #   nameservers
 #   node_hostname
 #   ose_repo_base
+#   ose_extra_repo_base
 #
 # This function makes use of variables that may be set by parse_kernel_cmdline
 # based on the content of /proc/cmdline or may be hardcoded by modifying
@@ -1978,7 +1890,8 @@ is_false()
 #   CONF_NODE_HOSTNAME
 #   CONF_NODE_IP_ADDR
 #   CONF_NODE_V1_ENABLE
-#   CONF_REPOS_BASE
+#   CONF_OSE_REPO_BASE
+#   CONF_OSE_ERRATA_BASE
 set_defaults()
 {
   # By default, we run do_all_actions, which performs all the steps of
@@ -2021,7 +1934,7 @@ set_defaults()
   # Following are some settings used in subsequent steps.
 
   # There a no defaults for these. Customers should be using
-  # subscriptions via RHN. For testing we use internal systems.
+  # subscriptions via RHN. Internally we use private systems.
   rhel_repo="${CONF_RHEL_REPO%/}"
   jboss_repo_base="${CONF_JBOSS_REPO_BASE%/}"
   rhscl_repo_base="${CONF_RHSCL_REPO_BASE%/}"
@@ -2045,9 +1958,9 @@ set_defaults()
   elif [ "${rhel_repo}" == "${ose_repo_base}/os" ]; then # OSE same repo base as RHEL?
     CONF_CDN_LAYOUT=1  # use the CDN layout for OpenShift yum repos
   fi
+  ose_extra_repo_base="${CONF_OSE_EXTRA_REPO_BASE%/}"
   rhscl_repo_base="${rhscl_repo_base:-${rhel_repo%/os}}"
-
-  # no need to waste time checking both subscription plugins when only using one
+  # no need to waste time checking both subscription plugins if using one
   disable_plugin=""
   [[ "$CONF_INSTALL_METHOD" == "rhsm" ]] && disable_plugin='--disableplugin=rhnplugin'
   [[ "$CONF_INSTALL_METHOD" == "rhn" ]] && disable_plugin='--disableplugin=subscription-manager'
@@ -2112,11 +2025,6 @@ set_defaults()
     named_ip_addr="${CONF_NAMED_IP_ADDR:-$broker_ip_addr}"
   fi
 
-  if ! [ "${CONF_FORWARD_DNS}" ]; then  # decide default for forwarding
-    CONF_FORWARD_DNS=true
-    # if not running a rogue DNS server, don't need to forward
-    is_true "$CONF_KEEP_NAMESERVERS" && CONF_FORWARD_DNS=false
-  fi
   # The nameservers to which named on the broker will forward requests.
   # This should be a list of IP addresses with a semicolon after each.
   nameservers="$(awk '/nameserver/ { printf "%s; ", $2 }' /etc/resolv.conf)"
@@ -2278,10 +2186,11 @@ install_rpms()
   echo "OpenShift: Begin installing RPMs."
   # we often rely on latest selinux policy and other updates
   echo "OpenShift: yum update"
+  yum $disable_plugin clean all
   yum $disable_plugin update -y || abort_install
   # Install ntp and ntpdate because they may not be present in a RHEL
   # minimal install.
-  yum_install_or_exit ntp ntpdate
+  yum_install_or_exit ntp ntpdate lokkit
 
   # install what we need for various components
   named && install_named_pkgs
