@@ -65,17 +65,17 @@
         </managementContext>
 
 	<networkConnectors>
-		<networkConnector name="broker1-broker2-topic" duplex="true" uri="static:(tcp://activemq2.example.com:61616)" userName="amquser" password="amqpass">
+		<networkConnector name="broker1-broker2-topic" uri="static:(tcp://activemq2.example.com:61616)" userName="amquser" password="amqpass">
 			<excludedDestinations><queue physicalName=">" /></excludedDestinations>
 		</networkConnector>
-		<networkConnector name="broker1-broker2-queue" duplex="true" uri="static:(tcp://activemq2.example.com:61616)" userName="amquser" password="amqpass"
+		<networkConnector name="broker1-broker2-queue" uri="static:(tcp://activemq2.example.com:61616)" userName="amquser" password="amqpass"
 			conduitSubscriptions="false">
 			<excludedDestinations><topic physicalName=">" /></excludedDestinations>
 		</networkConnector>
-		<networkConnector name="broker1-broker3-topic" duplex="true" uri="static:(tcp://activemq3.example.com:61616)" userName="amquser" password="amqpass">
+		<networkConnector name="broker1-broker3-topic" uri="static:(tcp://activemq3.example.com:61616)" userName="amquser" password="amqpass">
 			<excludedDestinations><queue physicalName=">" /></excludedDestinations>
 		</networkConnector>
-		<networkConnector name="broker1-broker3-queue" duplex="true" uri="static:(tcp://activemq3.example.com:61616)" userName="amquser" password="amqpass"
+		<networkConnector name="broker1-broker3-queue" uri="static:(tcp://activemq3.example.com:61616)" userName="amquser" password="amqpass"
 			conduitSubscriptions="false">
 			<excludedDestinations><topic physicalName=">" /></excludedDestinations>
 		</networkConnector>
