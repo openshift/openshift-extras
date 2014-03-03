@@ -277,10 +277,10 @@
 # The nightly OSE build repositories use a different layout from CDN.
 # If the location of these is different from the CDN base and CONF_CDN_LAYOUT
 # is not set, then this layout is defined:
-# <ose_repo_base>/RHOSE-CLIENT-2.0/x86_64/os
-# <ose_repo_base>/RHOSE-INFRA-2.0/x86_64/os
-# <ose_repo_base>/RHOSE-JBOSSEAP-2.0/x86_64/os
-# <ose_repo_base>/RHOSE-NODE-2.0/x86_64/os
+# <ose_repo_base>/RHOSE-CLIENT-2.1/x86_64/os
+# <ose_repo_base>/RHOSE-INFRA-2.1/x86_64/os
+# <ose_repo_base>/RHOSE-JBOSSEAP-2.1/x86_64/os
+# <ose_repo_base>/RHOSE-NODE-2.1/x86_64/os
 
 # cdn_repo_base / CONF_CDN_REPO_BASE
 #   Default base URL for all repositories used for the "yum" install method (see above).
@@ -793,7 +793,7 @@ def_ose_yum_repo()
   declare -A map
   case $layout in
   puddle | extra)
-    map=([client_tools]=RHOSE-CLIENT-2.0 [infra]=RHOSE-INFRA-2.0 [node]=RHOSE-NODE-2.0 [jbosseap_cartridge]=RHOSE-JBOSSEAP-2.0)
+    map=([client_tools]=RHOSE-CLIENT-2.1 [infra]=RHOSE-INFRA-2.1 [node]=RHOSE-NODE-2.1 [jbosseap_cartridge]=RHOSE-JBOSSEAP-2.1)
     url="$repo_base/${map[$channel]}/x86_64/os/"
     ;;
   cdn | * )
@@ -906,11 +906,11 @@ configure_rhn_channels()
     # Enable the node or infrastructure channel to enable installing the release RPM
     repos=('rhel-x86_64-server-6-rhscl-1')
     if ! need_node_repo || need_infra_repo ; then
-      repos+=('rhel-x86_64-server-6-ose-2.0-infrastructure')
+      repos+=('rhel-x86_64-server-6-ose-2.1-infrastructure')
     fi
-    need_node_repo && repos+=('rhel-x86_64-server-6-ose-2.0-node' 'jb-ews-2-x86_64-server-6-rpm')
-    need_client_tools_repo && repos+=('rhel-x86_64-server-6-ose-2.0-rhc')
-    need_jbosseap_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.0-jbosseap' 'jbappplatform-6-x86_64-server-6-rpm')
+    need_node_repo && repos+=('rhel-x86_64-server-6-ose-2.1-node' 'jb-ews-2-x86_64-server-6-rpm')
+    need_client_tools_repo && repos+=('rhel-x86_64-server-6-ose-2.1-rhc')
+    need_jbosseap_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.1-jbosseap' 'jbappplatform-6-x86_64-server-6-rpm')
 
     set +x # don't log password
     for repo in "${repos[@]}"; do
@@ -950,8 +950,8 @@ configure_rhsm_channels()
   done
 
   # Enable the node or infrastructure repo to enable installing the release RPM
-  if need_node_repo; then subscription-manager repos --enable=rhel-6-server-ose-2.0-node-rpms || abort_install
-  else subscription-manager repos --enable=rhel-6-server-ose-2.0-infra-rpms || abort_install
+  if need_node_repo; then subscription-manager repos --enable=rhel-6-server-ose-2.1-node-rpms || abort_install
+  else subscription-manager repos --enable=rhel-6-server-ose-2.1-infra-rpms || abort_install
   fi
   configure_subscription
 }
@@ -2907,12 +2907,12 @@ validate_preflight()
   # test that subscription parameters are available if needed
   if [[ "$CONF_INSTALL_METHOD" = rhn ]]; then
     # Check whether we are already registered with RHN and already have
-    # ose-2.0 channels added.  If we are not, we will need RHN
+    # ose-2.1 channels added.  If we are not, we will need RHN
     # credentials so that we can register and add channels ourselves.
     #
     # Note: With RHN, we need credentials both for registration and
     # adding channels.
-    if ! [[ -f /etc/sysconfig/rhn/systemid ]] || ! rhn-channel -l | grep -q '^rhel-x86_64-server-6-ose-2.0-\(node\|infrastructure\)'
+    if ! [[ -f /etc/sysconfig/rhn/systemid ]] || ! rhn-channel -l | grep -q '^rhel-x86_64-server-6-ose-2.1-\(node\|infrastructure\)'
     then
       set +x # don't log password
       if [ ! "$CONF_RHN_USER" -o ! "$CONF_RHN_PASS" ]; then
@@ -2939,7 +2939,7 @@ validate_preflight()
     fi
 
     # If we are not given a pool id, we will not be able to attach any
-    # pools, so make sure we already have access to the ose-2.0 repos,
+    # pools, so make sure we already have access to the ose-2.1 repos,
     # and we also need to make sure that we have NOT been given RHN
     # credentials because that would cause configure_rhsm_channels to
     # re-register and lose access to those repos.
@@ -2950,7 +2950,7 @@ validate_preflight()
     # a harmless but possibly alarming "Broken pipe" error message.
     if [[ ! "$CONF_SM_REG_POOL" ]] &&
         ( [[ "$CONF_RHN_USER" && "$CONF_RHN_PASS" ]] ||
-          ! subscription-manager repos | tac | grep -q '\<rhel-6-server-ose-2.0-\(infra\|node\)-rpms$' ); then
+          ! subscription-manager repos | tac | grep -q '\<rhel-6-server-ose-2.1-\(infra\|node\)-rpms$' ); then
       echo "OpenShift: Install method rhsm requires a poolid."
       preflight_failure=1
     fi
