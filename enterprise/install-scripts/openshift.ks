@@ -1,3 +1,4 @@
+# -*- mode: sh; sh-basic-offset: 2 -*-
 # This script configures a single host with OpenShift components. It may
 # be used either as a RHEL6 kickstart script, or the %post section may
 # be extracted and run directly to install on top of an installed RHEL6
@@ -586,6 +587,15 @@
 #CONF_ROUTING_PLUGIN_USER=routinginfo
 #CONF_ROUTING_PLUGIN_PASS=routinginfopassword
 
+# metapkgs / CONF_METAPKGS
+#   Default: recommended
+#   Specify which cartridge dependency metapackages should be installed
+#   Comma or space-separated options include:
+#     none - Install none of the cart dep metapackages
+#     recommended - Install only the recommended cart dep metapackages
+#     optional - Install the optional AND recommended cart dep metapackages
+# CONF_METAPKGS=optional
+
 ########################################################################
 
 #Begin Kickstart Script
@@ -1085,6 +1095,17 @@ parse_cartridges()
     [ruby]=openshift-origin-cartridge-ruby
   )
 
+  local -a meta=(
+    jbossas
+    jbosseap
+    jbossews
+    nodejs
+    perl
+    php
+    python
+    ruby
+  )
+
   # Save the list of all packages before we add mappings that will
   # introduce duplicates into the range of p.
   local -a all=( ${p[@]} )
@@ -1127,6 +1148,15 @@ parse_cartridges()
       # Append all packages indicated by the cart_spec, or append
       # $cart_spec itself if it does not map to anything in $p.
       pkgs+=( ${p[$cart_spec]:-$cart_spec} )
+    fi
+  done
+
+  for metapkg in ${meta[@]}
+  do
+    if [[ "${pkgs[@]}" =~ "-${metapkg}" ]]
+    then
+        metapkgs_optional && pkgs+=( "openshift-origin-cartridge-dependencies-optional-${metapkg}" )
+        metapkgs_recommended && pkgs+=( "openshift-origin-cartridge-dependencies-recommended-${metapkg}" )
     fi
   done
 
@@ -2518,6 +2548,16 @@ parse_cmdline()
   parse_args "$@"
 }
 
+metapkgs_optional()
+{
+  [[ ${metapkgs,,} =~ 'optional' ]]
+}
+
+metapkgs_recommended()
+{
+  metapkgs_optional || [[ ${metapkgs,,} =~ 'recommended' ]]
+}
+
 is_true()
 {
   for arg
@@ -2860,6 +2900,9 @@ set_defaults()
   # auth info for the topic from the sample routing SPI plugin
   routing_plugin_user="${CONF_ROUTING_PLUGIN_USER:-routinginfo}"
   routing_plugin_pass="${CONF_ROUTING_PLUGIN_PASS:-routinginfopassword}"
+
+  # cartridge dependency metapackages
+  metapkgs="${CONF_METAPKGS:-recommended}"
 
   # need to know the list of cartridges in various places.
   parse_cartridges

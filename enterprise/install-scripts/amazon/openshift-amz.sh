@@ -471,6 +471,17 @@ parse_cartridges()
     [ruby]=openshift-origin-cartridge-ruby
   )
 
+  local -a meta=(
+    jbossas
+    jbosseap
+    jbossews
+    nodejs
+    perl
+    php
+    python
+    ruby
+  )
+
   # Save the list of all packages before we add mappings that will
   # introduce duplicates into the range of p.
   local -a all=( ${p[@]} )
@@ -513,6 +524,15 @@ parse_cartridges()
       # Append all packages indicated by the cart_spec, or append
       # $cart_spec itself if it does not map to anything in $p.
       pkgs+=( ${p[$cart_spec]:-$cart_spec} )
+    fi
+  done
+
+  for metapkg in ${meta[@]}
+  do
+    if [[ "${pkgs[@]}" =~ "-${metapkg}" ]]
+    then
+        metapkgs_optional && pkgs+=( "openshift-origin-cartridge-dependencies-optional-${metapkg}" )
+        metapkgs_recommended && pkgs+=( "openshift-origin-cartridge-dependencies-recommended-${metapkg}" )
     fi
   done
 
@@ -771,7 +791,7 @@ install_datastore_pkgs()
   yum_install_or_exit mongodb-server mongodb
 }
 
-# The init script lies to us as of version 2.0.2-1.el6_3: The start 
+# The init script lies to us as of version 2.0.2-1.el6_3: The start
 # and restart actions return before the daemon is ready to accept
 # connections (appears to take time to initialize the journal). Thus
 # we need the following to wait until the daemon is really ready.
@@ -952,9 +972,9 @@ configure_gears()
 # Enable services to start on boot for the node.
 enable_services_on_node()
 {
-  # We use --nostart below because activating the configuration here 
-  # will produce errors.  Anyway, we only need the configuration 
-  # activated Anaconda reboots, so --nostart makes sense in any case.
+  # We use --nostart below because activating the configuration here
+  # will produce errors.  Anyway, we only need the configuration
+  # activated after Anaconda reboots, so --nostart makes sense in any case.
 
   $lokkit --service=ssh
   $lokkit --service=https
@@ -976,8 +996,8 @@ enable_services_on_node()
 # Enable services to start on boot for the broker and fix up some issues.
 enable_services_on_broker()
 {
-  # We use --nostart below because activating the configuration here 
-  # will produce errors.  Anyway, we only need the configuration 
+  # We use --nostart below because activating the configuration here
+  # will produce errors.  Anyway, we only need the configuration
   # activated after Anaconda reboots, so --nostart makes sense.
 
   $lokkit --service=ssh
@@ -1385,7 +1405,7 @@ logging {
 
 // use the default rndc key
 include "/etc/rndc.key";
- 
+
 controls {
 	inet 127.0.0.1 port 953
 	allow { 127.0.0.1; } keys { "rndc-key"; };
@@ -1904,6 +1924,16 @@ parse_cmdline()
   parse_args "$@"
 }
 
+metapkgs_optional()
+{
+  [[ ${metapkgs,,} =~ 'optional' ]]
+}
+
+metapkgs_recommended()
+{
+  metapkgs_optional || [[ ${metapkgs,,} =~ 'recommended' ]]
+}
+
 is_true()
 {
   for arg
@@ -2195,7 +2225,7 @@ set_defaults()
 
   # Set default passwords
   #
-  #   This is the admin password for the ActiveMQ admin console, which 
+  #   This is the admin password for the ActiveMQ admin console, which
   #   is not needed by OpenShift but might be useful in troubleshooting.
   activemq && activemq_admin_password="${CONF_ACTIVEMQ_ADMIN_PASSWORD:-${randomized//[![:alnum:]]}}"
 
@@ -2206,12 +2236,12 @@ set_defaults()
   activemq && activemq_amq_user_password="${CONF_ACTIVEMQ_AMQ_USER_PASSWORD:-password}"
 
   #   This is the user and password shared between broker and node for
-  #   communicating over the mcollective topic channels in ActiveMQ. 
+  #   communicating over the mcollective topic channels in ActiveMQ.
   #   Must be the same on all broker and node hosts.
   mcollective_user="${CONF_MCOLLECTIVE_USER:-mcollective}"
   mcollective_password="${CONF_MCOLLECTIVE_PASSWORD:-marionette}"
 
-  #   These are the username and password of the administrative user 
+  #   These are the username and password of the administrative user
   #   that will be created in the MongoDB datastore. These credentials
   #   are not used by in this script or by OpenShift, but an
   #   administrative user must be added to MongoDB in order for it to
@@ -2246,6 +2276,9 @@ set_defaults()
   # auth info for the topic from the sample routing SPI plugin
   routing_plugin_user="${CONF_ROUTING_PLUGIN_USER:-routinginfo}"
   routing_plugin_pass="${CONF_ROUTING_PLUGIN_PASS:-routinginfopassword}"
+
+  # cartridge dependency metapackages
+  metapkgs="${CONF_METAPKGS:-recommended}"
 
   # need to know the list of cartridges in various places.
   parse_cartridges
@@ -2462,6 +2495,38 @@ do_all_actions()
   echo "Then validate brokers/nodes with oo-diagnostics."
 }
 
+setup_vm_user()
+{
+  # Set the runlevel to graphical
+  /bin/sed -i -e 's/id:.:initdefault:/id:5:initdefault:/' /etc/inittab
+
+  # Create the 'openshift' user
+  /usr/sbin/useradd openshift
+
+  # Set the account password
+  /bin/echo 'openshift:openshift' | /usr/sbin/chpasswd -c SHA512
+
+  # Set up the 'openshift' user for auto-login
+  /usr/sbin/groupadd nopasswdlogin
+  /usr/sbin/usermod -G openshift,nopasswdlogin openshift
+  /bin/sed -i -e '/^\[daemon\]/a \
+AutomaticLogin=openshift \
+AutomaticLoginEnable=true \
+' /etc/gdm/custom.conf
+  /bin/sed -i -e '1i \
+auth sufficient pam_succeed_if.so user ingroup nopasswdlogin' /etc/pam.d/gdm-password
+
+  # Place a "Welcome to OpenShift" page in the user homedir
+  mkdir -p /home/openshift/.openshift/
+  # TODO: Create a symlink to the RPM-installed location of welcome.html
+  # ln -s path/to/welcome.html /home/openshift/.openshift/welcome.html
+
+  # Place a startup routine in the user homedir
+  mkdir -p /home/openshift/.config/autostart/
+  # TODO: Create a symlink to the RPM-installed location of com.redhat.OSEWelcome.desktop
+  # ln -s path/to/com.redhat.OSEwelcome.desktop /home/openshift/.config/autostart/com.redhat.OSEwelcome.desktop
+}
+
 ########################################################################
 
 lokkit="lokkit" # normally...
@@ -2473,6 +2538,9 @@ if [ "$environment" = ks ]; then
   parse_kernel_cmdline
   # during a kickstart a live lokkit fails
   lokkit="lokkit --nostart"
+elif [ "$environment" = vm ]; then
+  # The RHEL + OSE VM requires the setup of a default user.
+  setup_vm_user
 else
   # parse_cmdline is only needed for shell scripts generated by extracting
   # this %post section.
