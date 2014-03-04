@@ -2926,9 +2926,9 @@ install_rpms()
   echo "OpenShift: yum update"
   yum $disable_plugin clean all
   yum $disable_plugin update -y || abort_install
-  # Install ntp and ntpdate because they may not be present in a RHEL
-  # minimal install.
-  yum_install_or_exit ntp ntpdate lokkit
+  # Install a few packages missing from a minimal RHEL install required by the
+  # installer script itself.
+  yum_install_or_exit ntp ntpdate lokkit wget
 
   # install what we need for various components
   named && install_named_pkgs
