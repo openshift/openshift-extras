@@ -1102,14 +1102,17 @@ parse_cartridges()
     fi
   done
 
-  for metapkg in ${meta[@]}
-  do
-    if [[ "${pkgs[@]}" =~ "-${metapkg}" ]]
-    then
+  if metapkgs_optional || metapkgs_recommended
+  then
+    for metapkg in ${meta[@]}
+    do
+      if [[ "${pkgs[@]}" =~ "-${metapkg}" ]]
+      then
         metapkgs_optional && pkgs+=( "openshift-origin-cartridge-dependencies-optional-${metapkg}" )
         metapkgs_recommended && pkgs+=( "openshift-origin-cartridge-dependencies-recommended-${metapkg}" )
-    fi
-  done
+      fi
+    done
+  fi
 
   # Set CONF_NO_JBOSSEAP=0 if $pkgs includes the JBossEAP cartridges,
   # CONF_NO_JBOSSEAP=1 otherwise, so that configure_repos will enable
