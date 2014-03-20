@@ -1568,6 +1568,7 @@ enable_services_on_node()
   chkconfig sshd on
   chkconfig oddjobd on
   chkconfig openshift-node-web-proxy on
+  chkconfig openshift-watchman on
 }
 
 
