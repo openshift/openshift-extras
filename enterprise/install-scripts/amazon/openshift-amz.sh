@@ -1034,14 +1034,18 @@ plugin.activemq.pool.${num_replicants}.password = ${mcollective_password}
 }
 
 # Configure mcollective on the broker to use ActiveMQ.
+#
+# logger_type = file cannot be set for OpenShift Enterprise
+#  * log to console instead
+# https://bugzilla.redhat.com/show_bug.cgi?id=963332
 configure_mcollective_for_activemq_on_broker()
 {
   cat <<EOF > /opt/rh/ruby193/root/etc/mcollective/client.cfg
 main_collective = mcollective
 collectives = mcollective
 libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
-logfile = /var/log/openshift/broker/ruby193-mcollective-client.log
-loglevel = debug
+logger_type = console
+loglevel = warn
 direct_addressing = 0
 
 # Plugins
