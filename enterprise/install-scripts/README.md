@@ -3,6 +3,16 @@ The kickstarts and install scripts found here are mostly self documenting.
 They set reasonable defaults but are almost endlessly configurable via
 environment variables.
 
+## Kickstart file and shell script ##
+Alongside this README file, you will find openshift.ks, which is a kickstart
+file with a large %post section that installs OpenShift Enterprise.  In the
+generic/ subdirectory, you will find openshift.sh, which is a shell script that
+is generated from the openshift.ks file.  These two files provide alternative
+installation methods: you can use the kickstart file to boot a new host and
+install OpenShift Enterprise running on Red Hat Enterprise Linux, or if you
+already have Red Hat Enterprise Linux installed on a host, you can run
+openshift.sh on that host to install OpenShift Enterprise.
+
 ## Generating the extra scripts from the kickstart ##
 One important thing to understand when making changes is that you will only
 need to edit the openshift.ks file found in this directory.  Once you have made

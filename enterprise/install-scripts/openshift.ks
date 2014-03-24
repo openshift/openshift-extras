@@ -641,10 +641,6 @@ git
 # by using the following command:
 #    tailf /mnt/sysimage/root/anaconda-post.log
 
-# You can use sed to extract just the %post section:
-#    sed -e '0,/^%post/d;/^%end/,$d'
-# Be sure to reboot after installation if using the %post this way.
-
 # Log the command invocations (and not merely output) in order to make
 # the log more useful.
 set -x
