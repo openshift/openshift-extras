@@ -1,7 +1,7 @@
 # Installation script #
 The kickstarts and install scripts found here are mostly self documenting.
 They set reasonable defaults but are almost endlessly configurable via
-environment variaibles.
+environment variables.
 
 ## Generating the extra scripts from the kickstart ##
 One important thing to understand when making changes is that you will only
