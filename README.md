@@ -1,4 +1,4 @@
-Openshift Extras - Unofficial tools for use with OpenShift
+Openshift Extras - Tools for use with OpenShift
 ==========================================================
 
 This repository contains "odds and ends" for use with OpenShift servers
