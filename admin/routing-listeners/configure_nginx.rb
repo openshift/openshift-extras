@@ -1,11 +1,11 @@
 #!/usr/bin/ruby
 
 
-## Guide to writing a router that listens to the Openshift activemq routing plugin
-#  Step 1  : Listen to activemq topic 'routinginfo'.
-#            Note that the activemq routing plugin has to be configured with the same creds (routinginfo/routinginfopasswd)
+## Guide to writing a router that listens to the OpenShift ActiveMQ routing plugin
+#  Step 1  : Listen to ActiveMQ topic 'routinginfo'.
+#            Note that the ActiveMQ routing plugin has to be configured with the same creds (routinginfo/routinginfopasswd)
 #            Also note that host/port are hardcoded in this script
-#  Step 2  : The following events from Openshift as the applications go through their life cycle
+#  Step 2  : The following events from OpenShift as the applications go through their life cycle
 #            [:create_application, :delete_application, :add_gear, :delete_gear, :add/remove_ssl, :add/remove_alias]
 #  Step 3  : With each action reload the routing table of the router
 #            The arguments provided with all the actions are app_name, namespace, public_address, public_port.
