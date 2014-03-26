@@ -1628,6 +1628,9 @@ securityprovider=psk
 plugin.psk = asimplething
 
 connector = activemq
+plugin.activemq.heartbeat_interval = 30
+plugin.activemq.max_hbread_fails = 2
+plugin.activemq.max_hbrlck_fails = 2
 $(generate_mcollective_pools_configuration)
 
 # Facts
@@ -1661,6 +1664,9 @@ securityprovider = psk
 plugin.psk = asimplething
 
 connector = activemq
+plugin.activemq.heartbeat_interval = 30
+plugin.activemq.max_hbread_fails = 2
+plugin.activemq.max_hbrlck_fails = 2
 $(generate_mcollective_pools_configuration)
 
 # Facts
