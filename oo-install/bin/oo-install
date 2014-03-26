@@ -28,6 +28,7 @@ options = {
   :rh_username => nil,
   :rh_password => nil,
   :advanced_mode => false,
+  :list_workflows => false,
   :debug => false,
   :keep_puppet => false,
 }
@@ -44,6 +45,9 @@ p = OptionParser.new do |opts|
   end
   opts.on('-w', '--workflow WORKFLOW_ID', 'The installer workflow for unattended deployment.') do |workflow_id|
     options[:workflow_id] = workflow_id
+  end
+  opts.on('-l', '--list-workflows', 'List the workflow IDs available for use with unattended deployment.') do |flag|
+    options[:list_workflows] = flag
   end
   opts.on('-e', '--enterprise-mode', 'Show OpenShift Enterprise options (ignored in unattended mode)') do |flag|
     installer_context = :ose
@@ -89,6 +93,15 @@ set_debug(options[:debug])
 
 # Set the 'keep puppet' flag
 set_keep_puppet(options[:keep_puppet])
+
+# Before we go any deeper, splat out workflow IDs and exit if '-l' was passed.
+if options[:list_workflows]
+  puts "\nThe workflow IDs available for use with the '-w' setting are as follows:\n\n"
+  Installer::Workflow.list(installer_context).sort_by{ |w| w.id }.each do |workflow|
+    puts "#{workflow.id}\n#{wrap_long_string(workflow.description)}\n\n"
+  end
+  exit 0
+end
 
 # All sanity checking has to happen after the arguments are gathered.
 if not options[:workflow_id].nil? and not Installer::Workflow.ids.include?(options[:workflow_id])

@@ -88,6 +88,10 @@ module Installer
       return nil
     end
 
+    def wrap_long_string(text,max_width = 70)
+      text.gsub(/(.{1,#{max_width}})(?: +|$)\n?|(.{#{max_width}})/, "\\1\\2\n")
+    end
+
     def i18n_configured?
       @i18n_configured ||= false
     end

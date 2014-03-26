@@ -57,6 +57,9 @@ RUBYVER=`ruby -v`
 if [[ $RUBYVER == ruby\ 1\.8* ]]
 then
   RUBYDIR='1.8'
+elif [[ $RUBYVER == ruby\ 2\.* ]]
+then
+  RUBYDIR='2.0.0'
 fi
 GEM_PATH="${TMPDIR}INSTALLPKGNAME/vendor/bundle/ruby/${RUBYDIR}/gems/"
 RUBYLIB="${TMPDIR}INSTALLPKGNAME/lib:${TMPDIR}oo-install/vendor/bundle"
