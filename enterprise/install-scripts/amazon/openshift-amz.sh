@@ -1629,12 +1629,6 @@ configure_controller()
   chkconfig openshift-console on
 }
 
-# Configure the broker to use the remote-user authentication plugin.
-configure_remote_user_auth_plugin()
-{
-  cp /etc/openshift/plugins.d/openshift-origin-auth-remote-user.conf{.example,}
-}
-
 configure_messaging_plugin()
 {
   cp /etc/openshift/plugins.d/openshift-origin-msg-broker-mcollective.conf{.example,}
@@ -1689,11 +1683,14 @@ configure_httpd_auth()
     return
   fi
 
+  # Configure the broker to use the remote-user authentication plugin.
+  cp -p /etc/openshift/plugins.d/openshift-origin-auth-remote-user.conf{.example,}
+
   # Install the Apache Basic Authentication configuration file.
-  cp /var/www/openshift/broker/httpd/conf.d/openshift-origin-auth-remote-user-basic.conf.sample \
+  cp -p /var/www/openshift/broker/httpd/conf.d/openshift-origin-auth-remote-user-basic.conf.sample \
      /var/www/openshift/broker/httpd/conf.d/openshift-origin-auth-remote-user.conf
 
-  cp /var/www/openshift/console/httpd/conf.d/openshift-origin-auth-remote-user-basic.conf.sample \
+  cp -p /var/www/openshift/console/httpd/conf.d/openshift-origin-auth-remote-user-basic.conf.sample \
      /var/www/openshift/console/httpd/conf.d/openshift-origin-auth-remote-user.conf
 
   # The above configuration file configures Apache to use
@@ -2454,7 +2451,6 @@ configure_openshift()
   node && configure_sshd_on_node
   node && configure_idler_on_node
   broker && configure_controller
-  broker && configure_remote_user_auth_plugin
   broker && configure_messaging_plugin
   broker && configure_dns_plugin
   broker && configure_httpd_auth
