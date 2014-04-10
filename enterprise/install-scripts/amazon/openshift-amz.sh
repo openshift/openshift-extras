@@ -11,10 +11,6 @@ CONF_NO_NTP=true
 # by using the following command:
 #    tailf /mnt/sysimage/root/anaconda-post.log
 
-# You can use sed to extract just the %post section:
-#    sed -e '0,/^%post/d;/^%end/,$d'
-# Be sure to reboot after installation if using the %post this way.
-
 # Log the command invocations (and not merely output) in order to make
 # the log more useful.
 set -x
@@ -1012,7 +1008,8 @@ plugin.activemq.pool.${num_replicants}.password = ${mcollective_password}
 # Configure mcollective on the broker to use ActiveMQ.
 configure_mcollective_for_activemq_on_broker()
 {
-  cat <<EOF > /opt/rh/ruby193/root/etc/mcollective/client.cfg
+  MCOLLECTIVE_CFG="/opt/rh/ruby193/root/etc/mcollective/client.cfg"
+  cat <<EOF > $MCOLLECTIVE_CFG
 topicprefix = /topic/
 main_collective = mcollective
 collectives = mcollective
@@ -1033,6 +1030,9 @@ factsource = yaml
 plugin.yaml = /opt/rh/ruby193/root/etc/mcollective/facts.yaml
 
 EOF
+
+  chown apache:apache $MCOLLECTIVE_CFG
+  chmod 640 $MCOLLECTIVE_CFG
 
   # make sure mcollective client log is created with proper ownership.
   # if root owns it, the broker (apache user) can't log to it.
