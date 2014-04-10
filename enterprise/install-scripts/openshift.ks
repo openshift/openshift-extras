@@ -1479,7 +1479,8 @@ plugin.activemq.pool.${num_replicants}.password = ${mcollective_password}
 # Configure mcollective on the broker to use ActiveMQ.
 configure_mcollective_for_activemq_on_broker()
 {
-  cat <<EOF > /etc/mcollective/client.cfg
+  MCOLLECTIVE_CFG="/etc/mcollective/client.cfg"
+  cat <<EOF > $MCOLLECTIVE_CFG
 topicprefix = /topic/
 main_collective = mcollective
 collectives = mcollective
@@ -1500,6 +1501,9 @@ factsource = yaml
 plugin.yaml = /etc/mcollective/facts.yaml
 
 EOF
+
+  chown apache:apache $MCOLLECTIVE_CFG
+  chmod 640 $MCOLLECTIVE_CFG
 }
 
 
