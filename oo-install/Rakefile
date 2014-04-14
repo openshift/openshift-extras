@@ -160,10 +160,22 @@ task :package do
 
     # Copy the bootstrap file to the package dir
     system 'cp', 'site_assets/oo-install-bootstrap.sh', "#{pkgdir}/index.html"
+    unless ENV['APP_URL'].nil?
+      system "#{@sed_cmd}.bak 's/install.openshift.com/#{ENV['APP_URL']}/g' #{pkgdir}/index.html"
+      system 'rm', "#{pkgdir}/index.html.bak"
+     
+    end
+
     if build.has_key?(:base) and build[:base]
       system 'cp', 'site_assets/site_info.html', pkgdir
       system 'cp', 'site_assets/openshift-logo-horizontal-99a90035cbd613be7b6293335eb05563.svg', pkgdir
       system 'cp', 'vendor/bootstrap/css/bootstrap.min.css', pkgdir
+
+      # Replace install.openshift.com with ENV['APP_URL'] if set
+      unless ENV['APP_URL'].nil?
+        system "#{@sed_cmd}.bak 's/install.openshift.com/#{ENV['APP_URL']}/g' #{pkgdir}/site_info.html"
+        system 'rm', "#{pkgdir}/site_info.html.bak"
+      end
     end
     system "#{@sed_cmd}.bak 's/INSTALLPKGNAME/#{pkgname}/g' #{pkgdir}/index.html"
     system "#{@sed_cmd}.bak 's/INSTALLVERPATH/#{pkgurl}/' #{pkgdir}/index.html"
