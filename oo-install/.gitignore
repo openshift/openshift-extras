@@ -2,7 +2,6 @@
 *.rbc
 *.swp
 *.swo
-.bundle
 .config
 .yardoc
 InstalledFiles
