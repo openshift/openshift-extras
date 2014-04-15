@@ -28,6 +28,7 @@ cat <<EOF
 ----------------------------------------------------------------------
 1. User Management
 ----------------------------------------------------------------------
+
 The Origin VM ships with a default OpenShift user already created:
 
     Username: demo
@@ -38,7 +39,7 @@ in the Web Console tutorial) without changing anything on the system.
 If you want to add more users, use htpasswd from a command prompt as
 shown here:
 
-    htpasswd -c /etc/openshift/htpasswd <username>
+    htpasswd /etc/openshift/htpasswd <username>
 
 You will be prompted to set a password for the new user.
 
@@ -55,6 +56,7 @@ cat <<EOF
 ----------------------------------------------------------------------
 2. User Resource Configuration
 ----------------------------------------------------------------------
+
 There are two ways to modify the allocation of resources available to
 users and their applications. Global settings are defined in:
 
@@ -63,16 +65,21 @@ users and their applications. Global settings are defined in:
 ...and allocations for individual users can be modified with:
 
     oo-admin-ctl-user
-EOF
 
-wait_for_continue
-
-cat <<EOF
 For instance, setting:
 
     DEFAULT_MAX_GEARS=5
 
 in the /etc/openshift/broker.conf sets the default for all new users.
+EOF
+
+wait_for_continue
+
+cat <<EOF
+----------------------------------------------------------------------
+2. User Resource Configuration (Continued)
+----------------------------------------------------------------------
+
 However, to go back and change the maximum for existing users, you would
 need to run:
 
@@ -92,6 +99,7 @@ cat <<EOF
 ----------------------------------------------------------------------
 3. OpenShift Services
 ----------------------------------------------------------------------
+
 On this VM, the following services are running as part of the all-in-
 one OpenShift Origin deployment:
 
@@ -118,6 +126,7 @@ cat <<EOF
 ----------------------------------------------------------------------
 4. Troubleshooting
 ----------------------------------------------------------------------
+
 The go-to troubleshooting tool for OpenShift Origin is:
 
     oo-diagnostics
@@ -139,6 +148,7 @@ cat <<EOF
 ----------------------------------------------------------------------
 5. Need Help?
 ----------------------------------------------------------------------
+
 If you run into any other issues with the Origin VM, please take
 advantage of the many OpenShift resources online:
 

@@ -26,6 +26,10 @@ module Installer
       $terminal.wrap_at = 70
     end
 
+    def tgt_subscription
+      @tgt_subscription || (save_subscription? ? cfg_subscription : cli_subscription)
+    end
+
     def run
       if workflow_id.nil?
         ui_welcome_screen
@@ -103,8 +107,11 @@ module Installer
 
     private
     def ui_title
-      ui_newpage
-      say translate(is_origin_vm? ? :vm_title : :title) + (version_text.nil? or version_text.empty? ? '' : " (#{version_text})")
+      title = translate(is_origin_vm? ? :vm_title : :title)
+      if not version_text.nil? and not version_text.empty?
+        title << " (#{version_text})"
+      end
+      say title
       say "#{horizontal_rule}\n\n"
     end
 
@@ -121,7 +128,7 @@ module Installer
         say "\tPass: changeme"
         say "\t  IP: #{vm_installer_host.ip_addr}"
         puts "\n"
-        if @config.new_config? and not @offered_tutorial and concur("It looks like this is your first time using the Origin VM. Would you like to take the administrator's tutorial? If you answer 'no', you can always go back to the main menu and select 'Take the Tutorial' to see it.\n\nTake the tutorial?")
+        if @config.new_config? and not @offered_tutorial and agree("It looks like this is your first time using the Origin VM. Would you like to take the administrator's tutorial? If you answer 'no', you can always go back to the main menu and select 'Take the Tutorial' to see it.\n\nTake the tutorial? (y/n) ", true)
           @offered_tutorial = true
           ui_workflow('vm_tutorial')
         else
@@ -154,6 +161,7 @@ module Installer
     def ui_workflow id
       @workflow = Installer::Workflow.find(id)
       @workflow_cfg = config.get_workflow_cfg(id)
+      @workflow_id = id
       ui_newpage
 
       # Deployment check
@@ -457,7 +465,6 @@ module Installer
 
     def ui_edit_subscription
       ui_newpage
-      tgt_subscription = save_subscription? ? cfg_subscription : cli_subscription
       valid_types = Installer::Subscription.valid_types_for_context
       valid_types_list = valid_types.map{ |t| t.to_s }.join(', ')
       tgt_subscription.subscription_type = ask("What type of subscription should be used? (#{valid_types_list}) ") { |q|
@@ -821,7 +828,7 @@ module Installer
             break
           end
         end
-        # Finally, set up the IP info
+        # Set up the IP info
         if proceed_though_unreachable
           manual_ip_info_for_host_instance(host_instance, [])
         else
@@ -867,6 +874,14 @@ module Installer
               manual_ip_info_for_host_instance(host_instance, ip_addrs)
             end
           end
+        end
+        # Optionally allow the user to set a distinct named_ip_addr for their broker.
+        if host_instance.is_broker?
+          host_instance.named_ip_addr = ask("\nNormally, the BIND DNS server that is installed on this Broker will be reachable from other OpenShift components using the Broker's configured IP address (#{host_instance.ip_addr}).\n\nIf that will work in your deployment, press <enter> to accept the default value. Otherwise, provide an alternate IP address that will enable other OpenShift components to reach the BIND DNS service on the Broker: ") { |q|
+            q.default = host_instance.ip_addr
+            q.validate = lambda { |p| is_valid_ip_addr?(p) }
+            q.responses[:not_valid] = "Enter a valid IP address for the BIND DNS service"
+          }.to_s
         end
         host_instance_is_valid = true
       end
@@ -959,7 +974,11 @@ module Installer
             end
             value = has_roles.length > 0 ? has_roles.join(', ') : '[unset]'
           end
-          t.add_row [attr.to_s.split('_').map{ |word| ['db','ssh','ip'].include?(word) ? word.upcase : word.capitalize}.join(' '), value]
+          if attr == :named_ip_addr
+            t.add_row ['BIND DNS Addr', value]
+          else
+            t.add_row [attr.to_s.split('_').map{ |word| ['db','ssh','ip'].include?(word) ? word.upcase : word.capitalize }.join(' '), value]
+          end
         end
       end
       puts table
@@ -1006,6 +1025,14 @@ module Installer
     def check_deployment
       deployment_good = true
       deployment.hosts.each do |host_instance|
+        # If this is an "Add a Node deployment", skip checks for all standalone
+        # nodes that are not the one being added.
+        next if (
+          ['origin_add_node','enterprise_add_node'].include?(@workflow_id) and
+          workflow_cfg.has_key?('rolehost') and
+          host_instance.is_basic_node? and
+          not host_instance.host == workflow_cfg['rolehost']
+        )
         say "\nChecking #{host_instance.host}:"
         # Attempt SSH connection for remote hosts
         if not host_instance.localhost?
@@ -1040,28 +1067,25 @@ module Installer
 
         # Check for all required components
         workflow.components.each do |component|
+          incompatible = false
           check_on_role = :all
           check_on_type = :all
           repo = nil
           util = nil
+          pkg = nil
           sub_util = nil
 
           # Figure out the kind of check we're doing
           component_info = component.split(":")
-          check_type = component_info[0].to_sym
-          role_or_type = component_info[1].to_sym
+          incompatible = component_info[0] == 'incompatible' ? true : false
+          check_type = component_info[1].to_sym
+          role_or_type = component_info[2].to_sym
           if not role_or_type == :all
             if supported_targets.has_key?(role_or_type)
               check_on_type = role_or_type
             elsif Installer::Deployment.role_map.has_key?(role_or_type)
               check_on_role = role_or_type
             end
-          end
-          if check_type == :util
-            util = component_info[2]
-            sub_util = component_info[3]
-          elsif check_type == :repo
-            repo = component_info[2]
           end
 
           # Move along if this host doesn't match the role / type relevant to the test
@@ -1070,18 +1094,63 @@ module Installer
             next
           end
 
+          # Set check values based on check type
+          if check_type == :util
+            util = component_info[3]
+            sub_util = component_info[4]
+          elsif check_type == :repo
+            repo = component_info[3]
+          elsif check_type == :pkg
+            pkg = component_info[3]
+          end
+
           # Handle repo checks
           if not repo.nil?
+            if tgt_subscription.subscription_type == :none
+              say "* Skipping repo check for #{repo}; assuming necessary software is installed."
+              next
+            end
             repo_cmd = "yum repolist"
             cmd_result = host_instance.exec_on_host!(repo_cmd)
             if not cmd_result[:exit_code] == 0
               say "* ERROR: Could not perform repo check for #{repo}. Try running `#{repo_cmd}` manually to troubleshoot."
               deployment_good = false
             elsif not cmd_result[:stdout].match(/#{repo}/)
-              say "* ERROR: The '#{repo}' repository isn't available via yum. Install / enable this repository and try again."
-              deployment_good = false
+              if not incompatible
+                say "* ERROR: The '#{repo}' repository isn't available via yum. Install / enable this repository and try again."
+                deployment_good = false
+              end
             else
-              say "* #{repo} repository is present and enabled"
+              if not incompatible
+                say "* #{repo} repository is present and enabled"
+              else
+                say "* ERROR: The '#{repo}' repository is enabled on this host. OpenShift has known incompatibility issues with it, so please disable it and then rerun the installer."
+                deployment_good = false
+              end
+            end
+            next
+          end
+
+          if not pkg.nil?
+            pkg_cmd = "yum list installed | grep #{pkg}"
+            cmd_result = host_instance.exec_on_host!(pkg_cmd)
+            if not cmd_result[:exit_code] == 0
+              if not incompatible
+                say "* ERROR: Could not perform package check for #{pkg}. Try running `#{pkg_cmd}` manually to troubleshoot."
+                deployment_good = false
+              end
+            elsif not cmd_result[:stdout].match(/#{pkg}/)
+              if not incompatible
+                say "* ERROR: The '#{pkg}' package is not installed on this host. Try running `yum install #{pkg}` and then try again."
+                deployment_good = false
+              end
+            else
+              if not incompatible
+                say "* #{repo} repository is present and enabled"
+              else
+                say "* ERROR: The '#{pkg}' package is installed on this host. OpenShift has known incompatibility issues with it, so please remove it (`yum remove #{pkg}`) and then rerun the installer."
+                deployment_good = false
+              end
             end
             next
           end
@@ -1094,25 +1163,37 @@ module Installer
             cmd_result = host_instance.exec_on_host!("command -v #{util}")
           end
           if not cmd_result[:exit_code] == 0
-            say "* ERROR: Could not locate #{util}... "
-            find_result = host_instance.exec_on_host!("yum -q provides */#{util}")
-            if not find_result[:exit_code] == 0
-              say "no suggestions available"
-            else
-              ui_suggest_rpms(find_result[:stdout])
-            end
-            deployment_good = false
-          else
-            if not host_instance.root_user?
-              say "* Located #{util}... "
-              if not host_instance.can_sudo_execute?(util)
-                say "ERROR - cannot not invoke '#{util}' with sudo"
+            if not incompatible
+              if tgt_subscription.subscription_type == :none
+                say "* ERROR: Could not locate utility #{util}."
                 deployment_good = false
-              else
-                say "can invoke '#{util}' with sudo"
+                next
               end
+              say "* ERROR: Could not locate #{util}... "
+              find_result = host_instance.exec_on_host!("yum -q provides */#{util}")
+              if not find_result[:exit_code] == 0
+                say "no suggestions available"
+              else
+                ui_suggest_rpms(find_result[:stdout])
+              end
+              deployment_good = false
+            end
+          else
+            if incompatible
+              say "* ERROR: The #{util} utility is installed on this host. OpenShift has known incompatibility issues with it, so please remove it and then rerun the installer."
+              deployment_good = false
             else
-              say "* Located #{util}"
+              if not host_instance.root_user?
+                say "* Located #{util}... "
+                if not host_instance.can_sudo_execute?(util)
+                  say "ERROR - cannot not invoke '#{util}' with sudo"
+                  deployment_good = false
+                else
+                  say "can invoke '#{util}' with sudo"
+                end
+              else
+                say "* Located #{util}"
+              end
             end
           end
           # SELinux configuration check

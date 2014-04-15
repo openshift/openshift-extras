@@ -5,10 +5,10 @@ module Installer
   class HostInstance
     include Installer::Helpers
 
-    attr_accessor :host, :ip_addr, :ip_interface, :ssh_host, :user, :roles, :install_status
+    attr_accessor :host, :ip_addr, :named_ip_addr, :ip_interface, :ssh_host, :user, :roles, :install_status
 
     def self.attrs
-      %w{host roles ssh_host user ip_addr ip_interface install_status}.map{ |a| a.to_sym }
+      %w{host roles ssh_host user ip_addr named_ip_addr ip_interface install_status}.map{ |a| a.to_sym }
     end
 
     def initialize(item={}, init_role=nil)
@@ -92,6 +92,10 @@ module Installer
       roles.length == 3 and roles.include?(:broker) and roles.include?(:mqserver) and roles.include?(:dbserver)
     end
 
+    def is_broker?
+      roles.include?(:broker)
+    end
+
     def is_basic_node?
       # This specifically checks for node hosts with no other roles. For general use, call 'is_node?' instead.
       roles.length == 1 and roles[0] == :node
@@ -130,6 +134,10 @@ module Installer
       if not is_valid_ip_addr?(ip_addr)
         return false if check == :basic
         errors << Installer::HostInstanceIPAddressException.new("Host instance '#{host}' has an invalid ip address '#{ip_addr}'.")
+      end
+      if not named_ip_addr.nil? and not is_valid_ip_addr?(named_ip_addr)
+        return false if check == :basic
+        errors << Installer::HostInstanceIPAddressException.new("Host instance '#{host}' has an invalid BIND ip address '#{ip_addr}'.")
       end
       if [:origin, :origin_vm].include?(get_context) and is_node? and not is_valid_string?(ip_interface)
         return false if check == :basic

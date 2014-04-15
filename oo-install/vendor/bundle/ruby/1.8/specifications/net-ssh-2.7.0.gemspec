@@ -15,7 +15,7 @@ Gem::Specification.new do |s|
   s.licenses = ["MIT"]
   s.require_paths = ["lib"]
   s.rubyforge_project = "net-ssh"
-  s.rubygems_version = "2.0.10"
+  s.rubygems_version = "1.8.24"
   s.summary = "Net::SSH: a pure-Ruby implementation of the SSH2 client protocol."
 
   if s.respond_to? :specification_version then

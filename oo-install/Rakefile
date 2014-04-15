@@ -30,37 +30,94 @@ task :package do
 
   builds = [
     { :version => nil,
-      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-1.2/enterprise/install-scripts/generic/openshift.sh',
+      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
       :context => :origin,
       :base => true,
+      :branch => 'master',
     },
     { :version => 'ose',
       :version_text => 'OpenShift Enterprise 2.0',
       :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
       :context => :ose,
+      :branch => 'enterprise-2.0',
+    },
+    { :version => 'ose-2.1',
+      :version_text => 'OpenShift Enterprise 2.1',
+      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.1/enterprise/install-scripts/generic/openshift.sh',
+      :context => :ose,
+      :branch => 'enterprise-2.1',
     },
     { :version => 'ose-2.0',
       :version_text => 'OpenShift Enterprise 2.0',
       :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
       :context => :ose,
+      :branch => 'enterprise-2.0',
     },
     { :version => 'ose-1.2',
       :version_text => 'OpenShift Enterprise 1.2',
       :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-1.2/enterprise/install-scripts/generic/openshift.sh',
       :context => :ose,
+      :branch => 'enterprise-1.2',
     },
     { :version => 'origin',
       :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
       :context => :origin,
+      :branch => 'master',
     },
     { :version => 'origin_vm',
       :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
       :context => :origin_vm,
+      :branch => 'master',
       :portable_only => true,
     },
   ]
 
+  branches = `git branch`.split(/\n/).map{ |branch| branch.strip }
+
+  # Remeber the working branch so that we can return here later.
+  working_branch = 'master'
+  branches.each do |branch|
+    next if not branch.start_with?('*')
+    working_branch = branch.sub!(/^\* /,'')
+  end
+
+  # Make sure the working branch doesn't have any uncommitted changes
+  changed_files = `git status --porcelain`
+  if not changed_files.empty?
+    puts "Warning: Your current branch has uncommitted changes. Hit <CTRL+C> if you want to exit."
+    print "Starting packager in "
+    [3,2,1].each do |i|
+      print "#{i}..."
+      sleep 1
+    end
+    print "\n"
+  end
+
+  # Now make sure the build branches are available.
+  missing_branches = false
   builds.each do |build|
+    if not branches.include?(build[:branch])
+      if not missing_branches
+        puts "ERROR: One or more branches for packaging are not available in this local repo:"
+        missing_branches = true
+      end
+      puts "- #{build[:branch]}"
+    end
+  end
+  if missing_branches
+    puts "Add these branches and rerun the packaging command."
+    exit 1
+  end
+
+  builds.each do |build|
+    # Check out this build branch
+    system("git checkout #{build[:branch]}")
+
+    if not $?.exitstatus == 0
+      puts "ERROR: Could not check out branch #{build[:branch]}, please investigate."
+      exit 1
+    end
+
     puts "Building #{build[:version].nil? ? 'base' : build[:version].to_s }"
     pkgname = 'oo-install-'
     pkgurl = ''
@@ -103,10 +160,22 @@ task :package do
 
     # Copy the bootstrap file to the package dir
     system 'cp', 'site_assets/oo-install-bootstrap.sh', "#{pkgdir}/index.html"
+    unless ENV['APP_URL'].nil?
+      system "#{@sed_cmd}.bak 's/install.openshift.com/#{ENV['APP_URL']}/g' #{pkgdir}/index.html"
+      system 'rm', "#{pkgdir}/index.html.bak"
+     
+    end
+
     if build.has_key?(:base) and build[:base]
       system 'cp', 'site_assets/site_info.html', pkgdir
       system 'cp', 'site_assets/openshift-logo-horizontal-99a90035cbd613be7b6293335eb05563.svg', pkgdir
       system 'cp', 'vendor/bootstrap/css/bootstrap.min.css', pkgdir
+
+      # Replace install.openshift.com with ENV['APP_URL'] if set
+      unless ENV['APP_URL'].nil?
+        system "#{@sed_cmd}.bak 's/install.openshift.com/#{ENV['APP_URL']}/g' #{pkgdir}/site_info.html"
+        system 'rm', "#{pkgdir}/site_info.html.bak"
+      end
     end
     system "#{@sed_cmd}.bak 's/INSTALLPKGNAME/#{pkgname}/g' #{pkgdir}/index.html"
     system "#{@sed_cmd}.bak 's/INSTALLVERPATH/#{pkgurl}/' #{pkgdir}/index.html"
@@ -135,6 +204,9 @@ task :package do
       system 'rm', '-rf', pkgdir
     end
   end
+
+  # Return to the original branch
+  system("git checkout #{working_branch}")
 
   system 'rm', '-rf', "#{@tmpdir}oo-install*"
 end

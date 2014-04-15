@@ -1,6 +1,6 @@
 en:
   title: "OpenShift Installer"
-  vm_title: "OpenShift Origin"
+  vm_title: "OpenShift Origin Virtual Machine"
   welcome: "Welcome to OpenShift."
   vm_welcome: "Welcome to the OpenShift Origin virtual machine!"
   intro: >

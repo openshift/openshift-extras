@@ -67,6 +67,14 @@ module Installer
       Installer::DEBUG
     end
 
+    def set_keep_puppet(keep_puppet)
+      Installer.const_set("KEEP_PUPPET", keep_puppet)
+    end
+
+    def keep_puppet?
+      Installer::KEEP_PUPPET
+    end
+
     # SOURCE for #which:
     # http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
     def which(cmd)
@@ -78,6 +86,10 @@ module Installer
         }
       end
       return nil
+    end
+
+    def wrap_long_string(text,max_width = 70)
+      text.gsub(/(.{1,#{max_width}})(?: +|$)\n?|(.{#{max_width}})/, "\\1\\2\n")
     end
 
     def i18n_configured?
@@ -106,8 +118,10 @@ module Installer
         host.set_ip_exec_path(ip_path)
         ip_addrs = host.get_ip_addr_choices
         # For now we blindly assume that the Origin VM will have only one interface
-        host.ip_interface = ip_addrs[0][0]
-        host.ip_addr = ip_addrs[0][1]
+        if not ip_addrs.empty?
+          host.ip_interface = ip_addrs[0][0]
+          host.ip_addr = ip_addrs[0][1]
+        end
         host
       end
     end

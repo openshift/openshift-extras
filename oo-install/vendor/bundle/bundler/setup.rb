@@ -13,4 +13,5 @@ $:.unshift File.expand_path("#{path}/../#{ruby_engine}/#{ruby_version}/gems/rspe
 $:.unshift File.expand_path("#{path}/../#{ruby_engine}/#{ruby_version}/gems/rspec-mocks-2.14.3/lib")
 $:.unshift File.expand_path("#{path}/../#{ruby_engine}/#{ruby_version}/gems/rspec-2.14.1/lib")
 $:.unshift File.expand_path("#{path}/../#{ruby_engine}/#{ruby_version}/gems/terminal-table-1.4.5/lib")
+$:.unshift File.expand_path("#{path}/../#{ruby_engine}/#{ruby_version}/gems/thor-0.19.1/lib")
 $:.unshift File.expand_path("#{path}/../../../lib")
