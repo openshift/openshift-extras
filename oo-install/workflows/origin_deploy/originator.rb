@@ -5,6 +5,8 @@ require 'net/ssh'
 
 SOCKET_IP_ADDR = 3
 VALID_IP_ADDR_RE = Regexp.new('^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
+@puppet_module_name = 'openshift/openshift_origin'
+@puppet_module_ver = '3.0.1'
 
 # Check ENV for an alternate config file location.
 if ENV.has_key?('OO_INSTALL_CONFIG_FILE')
@@ -15,6 +17,9 @@ end
 
 # Check to see if we need to preserve generated files.
 @keep_assets = ENV.has_key?('OO_INSTALL_KEEP_ASSETS') and ENV['OO_INSTALL_KEEP_ASSETS'] == 'true'
+
+# Check to see if we are installing the puppet module on the target hosts
+@keep_puppet = ENV.has_key?('OO_INSTALL_KEEP_PUPPET') and ENV['OO_INSTALL_KEEP_PUPPET'] == 'true'
 
 @ssh_cmd = 'ssh -t -q'
 @scp_cmd = 'scp -q'
@@ -36,6 +41,29 @@ def restore_env
   env_backup.each_pair do |name,value|
     ENV[name] = value
   end
+end
+
+def is_older_puppet_module(version)
+  # Knock out the easy comparison first
+  return false if version == @puppet_module_ver
+
+  target = @puppet_module_ver.split('.')
+  comp = version.split('.')
+  for i in 0..(target.length - 1)
+    if comp[i].nil? or comp[i].to_i < target[i].to_i
+      # Comp ran out of numbers before target or
+      # current comp version number is less than
+      # target version number: target is newer.
+      return true
+    elsif comp[i].to_i > target[i].to_i
+      # current comp version number is more than
+      # target version number: comp is newer.
+      return false
+    end
+  end
+  # Still here, meaning comp matches target to this point.
+  # comp may be newer, but it is not older.
+  return false
 end
 
 def components_list host_instance
@@ -128,6 +156,7 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
   config_hosts = config['Deployment']['Hosts']
   config_dns = config['Deployment']['DNS']
 
+  named_hosts = []
   config_hosts.each do |host_info|
     # Basic config file sanity check
     ['ssh_host','host','user','roles','ip_addr'].each do |attr|
@@ -135,6 +164,9 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
       puts "One of the hosts in the configuration is missing the '#{attr}' setting. Exiting."
       exit 1
     end
+
+    # Save the fqdn:ipaddr for potential named use
+    named_hosts << "#{host_info['host']}:#{host_info['ip_addr']}"
 
     # Map hosts by ssh alias
     @hosts[host_info['ssh_host']] = host_info
@@ -161,7 +193,11 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
       @role_map[role].each do |puppet_cfg|
         @puppet_map[puppet_cfg['env_hostname']] = host_info['host']
         if puppet_cfg.has_key?('env_ip_addr')
-          @puppet_map[puppet_cfg['env_ip_addr']] = host_info['ip_addr']
+          if puppet_cfg['env_ip_addr'] == 'named_ip_addr' and host_info.has_key?('named_ip_addr')
+            @puppet_map[puppet_cfg['env_ip_addr']] = host_info['named_ip_addr']
+          else
+            @puppet_map[puppet_cfg['env_ip_addr']] = host_info['ip_addr']
+          end
         end
       end
     end
@@ -192,7 +228,26 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
       end
     end
   end
+
+  # DNS Settings
   @puppet_map['domain'] = config_dns['app_domain']
+  # TODO: Awaiting support from puppet module
+  #@puppet_map['hosts_domain'] = ''
+  #@puppet_map['hosts_dns_list'] = ''
+  if 'Y' == config_dns['register_components']
+    if not config_dns.has_key?('component_domain')
+      puts "Error: The config specifies registering OpenShift component hosts with OpenShift DNS, but no OpenShift component host domain has been specified. Exiting."
+      exit 1
+    end
+    if config_dns['component_domain'] == config_dns['app_domain']
+      @puppet_map['register_host_with_named'] = true
+    else
+      # TODO: Awaiting support from puppet module
+      #@puppet_map['hosts_domain'] = config_dns['component_domain']
+      #@puppet_map['hosts_dns_list'] = named_hosts.join(',')
+    end
+  else
+  end
 end
 
 if @hosts.empty?
@@ -273,17 +328,20 @@ host_order.each do |ssh_host|
   commands = {
     :typecheck => "export LC_CTYPE=en_US.utf8 && cat /etc/redhat-release",
     :keycheck => "ls /var/named/K#{@puppet_map['domain']}*.key",
+    :hosts_keycheck => "ls /var/named/K#{@puppet_map['hosts_domain']}*.key",
     :keygen => "dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named #{@puppet_map['domain']}",
+    :hosts_keygen => "dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named #{@puppet_map['hosts_domain']}",
     :keyget => "cat /var/named/K#{@puppet_map['domain']}*.key",
+    :hosts_keyget => "cat /var/named/K#{@puppet_map['hosts_domain']}*.key",
     :enabledns => 'systemctl enable named.service',
     :enabledns_rhel => 'service named restart',
-    :check => 'puppet module list',
-    :install => 'puppet module install openshift/openshift_origin',
+    :uninstall => "puppet module uninstall -f #{@puppet_module_name}",
+    :install => "puppet module install -v #{@puppet_module_ver} #{@puppet_module_name}",
     :yum_clean => 'yum clean all',
     :apply => "puppet apply --verbose /tmp/#{hostfile}",
     :clear => "rm /tmp/#{hostfile}",
   }
-  puppet_commands = [:check,:install,:apply]
+  puppet_commands = [:uninstall,:install,:apply]
   # We have to prep and run :typecheck first.
   command_list = commands.keys
   if not command_list[0] == :typecheck
@@ -311,50 +369,76 @@ host_order.each do |ssh_host|
       end
     end
     if action == :typecheck
-      output = `#{commands[:typecheck]}`
+      output = `#{commands[:typecheck]} 2>&1`
       if not output.chomp.strip.downcase.start_with?('fedora')
         host_type = :other
       end
     end
   end
 
-  # Figure out the DNS key before we write the puppet config file
+  # Figure out the DNS key(s) before we write the puppet config file
   if @hosts[ssh_host]['roles'].include?('broker')
-    puts "\nChecking for DNS key on #{ssh_host}..."
-    output = `#{commands[:keycheck]}`
-    chkstatus = $?.exitstatus
-    if chkstatus > 0
-      # No key; build one.
-      puts "...none found; attempting to generate one.\n"
-      output = `#{commands[:keygen]}`
-      genstatus = $?.exitstatus
-      if genstatus > 0
-        puts "Could not generate a DNS key. Exiting."
+    dns_jobs = [
+      { :check => commands[:keycheck],
+        :domain => @puppet_map['domain'],
+        :generate => commands[:keygen],
+        :get => commands[:keyget],
+        :cfg_key => 'bind_key'
+      }
+    ]
+    if not @puppet_map['hosts_domain'].nil? and not @puppet_map['hosts_domain'].empty?
+      dns_jobs << {
+        :check => commands[:hosts_keycheck],
+        :domain => @puppet_map['hosts_domain'],
+        :generate => commands[:hosts_keygen],
+        :get => commands[:hosts_keyget],
+        :cfg_key => 'hosts_bind_key'
+      }
+    end
+
+    dns_jobs.each do |dns_job|
+      puts "\nChecking for #{dns_job[:domain]} DNS key(s) on #{ssh_host}..."
+      output = `#{dns_job[:check]} 2>&1`
+      chkstatus = $?.exitstatus
+      if chkstatus > 0
+        # No key; build one.
+        puts "...none found; attempting to generate one.\n"
+        output = `#{dns_job[:generate]} 2>&1`
+        genstatus = $?.exitstatus
+        if genstatus > 0
+          puts "Could not generate a DNS key. Exiting."
+          saw_deployment_error = true
+          break
+        end
+        puts "Key generation successful."
+      else
+        puts "...found at /var/named/K#{dns_job[:domain]}*.key\n"
+      end
+
+      # Copy the public key info to the config file.
+      key_text = `#{dns_job[:get]} 2>&1`
+      getstatus = $?.exitstatus
+      if getstatus > 0 or key_text.nil? or key_text == ''
+        puts "Could not read DNS key data from /var/named/K#{dns_job[:domain]}*.key. Exiting."
         saw_deployment_error = true
         break
       end
-      puts "Key generation successful."
-    else
-      puts "...found at /var/named/K#{@puppet_map['domain']}*.key\n"
+
+      # Format the public key correctly.
+      key_vals = key_text.strip.split(' ')
+      @puppet_map[dns_job[:cfg_key]] = "#{key_vals[6]}#{key_vals[7]}"
     end
-    # Copy the public key info to the config file.
-    key_text = `#{commands[:keyget]}`
-    getstatus = $?.exitstatus
-    if getstatus > 0 or key_text.nil? or key_text == ''
-      puts "Could not read DNS key data from /var/named/K#{@puppet_map['domain']}*.key. Exiting."
-      saw_deployment_error = true
-      break
-    end
-    # Format the public key correctly.
-    key_vals = key_text.strip.split(' ')
-    @puppet_map['bind_key'] = "#{key_vals[6]}#{key_vals[7]}"
+
+    # Bail out if we hit problems with DNS key gen.
+    break if saw_deployment_error
+
     # Finally, make sure the named service is enabled.
-    output = `#{commands[:enabledns]}`
+    output = `#{commands[:enabledns]} 2>&1`
     dnsstatus = $?.exitstatus
     if dnsstatus > 0
       # This may be RHEL (or at least, not systemd)
       puts "Command 'systemctl' didn't work; trying older style..."
-      output = `#{commands[:enabledns_rhel]}`
+      output = `#{commands[:enabledns_rhel]} 2>&1`
       dnsstatus = $?.exitstatus
       if dnsstatus > 0
         puts "Could not enable named using command '#{commands[:enabledns]}'. Exiting."
@@ -406,45 +490,65 @@ host_order.each do |ssh_host|
   # Handle the config file copying and delete the original.
   if not ssh_host == 'localhost'
     puts "Copying Puppet configuration script to target #{ssh_host}.\n"
-    system "#{@scp_cmd} #{hostfilepath} #{user}@#{ssh_host}:#{hostfilepath}"
+    scp_output = `#{@scp_cmd} #{hostfilepath} #{user}@#{ssh_host}:#{hostfilepath} 2>&1`
     if not $?.exitstatus == 0
-      puts "Could not copy Puppet config to remote host. Exiting."
+      puts "Could not copy Puppet config to remote host. Exiting.\n"
       saw_deployment_error = true
       break
     end
   end
 
-  puts "\nRunning Puppet deployment"
+  puts "\nRunning Puppet deployment\n"
 
   # Good to go; step through the puppet setup now.
   @child_pids << Process.fork do
-    has_openshift_module = false
-    [:check,:install,:yum_clean,:apply,:clear].each do |action|
-      if action == :clear and @keep_assets
-        puts "Keeping #{hostfile}"
+    [:uninstall,:install,:yum_clean,:apply,:clear].each do |action|
+      if @keep_puppet and [:uninstall, :install].include?(action)
+        if action == :uninstall
+          puts "User specified that the openshift/openshift_origin module is already installed.\n"
+        end
         next
       end
-      if action == :install and has_openshift_module
-        puts "Skipping module installation."
+      if action == :clear and @keep_assets
+        puts "Keeping #{hostfile}\n"
         next
       end
       command = commands[action]
-      puts "\nRunning \"#{command}\"..."
+      puts "\nRunning: #{command}\n"
       if ssh_host == 'localhost'
         clear_env
       end
-      output = `#{command}`
+      output = `#{command} 2>&1`
       if ssh_host == 'localhost'
         restore_env
       end
       if $?.exitstatus == 0
-        puts "Command completed."
+        puts "Command completed.\n"
       else
-        # Note errors here but don't break; Puppet throws ignorable errors right now and we need to figure out how to deal with them
-        saw_deployment_error = true
+        if action == :uninstall
+          puts "Uninstall command failed; this is expected if the puppet module wasn't previously installed.\n"
+        else
+          # Note errors here but don't break; Puppet throws ignorable errors right now and we need to figure out how to deal with them
+          saw_deployment_error = true
+        end
       end
-      if action == :check and output.match('openshift')
-        has_openshift_module = true
+      if action == :check
+        # The gsub prevents ruby from trying to turn these back into Puppet::Module objects
+        begin
+          puppet_info = YAML::load(output.gsub(/\!ruby\/object:/, 'ruby_object: '))
+          puppet_info.keys.each do |puppet_dir|
+            puppet_info[puppet_dir].each do |puppet_module|
+              next if not puppet_module['forge_name'] == @puppet_module_name
+              has_openshift_module = true
+              if is_older_puppet_module(puppet_module['version'])
+                openshift_module_needs_upgrade = true
+              end
+            end
+          end
+        rescue Psych::SyntaxError => e
+          has_openshift_module = false
+          openshift_module_needs_upgrade = false
+        end
       end
     end
     if saw_deployment_error

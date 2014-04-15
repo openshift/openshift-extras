@@ -348,7 +348,11 @@ if @config.has_key?('Deployment') and @config['Deployment'].has_key?('Hosts') an
         # Get the rest of the OSE-role-specific settings
         @env_map[ose_cfg['env_hostname']] = host_info['host']
         if ose_cfg.has_key?('env_ip_addr')
-          @env_map[ose_cfg['env_ip_addr']] = host_info['ip_addr']
+          if ose_cfg['env_ip_addr'] == 'CONF_NAMED_IP_ADDR' and host_info.has_key?('named_ip_addr')
+            @env_map[ose_cfg['env_ip_addr']] = host_info['named_ip_addr']
+          else
+            @env_map[ose_cfg['env_ip_addr']] = host_info['ip_addr']
+          end
         end
       end
     end

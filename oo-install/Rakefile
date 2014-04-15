@@ -30,37 +30,88 @@ task :package do
 
   builds = [
     { :version => nil,
-      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-1.2/enterprise/install-scripts/generic/openshift.sh',
+      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
       :context => :origin,
       :base => true,
+      :branch => 'master',
     },
     { :version => 'ose',
       :version_text => 'OpenShift Enterprise 2.0',
       :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
       :context => :ose,
+      :branch => 'enterprise-2.0',
     },
     { :version => 'ose-2.0',
       :version_text => 'OpenShift Enterprise 2.0',
       :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
       :context => :ose,
+      :branch => 'enterprise-2.0',
     },
     { :version => 'ose-1.2',
       :version_text => 'OpenShift Enterprise 1.2',
       :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-1.2/enterprise/install-scripts/generic/openshift.sh',
       :context => :ose,
+      :branch => 'enterprise-1.2',
     },
     { :version => 'origin',
       :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
       :context => :origin,
+      :branch => 'master',
     },
     { :version => 'origin_vm',
       :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
       :context => :origin_vm,
+      :branch => 'master',
       :portable_only => true,
     },
   ]
 
+  branches = `git branch`.split(/\n/).map{ |branch| branch.strip }
+
+  # Remeber the working branch so that we can return here later.
+  working_branch = 'master'
+  branches.each do |branch|
+    next if not branch.start_with?('*')
+    working_branch = branch.sub!(/^\* /,'')
+  end
+
+  # Make sure the working branch doesn't have any uncommitted changes
+  changed_files = `git status --porcelain`
+  if not changed_files.empty?
+    puts "Warning: Your current branch has uncommitted changes. Hit <CTRL+C> if you want to exit."
+    print "Starting packager in "
+    [3,2,1].each do |i|
+      print "#{i}..."
+      sleep 1
+    end
+    print "\n"
+  end
+
+  # Now make sure the build branches are available.
+  missing_branches = false
   builds.each do |build|
+    if not branches.include?(build[:branch])
+      if not missing_branches
+        puts "ERROR: One or more branches for packaging are not available in this local repo:"
+        missing_branches = true
+      end
+      puts "- #{build[:branch]}"
+    end
+  end
+  if missing_branches
+    puts "Add these branches and rerun the packaging command."
+    exit 1
+  end
+
+  builds.each do |build|
+    # Check out this build branch
+    system("git checkout #{build[:branch]}")
+
+    if not $?.exitstatus == 0
+      puts "ERROR: Could not check out branch #{build[:branch]}, please investigate."
+      exit 1
+    end
+
     puts "Building #{build[:version].nil? ? 'base' : build[:version].to_s }"
     pkgname = 'oo-install-'
     pkgurl = ''
@@ -135,6 +186,9 @@ task :package do
       system 'rm', '-rf', pkgdir
     end
   end
+
+  # Return to the original branch
+  system("git checkout #{working_branch}")
 
   system 'rm', '-rf', "#{@tmpdir}oo-install*"
 end

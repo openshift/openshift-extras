@@ -3,6 +3,7 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Install OpenShift Today!</title>
+  <link rel="icon" href="https://www.openshift.com/sites/all/themes/openshift-theme/favicon.ico" type="image/x-icon" />
   <link href="/bootstrap.min.css" rel="stylesheet">
   <style type="text/css">
   html, body {
@@ -84,7 +85,7 @@
       <div class="col-md-12">
         <img src="/openshift-logo-horizontal-99a90035cbd613be7b6293335eb05563.svg" alt="OpenShift" />
         <h1>Get ready to rock with <a href="http://www.openshift.com/">OpenShift</a>.</h1>
-        <p class="lead">You're one shell command away from deploying the OpenShift Platform-as-a-Service into your own network environment.</p>
+        <p class="lead">You're one shell command away from deploying your own Platform as a Service.</p>
       </div>
     </div>
   </div>
@@ -117,10 +118,12 @@
     -a, --advanced-mode              Enable access to message server and db server customization.
     -c, --config-file FILEPATH       The path to an alternate config file
     -w, --workflow WORKFLOW_ID       The installer workflow for unattended deployment.
+    -l, --list-workflows             List the workflow IDs available for use with unattended deployment.
     -e, --enterprise-mode            Show OpenShift Enterprise options (ignored in unattended mode)
     -s, --subscription-type TYPE     The software source for installation packages.
     -u, --username USERNAME          Red Hat Login username
     -p, --password PASSWORD          Red Hat Login password
+        --use-existing-puppet        For Origin; do not attempt to install the Puppet module
     -d, --debug                      Enable debugging messages</pre>
       <h3>Take It With You</h3>
       <p>You can also download the installer and run it from a CD or USB drive. Unzip one of these packages onto your portable media and you are good to go:
@@ -131,16 +134,40 @@
     </div>
   </div>
 </div>
-  <footer>
-    <div class="container">
-    <hr />
-      <h3>Need more help? We're here for you.</h3>
-      <ul>
-        <li>The <a href="http://openshift.github.io/documentation/oo_install_users_guide.html">oo-install User's Guide</a> is available at the <a href="http://openshift.github.io/documentation/">OpenShift Origin documentation site</a>.</li>
-        <li>Familiar with IRC? OpenShift superstars can be found on the <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift&uio=d4">#openshift</a> and <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift-dev&uio=d4">#openshift-dev</a> channels on <a href="http://www.freenode.net/">FreeNode</a>.</li>
-        <li>You can also join the <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/users">Users</a> or <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/dev">Developers</a> mailing list.</li>
-      </ul>
-    </div>
-  </footer>
+<footer>
+  <div class="container">
+  <hr />
+    <h3>Need more help? We're here for you.</h3>
+    <ul>
+      <li>The <a href="http://openshift.github.io/documentation/oo_install_users_guide.html">oo-install User's Guide</a> is available at the <a href="http://openshift.github.io/documentation/">OpenShift Origin documentation site</a>.</li>
+      <li>Familiar with IRC? OpenShift superstars can be found on the <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift&uio=d4">#openshift</a> and <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift-dev&uio=d4">#openshift-dev</a> channels on <a href="http://www.freenode.net/">FreeNode</a>.</li>
+      <li>You can also join the <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/users">Users</a> or <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/dev">Developers</a> mailing list.</li>
+    </ul>
+  </div>
+</footer>
+<!-- Google Analytics -->
+<script type="text/javascript">
+var _gaq = _gaq || [];
+_gaq.push(['_setAccount', 'UA-40375612-1']);
+_gaq.push(['_setDomainName', 'install.openshift.com']);
+_gaq.push(['_trackPageview', '/install']);
+
+(function() {
+    var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+    ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+})();
+
+$(document).ready(function() {
+    _gaq.push(function() {
+        $('a[href^="http"]').on("click", function(e) {
+			e.preventDefault();
+			var link = $(this).attr("href");
+			_gaq.push(["_trackEvent", "Outbound Links", "click", link]);
+			setTimeout('document.location = "' + link + '"', 100);
+		});
+	});
+});
+</script>
 </body>
 </html>
