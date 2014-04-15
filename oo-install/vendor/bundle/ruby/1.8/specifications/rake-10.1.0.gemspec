@@ -18,7 +18,7 @@ Gem::Specification.new do |s|
   s.require_paths = ["lib"]
   s.required_ruby_version = Gem::Requirement.new(">= 1.8.6")
   s.rubyforge_project = "rake"
-  s.rubygems_version = "2.0.10"
+  s.rubygems_version = "1.8.24"
   s.summary = "Ruby based make-like utility."
 
   if s.respond_to? :specification_version then

@@ -13,7 +13,7 @@ Gem::Specification.new do |s|
   s.licenses = ["MIT"]
   s.require_paths = ["lib"]
   s.rubyforge_project = "[none]"
-  s.rubygems_version = "2.0.10"
+  s.rubygems_version = "1.8.24"
   s.summary = "New wave Internationalization support for Ruby"
 
   if s.respond_to? :specification_version then
