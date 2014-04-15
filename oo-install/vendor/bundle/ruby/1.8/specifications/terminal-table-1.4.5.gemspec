@@ -4,8 +4,9 @@ Gem::Specification.new do |s|
   s.name = "terminal-table"
   s.version = "1.4.5"
 
-  s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
+  s.required_rubygems_version = nil if s.respond_to? :required_rubygems_version=
   s.authors = ["TJ Holowaychuk", "Scott J. Goldman"]
+  s.cert_chain = nil
   s.date = "2012-03-14"
   s.description = "Simple, feature rich ascii table generation library"
   s.email = "tj@vision-media.ca"
@@ -16,6 +17,15 @@ Gem::Specification.new do |s|
   s.require_paths = ["lib"]
   s.required_ruby_version = Gem::Requirement.new("> 0.0.0")
   s.rubyforge_project = "terminal-table"
-  s.rubygems_version = "2.0.10"
+  s.rubygems_version = "1.8.24"
   s.summary = "Simple, feature rich ascii table generation library"
+
+  if s.respond_to? :specification_version then
+    s.specification_version = 1
+
+    if Gem::Version.new(Gem::VERSION) >= Gem::Version.new('1.2.0') then
+    else
+    end
+  else
+  end
 end
