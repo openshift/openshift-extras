@@ -17,7 +17,7 @@ Gem::Specification.new do |s|
   s.rdoc_options = ["--main", "README.rdoc"]
   s.require_paths = ["lib"]
   s.rubyforge_project = "diff-lcs"
-  s.rubygems_version = "2.0.10"
+  s.rubygems_version = "1.8.24"
   s.summary = "Diff::LCS computes the difference between two Enumerable sequences using the McIlroy-Hunt longest common subsequence (LCS) algorithm"
 
   if s.respond_to? :specification_version then
