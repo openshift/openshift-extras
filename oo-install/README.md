@@ -11,10 +11,11 @@ from the command line of any system with ruby 1.8.7 or above plus unzip and curl
 ## Running oo-install from source
 If you would prefer to run the installer from source, you will need to use the [bundler](http://bundler.io/) gem to set up the right environment.
 
-1. Clone [openshift-extras](https://github.com/openshift/openshift-extras/)
-2. `cd openshift-extras/oo-install`
-3. `bundle install`
-4. `bundle exec bin/oo-install`
+1. `gem install bundler --version '=1.3.5'`
+2. Clone [openshift-extras](https://github.com/openshift/openshift-extras/)
+3. `cd openshift-extras/oo-install`
+4. `bundle install`
+5. `bundle exec bin/oo-install`
 
 ## Command-line options
 
