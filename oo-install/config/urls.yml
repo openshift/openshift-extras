@@ -1,0 +1,13 @@
+---
+oo_install_docs_url:
+    ose-2.0: https://access.redhat.com/site/documentation/en-US/OpenShift_Enterprise/2/html/Deployment_Guide/Installation_Utility.html
+    ose-2.1: https://access.redhat.com/site/documentation/en-US/OpenShift_Enterprise/2/html/Deployment_Guide/Installation_Utility.html
+    default: http://openshift.github.io/documentation/oo_install_users_guide.html
+node_profile_url:
+    ose-1.2: https://access.redhat.com/site/documentation/en-US/OpenShift_Enterprise/1/html/Deployment_Guide/sect-Gear_Profiles_Sizes.html
+    default: https://access.redhat.com/site/documentation/en-US/OpenShift_Enterprise/2/html/Deployment_Guide/sect-Gear_Profiles_Sizes.html
+districts_url:
+    ose-1.2: https://access.redhat.com/site/documentation/en-US/OpenShift_Enterprise/2/html/Deployment_Guide/sect-Districts.html
+    ose-2.0: https://access.redhat.com/site/documentation/en-US/OpenShift_Enterprise/2/html/Deployment_Guide/sect-Districts.html
+    ose-2.1: https://access.redhat.com/site/documentation/en-US/OpenShift_Enterprise/2/html/Deployment_Guide/sect-Districts.html
+    default: http://openshift.github.io/documentation/oo_administration_guide.html#the-purpose-of-districts
