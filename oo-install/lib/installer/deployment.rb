@@ -1,6 +1,7 @@
 require 'installer/helpers'
 require 'installer/host_instance'
 require 'installer/dns_config'
+require 'set'
 
 module Installer
   class Deployment
@@ -73,6 +74,8 @@ module Installer
 
     def add_host_instance! host_instance
       @hosts << host_instance
+      update_valid_gear_sizes!
+      update_district_mappings!
       save_to_disk!
     end
 
@@ -161,6 +164,95 @@ module Installer
 
     def get_role_list role
       hosts.select{ |h| h.roles.include?(role) }
+    end
+
+    def get_node_profiles_nodes
+      nodes.map {|node| node.node_profile}.compact.uniq
+    end
+
+    def get_node_profiles_all
+      valid_gear_sizes = Set.new
+      valid_gear_sizes.merge(get_node_profiles_nodes)
+      brokers.each do |broker|
+        vgs = broker.valid_gear_sizes
+        valid_gear_sizes.merge(broker.valid_gear_sizes.split(',')) unless (vgs.nil? or vgs.empty?)
+      end
+      return valid_gear_sizes.to_a
+    end
+
+    def get_valid_gear_sizes
+      node_profiles = get_node_profiles_all
+      return node_profiles.empty? ? nil : node_profiles.join(',')
+    end
+
+    def update_valid_gear_sizes!
+      valid_gear_sizes = get_valid_gear_sizes
+      brokers.each do |broker|
+        broker.valid_gear_sizes=valid_gear_sizes
+      end
+      save_to_disk!
+    end
+
+    def get_districts
+      districts = nodes.map {|node| node.district} + brokers.map {|broker| broker.district_mappings.nil? ? nil : broker.district_mappings.keys}.flatten
+      return districts.compact.uniq
+    end
+
+    def get_profile_for_district district
+      brokers.each do |broker|
+        unless (broker.district_mappings.nil? or broker.district_mappings.empty?)
+          broker.district_mappings.each do |d,n|
+            if d == district
+              nodes.each do |node|
+                return node.node_profile if node.host == n[0]
+              end
+            end
+          end
+        end
+      end
+      return nil
+    end
+
+    def update_district_mappings!
+      district_mappings={}
+
+      nodes.each do |node|
+        (district_mappings[node.district] ||= []) << node.host if node.district
+      end
+
+      brokers.each do |broker|
+        unless broker.district_mappings.nil? or broker.district_mappings.empty?
+          district_mappings.merge(broker.district_mappings){|key, oldnodes, newnodes| oldnodes + newnodes}
+        end
+      end
+
+      district_mappings.each do |district,nodes|
+        district_mappings[district] = Set.new(nodes).to_a
+      end
+
+      brokers.each do |broker|
+        broker.district_mappings = district_mappings unless district_mappings.empty?
+      end
+      save_to_disk!
+    end
+
+    def get_synchronized_attr attr
+      hosts.each do |h|
+        val = h.send(attr)
+        if not val.nil?
+          return val
+        end
+      end
+      return nil
+    end
+
+    def set_synchronized_attr! attr, value
+      hosts.each do |h|
+        unless h.send(attr).nil?
+          h.send("#{attr.to_s}=".to_sym, value)
+        end
+      end
+      save_to_disk!
     end
 
     private

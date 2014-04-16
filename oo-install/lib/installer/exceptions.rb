@@ -31,9 +31,9 @@ module Installer
     end
   end
 
-  class WorkflowFileNotFoundException < Exception
-    def initialize(message="The workflow configuration file could not be found at <gem_root>/conf/workflow.cfg", code=1)
-      super(message, code)
+  class FileNotFoundException < Exception
+    def initialize(description="", file_path="", code=1)
+      super("The #{description} configuration file could not be found at #{file_path}", code)
     end
   end
 

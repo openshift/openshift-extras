@@ -41,22 +41,9 @@ module Installer
         %w{ID Name Summary Executable}
       end
 
-      def parse_config_file
-        unless File.exists?(file_path)
-          raise Installer::WorkflowFileNotFoundException.new
-        end
-        yaml = YAML.load_stream(open(file_path))
-        if yaml.is_a?(Array)
-          # Ruby 1.9.3+
-          return yaml
-        else
-          # Ruby 1.8.7
-          return yaml.documents
-        end
-      end
-
       def validate_and_return_config
-        parse_config_file.each do |workflow|
+        parsed_file=parse_config_file('workflows', file_path)
+        parsed_file.each do |workflow|
           required_fields.each do |field|
             if not workflow.has_key?(field)
               raise Installer::WorkflowMissingRequiredSettingException.new "Required field #{field} missing from workflow entry:\n#{workflow.inspect}\n\n"
@@ -67,7 +54,7 @@ module Installer
             raise Installer::WorkflowQuestionReservedVariableException.new "Workflow question variable 'version' is reserved for use by oo-install"
           end
         end
-        parse_config_file.map{ |record| new(record) }
+        parsed_file.map{ |record| new(record) }
       end
     end
 

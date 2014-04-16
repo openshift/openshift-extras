@@ -147,7 +147,7 @@ Contexts:
 Targets:
   - rhel
 Summary: Install OpenShift Enterprise
-Description: If you currently have no OpenShift Enterprise 1.2 system, select this option to deploy OpenShift Enterprise to one or more target hosts.
+Description: If you currently have no OpenShift Enterprise 2.1 system, select this option to deploy OpenShift Enterprise to one or more target hosts.
 ID: enterprise_deploy
 WorkflowDir: enterprise_deploy
 Executable: <workflow_path>/launcher.rb
@@ -165,7 +165,7 @@ Contexts:
 Targets:
   - rhel
 Summary: Add a Node to OpenShift Enterprise
-Description: If you have already deployed an OpenShift Enterprise 1.2 system, use this option to add a new Node host to the existing system.
+Description: If you have already deployed an OpenShift Enterprise 2.1 system, use this option to add a new Node host to the existing system.
 ID: enterprise_add_node
 WorkflowDir: enterprise_deploy
 Questions:
