@@ -1,0 +1,10 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    syslog-logger (1.6.8)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  syslog-logger

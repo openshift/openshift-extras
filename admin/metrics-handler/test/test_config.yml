@@ -1,0 +1,12 @@
+---
+metadata:
+- app
+- gear
+- cart: {required: false}
+graphite:
+  enabled: false
+  host: localhost
+  port: 2003
+file:
+  enabled: false
+  path: /tmp/metrics.log
