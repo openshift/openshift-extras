@@ -1,0 +1,18 @@
+[image-build]
+version = 2.1
+name = OSEoD
+target = rhose-2.1-rhel-6-image
+arches = x86_64
+
+format = qcow2,vmdk,vdi,rhevm-ova,vsphere-ova
+distro = RHEL-6.5
+install_tree = 
+repo = 
+
+scratch = true
+# "scratch" builds build from a local file and are not tagged for release.
+kickstart = vm/openshift-vm.ks
+
+# tagged builds require SCM-provided kickstart file:
+# kickstart = openshift-vm.ks
+# ksurl = 

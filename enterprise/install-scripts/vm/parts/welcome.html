@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>Welcome to OpenShift</title>
+<link href="http://netdna.bootstrapcdn.com/bootstrap/3.0.3/css/bootstrap.min.css" rel="stylesheet" />
+<script src="http://netdna.bootstrapcdn.com/bootstrap/3.0.3/js/bootstrap.min.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="page-header">
+    <h1>Welcome to OpenShift</h1>
+    <p class="lead">App delivery just got a whole lot easier.</p>
+  </div>
+  <div class="row">
+    <div class="col-md-12">
+      <p>This virtual machine is pre-configured as an all-in-one deployment of
+      OpenShift Enterprise by Red Hat, complete with the JBoss Developer Studio.
+      From here you can develop applications directly against the world-class
+      OpenShift Enterprise Platform-as-a-Service.</p>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-md-6">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <h3 class="panel-title">The Web Console</h3>
+        </div>
+        <div class="panel-body">
+          <p>Click below to view the OpenShift Enterprise web console. You will need these login credentials:</p>
+          <ul>
+            <li>Username: <code>demo</code>
+            <li>Password: <code>openshift</code>
+          </ul>
+          <a class="btn btn-primary" target="_blank" href="https://vm.openshift.example.com/">Open the Web Console</a>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <h3 class="panel-title">The <code>rhc</code> Utility</h3>
+        </div>
+        <div class="panel-body">
+          <p>Open a terminal on this system (Applications - System Tools) and run the following command to get started with <code>rhc</code>, the command-line utility for developing apps with OpenShift Enterprise:</p>
+	  <pre>$ rhc setup -l demo -p openshift</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-md-6">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <h3 class="panel-title">JBoss Developer Studio</h3>
+        </div>
+        <div class="panel-body">
+	 <p>Open JBDS on this system (Applications - Programming menu), click past the splash screen, and select File - New - OpenShift Application from the menu (even to import an existing application). You will need the account credentials:</p>
+          <ul>
+            <li>Username: <code>demo</code>
+            <li>Password: <code>openshift</code>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <h3 class="panel-title">External access</h3>
+        </div>
+        <div class="panel-body">
+          <p>This VM and applications created on it have DNS records that are only
+	  available from the BIND server contained in the VM. It is possible to
+	  resolve VM host and application names externally by adding the IP of
+	  this VM as the nameserver for the domain openshift.example.com. The
+	  method of doing this is specific to your operating system and environment;
+	  e.g. for Linux you would add this to the top of /etc/resolv.conf:
+	  </p>
+	  <p><code>nameserver 192.168.x.x</code></p>
+	  <p>More details are available <a target="_blank" href="http://openshift.github.io/documentation/oo_deployment_guide_comprehensive.html#configuring-local-machine-for-dns-resolution">here</a>. The VM IP must also be reachable from the host (check with <code>ping</code>).</p>
+	  <p>Be aware that the cerficate of the VM web server is self-signed,
+	  and should be expected to cause a certificate warning when visited
+	  by external browsers or tools.
+	  </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-md-12">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <h3 class="panel-title">Changing passwords</h3>
+        </div>
+        <div class="panel-body">
+          <p>This host is pre-configured with a host login and OpenShift user for ease of use. The default passwords should be changed as follows.</p>
+	  <p>Change the password for the host "openshift" login from the terminal window with the <code>passwd</code> command:</p>
+	  <pre>
+$ passwd
+(enter the current password, "openshift")
+(enter your new password twice)
+	  </pre>
+	  <p>Change the password for the OpenShift "demo" user (or add other logins) from the terminal window with the <code>htpasswd</code> command:</p>
+	  <pre>
+$ sudo htpasswd /etc/openshift/htpasswd demo
+(enter your new password twice)
+	  </pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

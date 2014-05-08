@@ -1,0 +1,6 @@
+# do not commit files with internal URLs etc
+
+parts/parameters*.sh
+image-build*.conf
+openshift-vm.ks
+*.swp

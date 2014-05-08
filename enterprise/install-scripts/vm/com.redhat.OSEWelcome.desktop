@@ -1,5 +1,0 @@
-[Desktop Entry]
-Name=OpenShift Enterprise Info Page
-Type=Application
-NoDisplay=true
-Exec=/usr/bin/firefox file:///home/openshift/.openshift/welcome.html https://localhost/
