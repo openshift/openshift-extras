@@ -137,12 +137,22 @@ end
 # Maps openshift.sh roles to oo-install deployment components
 @role_map =
 { 'broker' => [
-    { 'component' => 'broker', 'env_hostname' => 'broker_hostname', 'env_ip_addr' => 'broker_ip_addr' },
+    { 'component' => 'broker', 'env_hostname' => 'broker_hostname', 'env_ip_addr' => 'broker_ip_addr',
+      'mcollective_user' => 'mcollective_user', 'mcollective_password' => 'mcollective_password',
+      'mongodb_broker_user' => 'mongodb_broker_user', 'mongodb_broker_password' => 'mongodb_broker_password',
+      'openshift_user' => 'openshift_user1', 'openshift_password' => 'openshift_password1' },
     { 'component' => 'named', 'env_hostname' => 'named_hostname', 'env_ip_addr' => 'named_ip_addr' },
   ],
-  'node' => [{ 'component' => 'node', 'env_hostname' => 'node_hostname', 'env_ip_addr' => 'node_ip_addr', 'env_ip_interface' => 'conf_node_external_eth_dev' }],
-  'msgserver' => [{ 'component' => 'activemq', 'env_hostname' => 'activemq_hostname' }],
-  'dbserver' => [{ 'component' => 'datastore', 'env_hostname' => 'datastore_hostname' }],
+  'node' => [{ 'component' => 'node', 'env_hostname' => 'node_hostname', 'env_ip_addr' => 'node_ip_addr',
+               'env_ip_interface' => 'conf_node_external_eth_dev',
+               'mcollective_user' => 'mcollective_user', 'mcollective_password' => 'mcollective_password' }],
+  'msgserver' => [{ 'component' => 'activemq', 'env_hostname' => 'activemq_hostname',
+                    'mcollective_user' => 'mcollective_user', 'mcollective_password' => 'mcollective_password' }],
+  'dbserver' => [{ 'component' => 'datastore', 'env_hostname' => 'datastore_hostname',
+                   'mongodb_broker_user' => 'mongodb_broker_user',
+                   'mongodb_broker_password' => 'mongodb_broker_password',
+                   'mongodb_admin_user' => 'mongodb_admin_user',
+                   'mongodb_admin_password' => 'mongodb_admin_password' }],
 }
 
 # Will map hosts to roles
@@ -324,6 +334,8 @@ host_order.each do |ssh_host|
   hostfile = "oo_install_configure_#{host}.pp"
   @puppet_map['roles'] = components_list(@hosts[ssh_host])
 
+  logfile = "/tmp/openshift-deploy.log"
+
   # Set up the commands that we will be using.
   commands = {
     :typecheck => "export LC_CTYPE=en_US.utf8 && cat /etc/redhat-release",
@@ -338,7 +350,7 @@ host_order.each do |ssh_host|
     :uninstall => "puppet module uninstall -f #{@puppet_module_name}",
     :install => "puppet module install -v #{@puppet_module_ver} #{@puppet_module_name}",
     :yum_clean => 'yum clean all',
-    :apply => "puppet apply --verbose /tmp/#{hostfile}",
+    :apply => "puppet apply --verbose /tmp/#{hostfile} |& tee -a #{logfile}",
     :clear => "rm /tmp/#{hostfile}",
   }
   puppet_commands = [:uninstall,:install,:apply]
@@ -450,15 +462,54 @@ host_order.each do |ssh_host|
     end
   end
 
-  # Only include the node config setting for hosts that will have a node installation
-  if @hosts[ssh_host]['roles'].include?('node')
-    @puppet_map[@role_map['node'][0]['env_hostname']] = @hosts[ssh_host]['host']
-    @puppet_map[@role_map['node'][0]['env_ip_addr']] = @hosts[ssh_host]['ip_addr']
-    @puppet_map[@role_map['node'][0]['env_ip_interface']] = @hosts[ssh_host]['ip_interface']
-  else
-    @puppet_map.delete(@role_map['node'][0]['env_hostname'])
-    @puppet_map.delete(@role_map['node'][0]['env_ip_addr'])
-    @puppet_map.delete(@role_map['node'][0]['env_ip_interface'])
+  # Cleanup host specific puppet parameters from any previous runs
+  @hosts[ssh_host]['roles'].each do |role|
+    @role_map[role].each do |origin_role|
+      origin_role.values.each do |puppet_param|
+        @puppet_map.delete(puppet_param)
+      end
+    end
+  end
+
+  # Set host specific puppet parameters
+  @hosts[ssh_host]['roles'].each do |role|
+    @role_map[role].each do |origin_role|
+      origin_role.each do |config_var, puppet_param|
+        case config_var
+        when 'env_hostname'
+          @puppet_map[puppet_param] = @hosts[ssh_host]['host']
+        when 'env_ip_addr'
+          if puppet_param == 'named_ip_addr' and @hosts[ssh_host].has_key?('named_ip_addr')
+            @puppet_map[puppet_param] = @hosts[ssh_host]['named_ip_addr']
+          else
+            @puppet_map[puppet_param] = @hosts[ssh_host]['ip_addr']
+          end
+        else
+          @puppet_map[puppet_param] = @hosts[ssh_host][config_var] unless @hosts[ssh_host][config_var].nil?
+        end
+      end
+    end
+
+    # Set needed env variables that are not explicitly configured on the host
+    @hosts.values.each do |host_info|
+      # Both the broker and node need to set the activemq hostname, but it is not stored in the config
+      if ['broker','node'].include?(role) and @hosts[ssh_host]['roles'].include?('msgserver')
+        @puppet_map['activemq_hostname'] = @hosts[ssh_host]['host']
+      end
+
+      # The broker needs to set the datastore hostname, but it is not stored in the config
+      if role == 'broker' and @hosts[ssh_host]['roles'].include?('dbserver')
+        @puppet_map['datastore_hostname'] = @hosts[ssh_host]['host']
+      end
+      # All hosts need to set the named ip address, but only the broker stores it in the config
+      if role != 'broker' and @hosts[ssh_host]['roles'].include?('broker')
+        @puppet_map['named_ip_addr'] = @hosts[ssh_host]['named_ip_addr']
+      end
+
+      if role == 'node' and @hosts[ssh_host]['roles'].include?('broker')
+        @puppet_map['broker_hostname'] = @hosts[ssh_host]['host']
+      end
+    end
   end
 
   # Make a puppet config file for this host.
