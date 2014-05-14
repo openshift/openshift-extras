@@ -257,8 +257,8 @@ configure_subscription()
    need_client_tools_repo && roles="$roles --role client"
    need_node_repo && roles="$roles --role node"
    need_jbosseap_cartridge_repo && roles="$roles --role node-eap"
-   oo-admin-yum-validator -o 2.0 --fix-all $roles # when fixing, rc is always false
-   oo-admin-yum-validator -o 2.0 $roles || abort_install # so check when fixes are done
+   oo-admin-yum-validator -o 2.1 --fix-all $roles # when fixing, rc is always false
+   oo-admin-yum-validator -o 2.1 $roles || abort_install # so check when fixes are done
 
    # Normally we could just install o-e-release and it would pull in yum-validator;
    # however it turns out the ruby dependencies can sometimes be pulled in from the
