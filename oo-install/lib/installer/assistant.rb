@@ -30,7 +30,7 @@ module Installer
     end
 
     def tgt_subscription
-      @tgt_subscription || (save_subscription? ? cfg_subscription : cli_subscription)
+      @tgt_subscription ||= (save_subscription? ? cfg_subscription : cli_subscription)
     end
 
    def get_url description
