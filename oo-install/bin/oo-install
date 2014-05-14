@@ -48,7 +48,7 @@ p = OptionParser.new do |opts|
     installer_context = :ose
   end
   opts.on('-s', '--subscription-type TYPE', "The software source for installation packages.") do |subscription_type|
-    options[:subscription_type] = subscription_type
+    options[:subscription_type] = subscription_type.to_sym
   end
   opts.on('-u', '--username USERNAME', 'Red Hat Login username') do |username|
     options[:rh_username] = username

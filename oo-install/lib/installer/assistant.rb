@@ -26,6 +26,10 @@ module Installer
       $terminal.wrap_at = 70
     end
 
+    def tgt_subscription
+      @tgt_subscription || (save_subscription? ? cfg_subscription : cli_subscription)
+    end
+
     def run
       if workflow_id.nil?
         ui_welcome_screen
@@ -457,7 +461,6 @@ module Installer
 
     def ui_edit_subscription
       ui_newpage
-      tgt_subscription = save_subscription? ? cfg_subscription : cli_subscription
       valid_types = Installer::Subscription.valid_types_for_context
       valid_types_list = valid_types.map{ |t| t.to_s }.join(', ')
       tgt_subscription.subscription_type = ask("What type of subscription should be used? (#{valid_types_list}) ") { |q|
