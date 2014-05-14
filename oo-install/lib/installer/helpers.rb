@@ -21,6 +21,20 @@ module Installer
       pn.exist?() and pn.readable?()
     end
 
+    def parse_config_file(description, file_path)
+      unless File.exists?(file_path)
+        raise Installer::FileNotFoundException.new(description, file_path)
+      end
+      yaml = YAML.load_stream(open(file_path))
+      if yaml.is_a?(Array)
+        # Ruby 1.9.3+
+        return yaml
+      else
+        # Ruby 1.8.7
+        return yaml.documents
+      end
+    end
+
     def gem_root_dir
       @gem_root_dir ||= File.expand_path '../../../', __FILE__
     end
@@ -196,6 +210,17 @@ module Installer
           return false
         end
       end
+    end
+
+    def capitalize_attribute(attr)
+      attr.to_s.split('_').map{ |word|
+        case word
+        when 'mongodb' then 'MongoDB'
+        when 'openshift' then 'OpenShift'
+        when 'mcollective' then 'MCollective'
+        when 'db','ssh','ip' then word.upcase
+        else word.capitalize
+        end }.join(' ')
     end
 
     def horizontal_rule

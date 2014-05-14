@@ -10,6 +10,11 @@ task :package do
   @portable_readme = 'oo_install_launcher.README.txt'
   @site_assets_dir = "#{gem_root_dir}/site_assets"
   @ose_launchers = {}
+  @use_local_script = false
+
+  if ENV['USE_LOCAL_SCRIPT']
+    @use_local_script = true
+  end
 
   if `uname`.chomp.strip == 'Linux'
     @sed_cmd = 'sed --in-place='
@@ -27,50 +32,6 @@ task :package do
 
   # Set up a new package / archive name
   pkgtime = Time.now.getutc.strftime('%Y%m%d-%H%M')
-
-  builds = [
-    { :version => nil,
-      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
-      :context => :origin,
-      :base => true,
-      :branch => 'master',
-    },
-    { :version => 'ose',
-      :version_text => 'OpenShift Enterprise 2.0',
-      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
-      :context => :ose,
-      :branch => 'enterprise-2.0',
-    },
-    { :version => 'ose-2.1',
-      :version_text => 'OpenShift Enterprise 2.1',
-      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.1/enterprise/install-scripts/generic/openshift.sh',
-      :context => :ose,
-      :branch => 'enterprise-2.1',
-    },
-    { :version => 'ose-2.0',
-      :version_text => 'OpenShift Enterprise 2.0',
-      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
-      :context => :ose,
-      :branch => 'enterprise-2.0',
-    },
-    { :version => 'ose-1.2',
-      :version_text => 'OpenShift Enterprise 1.2',
-      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-1.2/enterprise/install-scripts/generic/openshift.sh',
-      :context => :ose,
-      :branch => 'enterprise-1.2',
-    },
-    { :version => 'origin',
-      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
-      :context => :origin,
-      :branch => 'master',
-    },
-    { :version => 'origin_vm',
-      :ose_launcher => 'https://raw.github.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
-      :context => :origin_vm,
-      :branch => 'master',
-      :portable_only => true,
-    },
-  ]
 
   branches = `git branch`.split(/\n/).map{ |branch| branch.strip }
 
@@ -92,6 +53,50 @@ task :package do
     end
     print "\n"
   end
+
+  builds = [
+    { :version => nil,
+      :ose_launcher => 'https://raw.githubusercontent.com/openshift/openshift-extras/enterprise-2.1/enterprise/install-scripts/generic/openshift.sh',
+      :context => :origin,
+      :base => working_branch,
+      :branch => 'master',
+    },
+    { :version => 'ose',
+      :version_text => 'OpenShift Enterprise 2.1',
+      :ose_launcher => 'https://raw.githubusercontent.com/openshift/openshift-extras/enterprise-2.1/enterprise/install-scripts/generic/openshift.sh',
+      :context => :ose,
+      :branch => 'enterprise-2.1',
+    },
+    { :version => 'ose-2.1',
+      :version_text => 'OpenShift Enterprise 2.1',
+      :ose_launcher => 'https://raw.githubusercontent.com/openshift/openshift-extras/enterprise-2.1/enterprise/install-scripts/generic/openshift.sh',
+      :context => :ose,
+      :branch => 'enterprise-2.1',
+    },
+    { :version => 'ose-2.0',
+      :version_text => 'OpenShift Enterprise 2.0',
+      :ose_launcher => 'https://raw.githubusercontent.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
+      :context => :ose,
+      :branch => 'enterprise-2.0',
+    },
+    { :version => 'ose-1.2',
+      :version_text => 'OpenShift Enterprise 1.2',
+      :ose_launcher => 'https://raw.githubusercontent.com/openshift/openshift-extras/enterprise-1.2/enterprise/install-scripts/generic/openshift.sh',
+      :context => :ose,
+      :branch => 'enterprise-1.2',
+    },
+    { :version => 'origin',
+      :ose_launcher => 'https://raw.githubusercontent.com/openshift/openshift-extras/enterprise-2.1/enterprise/install-scripts/generic/openshift.sh',
+      :context => :origin,
+      :branch => 'master',
+    },
+    { :version => 'origin_vm',
+      :ose_launcher => 'https://raw.githubusercontent.com/openshift/openshift-extras/enterprise-2.1/enterprise/install-scripts/generic/openshift.sh',
+      :context => :origin_vm,
+      :branch => 'master',
+      :portable_only => true,
+    },
+  ]
 
   # Now make sure the build branches are available.
   missing_branches = false
@@ -135,14 +140,15 @@ task :package do
     version_text << "Build #{pkgtime}"
 
     # Copy the installer source to $TMPDIR
-    system "cp -r #{gem_root_dir} #{@tmpdir}"
+    system "cp -rL #{gem_root_dir} #{@tmpdir}"
     system "mv #{@tmpdir}/oo-install #{@tmpdir}/#{pkgname}"
     ose_launcher_path = "#{@tmpdir}/#{pkgname}/workflows/enterprise_deploy/openshift.sh"
 
     # If there is a replacement openshift.sh file, get it.
-    if not build[:ose_launcher].nil?
+    if (not build[:ose_launcher].nil?) and (not @use_local_script)
       launcher_url = build[:ose_launcher]
       if @ose_launchers[launcher_url].nil?
+        puts "Fetching ose launch script from: #{launcher_url}"
         @ose_launchers[launcher_url] = `curl -s #{launcher_url}`
         if not $?.exitstatus == 0
           puts "Failed to get #{build[:ose_launcher]}\nExiting."
@@ -179,6 +185,7 @@ task :package do
     end
     system "#{@sed_cmd}.bak 's/INSTALLPKGNAME/#{pkgname}/g' #{pkgdir}/index.html"
     system "#{@sed_cmd}.bak 's/INSTALLVERPATH/#{pkgurl}/' #{pkgdir}/index.html"
+    system "#{@sed_cmd}.bak 's/OPENSHIFTVERSION/#{build[:version].nil? ? 'base' : build[:version]}/' #{pkgdir}/index.html"
     system "#{@sed_cmd}.bak 's/INSTALLVERSION/#{version_text}/' #{pkgdir}/index.html"
     system "#{@sed_cmd}.bak 's/INSTALLCONTEXT/#{context}/' #{pkgdir}/index.html"
     system 'rm', "#{pkgdir}/index.html.bak"

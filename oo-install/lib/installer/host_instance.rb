@@ -5,10 +5,22 @@ module Installer
   class HostInstance
     include Installer::Helpers
 
-    attr_accessor :host, :ip_addr, :named_ip_addr, :ip_interface, :ssh_host, :user, :roles, :install_status
+    attr_accessor :host, :ip_addr, :named_ip_addr, :ip_interface, :ssh_host,
+                  :user, :roles, :install_status, :node_profile, :district,
+                  :valid_gear_sizes, :default_gear_capabilities,
+                  :default_gear_size, :district_mappings,
+                  :mcollective_user, :mcollective_password,
+                  :mongodb_broker_user, :mongodb_broker_password,
+                  :mongodb_admin_user, :mongodb_admin_password,
+                  :openshift_user, :openshift_password
 
     def self.attrs
-      %w{host roles ssh_host user ip_addr named_ip_addr ip_interface install_status}.map{ |a| a.to_sym }
+      %w{host roles ssh_host user ip_addr named_ip_addr ip_interface
+         install_status node_profile district valid_gear_sizes
+         default_gear_capabilities default_gear_size district_mappings
+         mcollective_user mcollective_password mongodb_broker_user
+         mongodb_broker_password mongodb_admin_user mongodb_admin_password
+         openshift_user openshift_password}.map{ |a| a.to_sym }
     end
 
     def initialize(item={}, init_role=nil)
@@ -208,11 +220,11 @@ module Installer
       @ssh_session.close
     end
 
-    def exec_on_host!(command)
+    def exec_on_host!(command, display_output=false)
       if localhost?
-        local_exec!(prepare_command(command))
+        local_exec!(prepare_command(command), display_output)
       else
-        ssh_exec!(prepare_command(command))
+        ssh_exec!(prepare_command(command), display_output)
       end
     end
 
@@ -221,7 +233,7 @@ module Installer
     # Credit to:
     # * http://stackoverflow.com/users/11811/flitzwald
     # * http://stackoverflow.com/users/73056/han
-    def ssh_exec!(command, ssh=get_ssh_session)
+    def ssh_exec!(command, display_output=false, ssh=get_ssh_session)
       stdout_data = ""
       stderr_data = ""
       exit_code = nil
@@ -236,10 +248,12 @@ module Installer
 
               channel.on_data do |ch,data|
                 stdout_data+=data
+                puts data if display_output
               end
 
               channel.on_extended_data do |ch,type,data|
                 stderr_data+=data
+                puts data if display_output
               end
 
               channel.on_request("exit-status") do |ch,data|
@@ -259,10 +273,18 @@ module Installer
       { :stdout => force_utf8(stdout_data), :stderr => force_utf8(stderr_data), :exit_code => exit_code, :exit_signal => exit_signal }
     end
 
-    def local_exec!(command)
-      stdout_data = %x[#{command}]
-      exit_code = $?.exitstatus
-      { :stdout => force_utf8(stdout_data), :exit_code => exit_code }
+    def local_exec!(command, display_output=false)
+      stdout_data = ""
+      IO.popen(command) do |pipe|
+        pipe.each do |line|
+          stdout_data += line
+          puts line if display_output
+        end
+      end
+      result = $?
+      exit_code = result.exitstatus
+      success = result.success?
+      { :stdout => force_utf8(stdout_data), :exit_code => exit_code, :success => success }
     end
 
     def get_ip_addr_choices

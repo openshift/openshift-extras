@@ -265,10 +265,10 @@
 # <base>/jbews/2/os
 # <base>/optional/os        - "optional" channel, not normally needed
 # <base>/os                 - RHEL 6 itself
-# <base>/ose-infra/2.0/os     - Released OpenShift Enterprise repos
-# <base>/ose-jbosseap/2.0/os
-# <base>/ose-node/2.0/os
-# <base>/ose-rhc/2.0/os
+# <base>/ose-infra/2.1/os     - Released OpenShift Enterprise repos
+# <base>/ose-jbosseap/2.1/os
+# <base>/ose-node/2.1/os
+# <base>/ose-rhc/2.1/os
 # <base>/rhscl/1/os/        - RH software collections
 #
 # To use this layout, simply set the CDN base URL below. Alternatively,
@@ -331,6 +331,12 @@
 #   and used for creating host DNS records (app records will still go in the
 #   main domain).
 #CONF_HOSTS_DOMAIN="hosts.example.com"
+
+# hosts_domain_keyfile / CONF_HOSTS_DOMAIN_KEYFILE
+#   Default: "/var/named/${hosts_domain}.key"
+#   If specified and calling register_named_entries, the specified keyfile
+#   will be used for updating the entries.
+#CONF_HOSTS_DOMAIN_KEYFILE="/var/named/hosts.example.com.key"
 
 # broker_hostname / CONF_BROKER_HOSTNAME
 # node_hostname / CONF_NODE_HOSTNAME
@@ -462,14 +468,20 @@
 # errors depending on context. If non-alphanumeric values are required,
 # update them separately after installation.
 #
+# no_scramble / CONF_NO_SCRAMBLE
+#   Default: false
+#   This flag determines whether default passwords should be randomized
+#   or set to insecure defaults.
+#
 # activemq_admin_password / CONF_ACTIVEMQ_ADMIN_PASSWORD
-#   Default: randomized
+#   Default: <randomized>
 #   This is the admin password for the ActiveMQ admin console, which is
 #   not needed by OpenShift but might be useful in troubleshooting.
 #CONF_ACTIVEMQ_ADMIN_PASSWORD="ChangeMe"
 
 # activemq_amq_user_password / CONF_ACTIVEMQ_AMQ_USER_PASSWORD
-#   Default: password
+#   Default: <randomized>
+#   Default with CONF_NO_SCRAMBLE: password
 #   This is the password for the ActiveMQ amq user, which is
 #   used by ActiveMQ broker replicants to communicate with one another.
 #   The amq user is enabled only if replicants are specified using
@@ -478,7 +490,8 @@
 
 # mcollective_user / CONF_MCOLLECTIVE_USER
 # mcollective_password / CONF_MCOLLECTIVE_PASSWORD
-#   Default: mcollective/marionette
+#   Default: mcollective/<randomized>
+#   Default with CONF_NO_SCRAMBLE: mcollective/marionette
 #   This is the user and password shared between broker and node for
 #   communicating over the mcollective topic channels in ActiveMQ. Must
 #   be the same on all broker and node hosts.
@@ -494,7 +507,8 @@
 
 # mongodb_broker_user / CONF_MONGODB_BROKER_USER
 # mongodb_broker_password / CONF_MONGODB_BROKER_PASSWORD
-#   Default: openshift:mongopass
+#   Default: openshift:<randomized>
+#   Default with CONF_NO_SCRAMBLE: openshift:mongopass
 #   These are the username and password of the normal user that will be
 #   created for the broker to connect to the MongoDB datastore. The
 #   broker application's MongoDB plugin is also configured with these
@@ -504,7 +518,8 @@
 
 # mongodb_admin_user / CONF_MONGODB_ADMIN_USER
 # mongodb_admin_password / CONF_MONGODB_ADMIN_PASSWORD
-#   Default: admin:mongopass
+#   Default: admin:<randomized>
+#   Default with CONF_NO_SCRAMBLE: admin:mongopass
 #   These are the username and password of the administrative user that
 #   will be created in the MongoDB datastore. These credentials are not
 #   used by in this script or by OpenShift, but an administrative user
@@ -535,31 +550,56 @@
 #CONF_MONGODB_REPLSET="ose"
 
 # mongodb_key / CONF_MONGODB_KEY
-#   Default: OSEnterprise
+#   Default: <randomized>
+#   Default with CONF_NO_SCRAMBLE: OSEnterprise
 #   In a replicated setup, this is the key that slaves will use to
 #   authenticate with the master.
 #CONF_MONGODB_KEY="OSEnterprise"
 
 # openshift_user1 / CONF_OPENSHIFT_USER1
 # openshift_password1 / CONF_OPENSHIFT_PASSWORD1
-#   Default: demo/changeme
+#   Default: demo/<randomized>
+#   Default with CONF_NO_SCRAMBLE: demo/changeme
 #   This user and password are entered in the /etc/openshift/htpasswd
 #   file as a demo/test user. You will likely want to remove it after
 #   installation (or just use a different auth method).
 #CONF_OPENSHIFT_USER1="demo"
 #CONF_OPENSHIFT_PASSWORD1="changeme"
 
-# conf_broker_auth_salt / CONF_BROKER_AUTH_SALT
+# broker_auth_salt / CONF_BROKER_AUTH_SALT
 #CONF_BROKER_AUTH_SALT=""
 
-# conf_broker_session_secret / CONF_BROKER_SESSION_SECRET
+# broker_session_secret / CONF_BROKER_SESSION_SECRET
 #CONF_BROKER_SESSION_SECRET=""
 
-# conf_console_session_secret / CONF_CONSOLE_SESSION_SECRET
+# console_session_secret / CONF_CONSOLE_SESSION_SECRET
 #CONF_CONSOLE_SESSION_SECRET=""
 
-#conf_valid_gear_sizes / CONF_VALID_GEAR_SIZES   (comma-separated list)
+#valid_gear_sizes / CONF_VALID_GEAR_SIZES   (comma-separated list)
 #CONF_VALID_GEAR_SIZES="small"
+
+#default_gear_capabilities / CONF_DEFAULT_GEAR_CAPABILITIES (comma separated list)
+#CONF_DEFAULT_GEAR_CAPABILITIES="small"
+
+#default_gear_size / CONF_DEFAULT_GEAR_SIZE
+#CONF_DEFAULT_GEAR_SIZE="small"
+
+#node_profile /CONF_NODE_PROFILE
+#CONF_NODE_PROFILE="small"
+
+#default_districts / CONF_DEFAULT_DISTRICTS
+#   Default: true
+#   When enabled (and executing the post_deploy action), a district will be
+#   created for each entry in valid_gear_sizes/CONF_VALID_GEAR_SIZES
+#   and all non-districted nodes of that size will be added to the default
+#   district matching that size.
+#CONF_DEFAULT_DISTRICTS=true
+
+#district_mappings / CONF_DISTRICT_MAPPINGS
+#   A string describing district/node mappings to be created during the
+#   post_deploy action.  default_districts/CONF_DEFAULT_DISTRICTS
+#   must be set to false for this variable to have an effect.
+#CONF_DISTRICT_MAPPINGS="district1:node1.hosts.example.com,node2.hosts.example.com;district2:node3.hosts.example.com;district3:node4.hosts.example.com,node5.hosts.example.com"
 
 # The KrbServiceName value for mod_auth_kerb configuration
 #CONF_BROKER_KRB_SERVICE_NAME=""
@@ -615,6 +655,64 @@ synchronize_clock()
   hwclock --systohc
 }
 
+# Given a variable and a default password assign either the default
+# password or a random password to the variable depending on the value
+# of CONF_NO_SCRAMBLE/no_scramble
+#
+# $1 = variable to set
+# $2 = default password to use
+# $3 = env conf variable
+assign_pass()
+{
+ # If the ENV variable is set, use it
+  if [ -n "${!3}" ]; then
+    eval $1=\${!3}
+  elif is_true "$no_scramble" ; then
+    eval $1=\$2
+  else
+    randomized=$(openssl rand -base64 20)
+    eval $1=\${randomized//[![:alnum:]]}
+  fi
+  passwords[$1]="${!1}"
+}
+
+display_passwords()
+{
+  set +x
+  for k in "${!passwords[@]}"; do
+    out_string=""
+    matching_var=""
+    for postfix in password password1 pass; do
+      vprefix=${k%${postfix}}
+      [ "$vprefix" != "$k" ] && break
+    done
+
+    for v in "${vprefix}user" "${vprefix}user1"; do
+      if [ "x${!v}" != "x" ]; then
+        matchingvar=$v
+        break
+      fi
+    done
+
+    local -A subs
+    subs[openshift]="OpenShift"
+    subs[mcollective]="MCollective"
+    subs[mongodb]="MongoDB"
+    subs[activemq]="ActiveMQ"
+
+    formattedprefix=${vprefix//_/ }
+    for s in ${!subs[@]}; do
+      formattedprefix=${formattedprefix//${s}/${subs[$s]}}
+    done
+
+    out_string+="$formattedprefix"
+    [ "x$matchingvar" != "x" ] && out_string+=" ${matchingvar##*_}: ${!matchingvar}"
+    [ "$vprefix" != "$k" ] && out_string+=" ${k##*_}"
+    out_string+=": ${!k}"
+    echo $out_string
+  done
+  set -x
+}
 
 configure_repos()
 {
@@ -759,7 +857,7 @@ def_ose_yum_repo()
     ;;
   cdn | * )
     map=([client_tools]=ose-rhc [infra]=ose-infra [node]=ose-node [jbosseap_cartridge]=ose-jbosseap)
-    url="$repo_base/${map[$channel]}/2.0/os"
+    url="$repo_base/${map[$channel]}/2.1/os"
     ;;
   esac
   cat > "/etc/yum.repos.d/openshift-${channel}-${layout}.repo" <<YUM
@@ -1554,7 +1652,6 @@ enable_services_on_node()
   # will produce errors.  Anyway, we only need the configuration
   # activated after Anaconda reboots, so --nostart makes sense in any case.
 
-  $lokkit --service=ssh
   $lokkit --service=https
   $lokkit --service=http
 
@@ -1579,7 +1676,6 @@ enable_services_on_broker()
   # will produce errors.  Anyway, we only need the configuration
   # activated after Anaconda reboots, so --nostart makes sense.
 
-  $lokkit --service=ssh
   $lokkit --service=https
   $lokkit --service=http
 
@@ -2121,7 +2217,7 @@ register_named_entries()
     read host ip <<<$(echo ${host_ip//:/ })
     if [[ $host =~ $ip_regex || ! $ip =~ $ip_regex ]]; then
       echo "Not adding DNS record to host zone: '$host' should be a hostname and '$ip' should be an IP address"
-    elif ! oo-register-dns -d "$hosts_domain" -h "${host%.$hosts_domain}" -n $ip; then
+    elif ! oo-register-dns -d "$hosts_domain" -h "${host%.$hosts_domain}" -k "${hosts_domain_keyfile}" -n $ip; then
       echo "WARNING: Failed to register host $host with IP $ip"
       failed="true"
     fi
@@ -2155,6 +2251,8 @@ configure_dns_resolution()
   sed -i -e "/search/ d; 1i# The named we install for our OpenShift PaaS must appear first.\\nsearch ${hosts_domain}.\\nnameserver ${named_ip_addr}\\n" /etc/resolv.conf
 
   # Append resolution conf to the DHCP configuration.
+  sed -i -e "/prepend domain-name-servers ${named_ip_addr};/d" /etc/dhcp/dhclient-$iface.conf
+  sed -i -e "/prepend domain-search ${hosts_domain};/d" /etc/dhcp/dhclient-$iface.conf
   cat <<EOF >> /etc/dhcp/dhclient-$iface.conf
 
 prepend domain-name-servers ${named_ip_addr};
@@ -2162,6 +2260,15 @@ prepend domain-search "${hosts_domain}";
 EOF
 }
 
+update_controller_gear_size_configs()
+{
+  # Configure the valid gear sizes, default gear capabilities and default gear
+  # size for the broker
+  sed -i -e "s/^VALID_GEAR_SIZES=.*/VALID_GEAR_SIZES=\"${valid_gear_sizes}\"/" \
+      -e "s/^DEFAULT_GEAR_CAPABILITIES=.*/DEFAULT_GEAR_CAPABILITIES=\"${default_gear_capabilities}\"/" \
+      -e "s/^DEFAULT_GEAR_SIZE=.*/DEFAULT_GEAR_SIZE=\"${default_gear_size}\"/" \
+      /etc/openshift/broker.conf
+}
 
 # Update the controller configuration.
 configure_controller()
@@ -2177,9 +2284,7 @@ configure_controller()
       /etc/openshift/broker.conf
   echo AUTH_SALT=${broker_auth_salt} >> /etc/openshift/broker.conf
 
-  # Configure the valid gear sizes for the broker
-  sed -i -e "s/^VALID_GEAR_SIZES=.*/VALID_GEAR_SIZES=\"${conf_valid_gear_sizes}\"/" \
-      /etc/openshift/broker.conf
+  update_controller_gear_size_configs
 
   # Configure the session secret for the broker
   sed -i -e "s/# SESSION_SECRET=.*$/SESSION_SECRET=${broker_session_secret}/" \
@@ -2402,6 +2507,9 @@ configure_node()
              s/^PUBLIC_HOSTNAME=.*$/PUBLIC_HOSTNAME=${hostname}/;
              s/^BROKER_HOST=.*$/BROKER_HOST=${broker_hostname}/" \
       /etc/openshift/node.conf
+
+  sed -i -e "s/^node_profile=.*$/node_profile=${node_profile}/" \
+      /etc/openshift/resource_limits.conf
 
   case "$node_apache_frontend" in
     mod_rewrite)
@@ -2707,6 +2815,7 @@ set_defaults()
   # The domain name for the OpenShift Enterprise installation.
   domain="${CONF_DOMAIN:-example.com}"
   hosts_domain="${CONF_HOSTS_DOMAIN:-$domain}"
+  hosts_domain_keyfile="${CONF_HOSTS_DOMAIN_KEYFILE:-/var/named/${hosts_domain}.key}"
 
   # hostnames to use for the components (could all resolve to same host)
   broker_hostname=$(ensure_domain "${CONF_BROKER_HOSTNAME:-broker}" "$hosts_domain")
@@ -2776,8 +2885,23 @@ set_defaults()
   bind_keysize="${CONF_BIND_KEYSIZE:-256}"
   fi
 
-  # Set $conf_valid_gear_sizes to $CONF_VALID_GEAR_SIZES
-  broker && conf_valid_gear_sizes="${CONF_VALID_GEAR_SIZES:-small}"
+  # Set $valid_gear_sizes to $CONF_VALID_GEAR_SIZES
+  broker && valid_gear_sizes="${CONF_VALID_GEAR_SIZES:-small}"
+
+  # Set $default_gear_capabilities to $CONF_DEFAULT_GEAR_CAPABILITIES
+  broker && default_gear_capabilities="${CONF_DEFAULT_GEAR_CAPABILITIES:-${valid_gear_sizes}}"
+
+  # Set $default_gear_size to $CONF_DEFAULT_GEAR_SIZE
+  broker && default_gear_size="${CONF_DEFAULT_GEAR_SIZE:-${valid_gear_sizes%%,*}}"
+
+  # Set $node_profile to $CONF_NODE_PROFILE
+  node && node_profile="${CONF_NODE_PROFILE:-small}"
+
+  # Set $default_districts to $CONF_DEFAULT_DISTRICTS
+  broker && default_districts=${CONF_DEFAULT_DISTRICTS:-true}
+
+  # Set $district_mappings to $CONF_DISTRICT_MAPPINGS
+  broker && district_mappings=$CONF_DISTRICT_MAPPINGS
 
   # Generate a random salt for the broker authentication.
   randomized=$(openssl rand -base64 20)
@@ -2788,6 +2912,7 @@ set_defaults()
   broker && broker_session_secret="${CONF_BROKER_SESSION_SECRET:-${randomized}}"
 
   # Generate a random session secret for console sessions.
+  randomized=$(openssl rand -hex 64)
   broker && console_session_secret="${CONF_CONSOLE_SESSION_SECRET:-${randomized}}"
 
   # If no list of replicants is provided, assume there is only one datastore host.
@@ -2807,40 +2932,47 @@ set_defaults()
 
   # Set default passwords
   #
+  #   If no_scramble/CONF_NO_SCRAMBLE is true, then passwords will
+  #   not be randomized.
+  no_scramble="${CONF_NO_SCRAMBLE:-false}"
+
   #   This is the admin password for the ActiveMQ admin console, which
   #   is not needed by OpenShift but might be useful in troubleshooting.
-  activemq && activemq_admin_password="${CONF_ACTIVEMQ_ADMIN_PASSWORD:-${randomized//[![:alnum:]]}}"
+  randomized=$(openssl rand -base64 20)
+  activemq && assign_pass activemq_admin_password "${randomized//[![:alnum:]]}" CONF_ACTIVEMQ_ADMIN_PASSWORD
 
   #   This is the password for the ActiveMQ amq user, which is used by
   #   ActiveMQ broker replicants to communicate with one another.  The
   #   amq user is enabled only if replicants are specified using the
   #   activemq_replicants.setting
-  activemq && activemq_amq_user_password="${CONF_ACTIVEMQ_AMQ_USER_PASSWORD:-password}"
+  activemq && assign_pass activemq_amq_user_password "password" CONF_ACTIVEMQ_AMQ_USER_PASSWORD
 
   #   This is the user and password shared between broker and node for
   #   communicating over the mcollective topic channels in ActiveMQ.
   #   Must be the same on all broker and node hosts.
-  mcollective_user="${CONF_MCOLLECTIVE_USER:-mcollective}"
-  mcollective_password="${CONF_MCOLLECTIVE_PASSWORD:-marionette}"
+  (broker || node || activemq) && mcollective_user="${CONF_MCOLLECTIVE_USER:-mcollective}"
+  (broker || node || activemq) && assign_pass mcollective_password "marionette" CONF_MCOLLECTIVE_PASSWORD
 
   #   These are the username and password of the administrative user
   #   that will be created in the MongoDB datastore. These credentials
   #   are not used by in this script or by OpenShift, but an
   #   administrative user must be added to MongoDB in order for it to
   #   enforce authentication.
-  mongodb_admin_user="${CONF_MONGODB_ADMIN_USER:-admin}"
-  mongodb_admin_password="${CONF_MONGODB_ADMIN_PASSWORD:-${CONF_MONGODB_PASSWORD:-mongopass}}"
+  datastore && mongodb_admin_user="${CONF_MONGODB_ADMIN_USER:-admin}"
+  datastore && tmpvar=${CONF_MONGODB_ADMIN_PASSWORD:-${CONF_MONGODB_PASSWORD}}
+  datastore &&  assign_pass mongodb_admin_password "mongopass" tmpvar
 
   #   These are the username and password of the normal user that will
   #   be created for the broker to connect to the MongoDB datastore. The
   #   broker application's MongoDB plugin is also configured with these
   #   values.
-  mongodb_broker_user="${CONF_MONGODB_BROKER_USER:-openshift}"
-  mongodb_broker_password="${CONF_MONGODB_BROKER_PASSWORD:-${CONF_MONGODB_PASSWORD:-mongopass}}"
+  (datastore || broker) && mongodb_broker_user="${CONF_MONGODB_BROKER_USER:-openshift}"
+  (datastore || broker) && tmpvar=${CONF_MONGODB_BROKER_PASSWORD:-${CONF_MONGODB_PASSWORD}}
+  (datastore || broker) && assign_pass mongodb_broker_password "mongopass" tmpvar
 
   #   In replicated setup, this is the key that slaves will use to
   #   authenticate with the master.
-  mongodb_key="${CONF_MONGODB_KEY:-OSEnterprise}"
+  datastore && assign_pass mongodb_key "OSEnterprise" CONF_MONGODB_KEY
 
   #   In replicated setup, this is the name of the replica set.
   mongodb_replset="${CONF_MONGODB_REPLSET:-ose}"
@@ -2853,11 +2985,11 @@ set_defaults()
   #   file as a demo/test user. You will likely want to remove it after
   #   installation (or just use a different auth method).
   broker && openshift_user1="${CONF_OPENSHIFT_USER1:-demo}"
-  broker && openshift_password1="${CONF_OPENSHIFT_PASSWORD1:-changeme}"
+  broker && assign_pass openshift_password1 "changeme" CONF_OPENSHIFT_PASSWORD1
 
   # auth info for the topic from the sample routing SPI plugin
-  routing_plugin_user="${CONF_ROUTING_PLUGIN_USER:-routinginfo}"
-  routing_plugin_pass="${CONF_ROUTING_PLUGIN_PASS:-routinginfopassword}"
+  broker && routing_plugin_user="${CONF_ROUTING_PLUGIN_USER:-routinginfo}"
+  broker && assign_pass routing_plugin_pass "routinginfopassword" CONF_ROUTING_PLUGIN_PASS
 
   # cartridge dependency metapackages
   metapkgs="${CONF_METAPKGS:-recommended}"
@@ -3009,6 +3141,9 @@ configure_host()
   # Remove VirtualHost from the default httpd ssl.conf to prevent a warning
   sed -i '/VirtualHost/,/VirtualHost/ d' /etc/httpd/conf.d/ssl.conf
 
+  # all hosts should enable ssh access
+  $lokkit --service=ssh
+
   echo "OpenShift: Completed configuring host."
 }
 
@@ -3051,13 +3186,104 @@ configure_openshift()
   node && broker && fix_broker_routing
   node && install_rsync_pub_key
 
+  sysctl -p
   echo "OpenShift: Completed configuring OpenShift."
+}
+
+restart_services()
+{
+  echo "OpenShift: Begin restarting services."
+  # named is already started in configure_named.
+  named && service named restart
+
+  # mongod is already started in configure_datastore.
+  node && service cgconfig restart
+  node && service cgred restart
+  service network restart
+  { node || broker; } && service sshd restart
+  service ntpd restart
+  node && service messagebus restart
+  node && service ruby193-mcollective stop
+  activemq && service activemq restart
+  node && service ruby193-mcollective start
+  { node || broker; } && service httpd restart
+  broker && service openshift-broker restart
+  broker && service openshift-console restart
+  node && service openshift-iptables-port-proxy restart
+  node && service oddjobd restart
+  node && service openshift-node-web-proxy restart
+  node && service openshift-watchman restart
+
+  # ensure openshift facts are updated
+  node && /etc/cron.minutely/openshift-facts
+
+  echo "OpenShift: Completed restarting services."
+}
+
+run_diagnostics()
+{
+  echo "OpenShift: Begin running oo-diagnostics."
+  # prepending the output of oo-diagnostics breaks the ansi color coding
+  # remove all ansi escape sequences from oo-diagnostics output
+  oo-diagnostics |& sed -u -e 's/\x1B\[[0-9;]*[JKmsu]//g' -e 's/^/OpenShift: oo-diagnostics output - /g'
+  echo "OpenShift: Completed running oo-diagnostics."
 }
 
 reboot_after()
 {
   echo "OpenShift: Rebooting after install."
   reboot
+}
+
+configure_districts()
+{
+  echo "OpenShift: Configuring districts."
+
+  if is_true "$default_districts"; then
+    for p in ${valid_gear_sizes//,/ }; do
+      oo-admin-ctl-district -p $p -n default-${p} -c add-node --available |& sed -e 's/^\(Error\)/OpenShift: oo-admin-ctl-district - \1/g'
+    done
+  else
+    for mapping in ${district_mappings//;/ }; do
+      district="${mapping%%:*}"
+      nodes="${mapping#*:}"
+      firstnode=${nodes//,*/}
+      # query the node for the node profile via mcollective
+      profile=""
+      for i in {1..10}; do
+        profile=$(oo-ruby -e "require 'mcollective'; include MCollective::RPC; mc=rpcclient('rpcutil'); mc.progress=false; result=mc.custom_request('get_fact', {:fact => 'node_profile'}, ['${firstnode}'], {'identity' => '${firstnode}'}); if not result.empty?;  value=result.first.results[:data][:value]; if not value.nil? and not value.empty?; puts value; exit 0; end; end; exit 1" 2>/dev/null)
+        if [ $? -eq 0 ]; then
+          break;
+        fi
+        sleep 10
+      done
+      if [ "x$profile" != "x" ]; then
+        echo "OpenShift: Adding nodes: $nodes with profile: $profile to district: $district."
+        oo-admin-ctl-district -p $profile -n $district -c add-node -i $nodes |& sed -e 's/^\(Error\)/OpenShift: oo-admin-ctl-district - \1/g'
+      else
+        echo "OpenShift: Could not determine gear profile for nodes: ${nodes}, cannot add to district $district"
+      fi
+    done
+  fi
+
+  echo "OpenShift: Completed configuring districts."
+}
+
+post_deploy()
+{
+  echo "OpenShift: Begin post deployment steps."
+
+  if broker; then
+    update_controller_gear_size_configs
+    restart_services
+
+    # import cartridges
+    oo-admin-ctl-cartridge -c import-node --activate --obsolete
+
+    configure_districts
+  fi
+
+  echo "OpenShift: Completed post deployment steps."
 }
 
 do_all_actions()
@@ -3071,9 +3297,8 @@ do_all_actions()
   install_rpms
   configure_host
   configure_openshift
-  echo "Installation and configuration is complete;"
-  echo "please reboot to start all services properly."
-  echo "Then validate brokers/nodes with oo-diagnostics."
+  restart_services
+  echo 'Installation and configuration complete.'
 }
 
 setup_vm_user()
@@ -3128,6 +3353,8 @@ else
   parse_cmdline "$@"
 fi
 
+declare -A passwords
+
 set_defaults
 
 for action in ${actions//,/ }
@@ -3135,5 +3362,7 @@ do
   [ "$(type -t "$action")" = function ] || abort_install "Invalid action: ${action}"
   "$action"
 done
+
+display_passwords
 
 
