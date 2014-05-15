@@ -1,4 +1,4 @@
-Openshift Security Tools
+OpenShift Security Tools
 ==========================================================
 
 These scripts are provided as examples only and may, or may not work
