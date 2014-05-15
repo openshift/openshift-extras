@@ -140,7 +140,8 @@ task :package do
     version_text << "Build #{pkgtime}"
 
     # Copy the installer source to $TMPDIR
-    system "cp -rL #{gem_root_dir} #{@tmpdir}"
+    # the -R flag must be capitalized, else cp on OS X fails
+    system "cp -RL #{gem_root_dir} #{@tmpdir}"
     system "mv #{@tmpdir}/oo-install #{@tmpdir}/#{pkgname}"
     ose_launcher_path = "#{@tmpdir}/#{pkgname}/workflows/enterprise_deploy/openshift.sh"
 
