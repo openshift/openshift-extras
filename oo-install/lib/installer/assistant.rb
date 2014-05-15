@@ -5,21 +5,24 @@ require 'installer/host_instance'
 require 'installer/subscription'
 require 'installer/workflow'
 require 'terminal-table'
+require 'securerandom'
 
 module Installer
   class Assistant
     include Installer::Helpers
 
     attr_reader :workflow_id
-    attr_accessor :config, :deployment, :cli_subscription, :cfg_subscription, :workflow, :workflow_cfg, :version_text
+    attr_accessor :config, :deployment, :cli_subscription, :cfg_subscription, :workflow, :workflow_cfg,
+                  :version, :version_text
 
-    def initialize config, deployment=nil, workflow_id=nil, cli_subscription=nil, version_text=nil
+    def initialize config, deployment=nil, workflow_id=nil, cli_subscription=nil, version=nil, version_text=nil
       @config = config
       @deployment = deployment || config.get_deployment
       @cfg_subscription = config.get_subscription
       @cli_subscription = cli_subscription
       @workflow_id = workflow_id
       @save_subscription = true
+      @version = version
       @version_text = version_text
       # This is a bit hinky; highline/import shoves a HighLine object into the $terminal global
       # so we need to set these on the global object
@@ -28,6 +31,18 @@ module Installer
 
     def tgt_subscription
       @tgt_subscription ||= (save_subscription? ? cfg_subscription : cli_subscription)
+    end
+
+   def get_url description
+      if urls_cache.has_key?(description)
+        if urls_cache[description].has_key?(@version)
+          urls_cache[description][@version]
+        else
+          urls_cache[description]['default']
+        end
+      else
+        ""
+      end
     end
 
     def run
@@ -100,12 +115,19 @@ module Installer
       0
     end
 
-
     def save_subscription?
       @save_subscription
     end
 
     private
+    def url_file_path
+      @url_file_path ||= gem_root_dir + '/config/urls.yml'
+    end
+
+    def urls_cache
+      @urls_cache ||= parse_config_file('urls', url_file_path).first
+    end
+ 
     def ui_title
       title = translate(is_origin_vm? ? :vm_title : :title)
       if not version_text.nil? and not version_text.empty?
@@ -260,7 +282,7 @@ module Installer
       use_origin_vm_as_broker = false
       has_running_broker = false
       if is_origin_vm?
-        say "Before we do that, we need to gather information about the Origin system that you want to deploy. It can consist of one or more hosts systems, including this VM. See:\n\nhttp://openshift.github.io/documentation/oo_install_users_guide.html\n\nfor information on how to integrate this VM into a larger OpenShift deployment."
+        say "Before we do that, we need to gather information about the Origin system that you want to deploy. It can consist of one or more hosts systems, including this VM. See:\n\n#{get_url 'oo_install_docs_url'}\n\nfor information on how to integrate this VM into a larger OpenShift deployment."
         use_origin_vm_as_broker = concur("\n#{horizontal_rule}\nNOTE: Using this VM in a Full Deployment\n#{horizontal_rule}\nBe aware that if this VM is reconfigured as part of a larger deployment, you will potentially lose access to any applications that you have already built here. Additionally, this system will switch from mDNS to BIND, which means that you will need to do some DNS configuration in your own network to be able to connect to this VM by hostname.\n\nIf you answer 'no', we'll gather information about your intended Broker host in a moment.\n\nDo you want to use this VM as the Broker for a multi-host deployment?")
       else
         say "It looks like you are running oo-install for the first time on a new system. The installer will guide you through the process of defining your OpenShift deployment."
@@ -319,6 +341,8 @@ module Installer
               say "\nOkay. Adding the #{role_item} role to #{deployment.hosts[0].host}."
               deployment.hosts[0].add_role(role)
               create_host_instance = false
+              edit_node_profile_and_district deployment.hosts[0] if (role == :node && get_context == :ose)
+              edit_service_user_passwords(deployment.hosts[0],role)
             end
           else
             if concur("\nDo you want to assign the #{role_item} role to one of the hosts that you've already described?", hosts_choice_help)
@@ -326,7 +350,12 @@ module Installer
               choose do |menu|
                 menu.header = "\nWhich host would you like to assign this role to?"
                 deployment.hosts.each do |host_instance|
-                  menu.choice(host_instance.summarize) { say "Okay. Adding the #{role_item} role to #{host_instance.host}"; host_instance.add_role(role) }
+                  menu.choice(host_instance.summarize) do
+                    say "Okay. Adding the #{role_item} role to #{host_instance.host}"
+                    host_instance.add_role(role)
+                    edit_node_profile_and_district host_instance if (role == :node && get_context == :ose)
+                    edit_service_user_passwords(host_instance,role)
+                  end
                 end
               end
             end
@@ -634,6 +663,8 @@ module Installer
             target_list.each do |host_instance|
               menu.choice("Add role to #{host_instance.host}") {
                 host_instance.add_role(role)
+                edit_node_profile_and_district host_instance if (role == :node && get_context == :ose)
+                edit_service_user_passwords(host_instance,role)
                 deployment.save_to_disk!
                 say "\nAdded #{role.to_s} role to #{host_instance.host}"
               }
@@ -685,6 +716,8 @@ module Installer
             menu.choice(host_instance.summarize) {
               if remove_role(source_host, move_role)
                 host_instance.add_role(move_role)
+                edit_node_profile_and_district host_instance if (move_role == :node && get_context == :ose)
+                edit_service_user_passwords(host_instance,move_role)
                 deployment.save_to_disk!
               end
             }
@@ -875,16 +908,189 @@ module Installer
             end
           end
         end
-        # Optionally allow the user to set a distinct named_ip_addr for their broker.
         if host_instance.is_broker?
+          # Optionally allow the user to set a distinct named_ip_addr for their broker.
           host_instance.named_ip_addr = ask("\nNormally, the BIND DNS server that is installed on this Broker will be reachable from other OpenShift components using the Broker's configured IP address (#{host_instance.ip_addr}).\n\nIf that will work in your deployment, press <enter> to accept the default value. Otherwise, provide an alternate IP address that will enable other OpenShift components to reach the BIND DNS service on the Broker: ") { |q|
             q.default = host_instance.ip_addr
             q.validate = lambda { |p| is_valid_ip_addr?(p) }
             q.responses[:not_valid] = "Enter a valid IP address for the BIND DNS service"
           }.to_s
+          if get_context == :ose
+            valid_gear_sizes = @deployment.get_valid_gear_sizes
+            host_instance.valid_gear_sizes = ask("\nValid Gear Sizes for this deployment: ") { |q|
+              q.default = valid_gear_sizes.nil? ? "small" : valid_gear_sizes
+              q.validate = lambda { |p| is_valid_string?(p) }
+              q.responses[:not_valid] = "Enter a comma separated string of valid gear sizes"
+            }.to_s
+            default_gear_capabilities = host_instance.default_gear_capabilities
+            host_instance.default_gear_capabilities = ask("\nDefault Gear Capabilties for new users: ") { |q|
+              q.default = default_gear_capabilities.nil? ? host_instance.valid_gear_sizes : default_gear_capabilities
+              # verify that default_gear_capabilities is a subset of valid_gear_sizes
+              q.validate = lambda { |p| is_valid_string?(p) && (p.split(',') - host_instance.valid_gear_sizes.split(',')).empty? }
+              q.responses[:not_valid] = "Enter a comma separated string of default gear capabilities for new users.  Must be a subset of the Valid Gear Sizes."
+            }.to_s
+            default_gear_size = host_instance.default_gear_size
+            host_instance.default_gear_size = ask("\nDefault Gear Size for new applications: ") { |q|
+              q.default = default_gear_size.nil? ? host_instance.default_gear_capabilities.split(',').first : default_gear_size
+              q.validate = lambda { |p| is_valid_string?(p) && host_instance.default_gear_capabilities.split(',').include?(p) }
+              q.responses[:not_valid] = "Enter the default gear size for new applications. Must be a member of the Default Gear Capabilities"
+            }.to_s
+          end
         end
+        if host_instance.is_node?
+          edit_node_profile_and_district host_instance if get_context == :ose
+        end
+
+        edit_service_user_passwords host_instance
+
         host_instance_is_valid = true
       end
+    end
+
+    def edit_service_user_passwords host_instance, newrole=nil
+      prompt_user_pass = false
+ 
+      if newrole.nil?
+        qtext = "Do you want to specify usernames and passwords for services configured on this host? Otherwise default usernames and randomized passwords will be configured."
+      else
+        qtext = "Do you want to specify any new usernames and passwords needed for this role?"
+      end
+      if concur(qtext)
+        prompt_user_pass = true
+      end
+
+      # set default username and password variables
+      user_pass_combos = { :mcollective_user => {
+                               :value => 'mcollective',
+                               :roles => [:broker, :node, :mqserver],
+                               :description => 'This is the username shared between broker and node
+                                                for communicating over the mcollective topic
+                                                channels in ActiveMQ. Must be the same on all
+                                                broker and node hosts.'.gsub(/( |\t|\n)+/, " ") },
+                           :mcollective_password => {
+                               :value => SecureRandom.base64.delete('+/='),
+                               :roles => [:broker, :node, :mqserver],
+                               :description => 'This is the password shared between broker and node
+                                                for communicating over the mcollective topic
+                                                channels in ActiveMQ. Must be the same on all
+                                                broker and node hosts.'.gsub(/( |\t|\n)+/, " ") },
+                           :mongodb_broker_user => {
+                               :value => 'openshift',
+                               :roles => [:broker, :dbserver],
+                               :description => 'This is the username that will be created for the
+                                                broker to connect to the MongoDB datastore. Must
+                                                be the same on all broker and datastore
+                                                hosts'.gsub(/( |\t|\n)+/, " ") },
+                           :mongodb_broker_password => {
+                               :value => SecureRandom.base64.delete('+/='),
+                               :roles => [:broker, :dbserver],
+                               :description => 'This is the password that will be created for the
+                                                broker to connect to the MongoDB datastore. Must
+                                                be the same on all broker and datastore
+                                                hosts'.gsub(/( |\t|\n)+/, " ") },
+                           :mongodb_admin_user => {
+                               :value => 'admin',
+                               :roles => [:dbserver],
+                               :description => 'This is the username of the administrative user
+                                                that will be created in the MongoDB datastore.
+                                                These credentials are not used by OpenShift, but
+                                                an administrative user must be added to MongoDB
+                                                in order for it to enforce
+                                                authentication.'.gsub(/( |\t|\n)+/, " ") },
+                           :mongodb_admin_password => {
+                               :value => SecureRandom.base64.delete('+/='),
+                               :roles => [:dbserver],
+                               :description => 'This is the password of the administrative user
+                                                that will be created in the MongoDB datastore.
+                                                These credentials are not used by OpenShift, but
+                                                an administrative user must be added to MongoDB
+                                                in order for it to enforce
+                                                authentication.'.gsub(/( |\t|\n)+/, " ") },
+                           :openshift_user => {
+                               :value => 'demo',
+                               :roles => [:broker],
+                               :description => 'This is the username created in
+                                                /etc/openshift/htpasswd and used by the
+                                                openshift-origin-auth-remote-user-basic
+                                                authentication plugin.'.gsub(/( |\t|\n)+/, " ") },
+                           :openshift_password => {
+                               :value => SecureRandom.base64.delete('+/='),
+                               :roles => [:broker],
+                               :description => 'This is the password created in
+                                                /etc/openshift/htpasswd and used by the
+                                                openshift-origin-auth-remote-user-basic
+                                                authentication plugin.'.gsub(/( |\t|\n)+/, " ") }}
+      sorted=user_pass_combos.sort do |a,b|
+        partsa=a[0].to_s.rpartition('_')
+        partsb=b[0].to_s.rpartition('_')
+        r = partsa[0] <=> partsb[0]
+        r != 0 ? r : -(partsa[2] <=> partsb[2])
+      end
+
+      sorted.each do |attr,entry|
+        if (newrole.nil? and not (host_instance.roles & entry[:roles]).empty?) or
+           (not newrole.nil? and entry[:roles].include? newrole and ((host_instance.roles - [newrole]) & entry[:roles]).empty?)
+          syncd_attr = @deployment.get_synchronized_attr attr
+          attr_already_set = false
+          if not syncd_attr.nil?
+            attr_already_set = true
+            entry[:value] = syncd_attr
+          end
+
+          attrname = capitalize_attribute(attr)
+          ask_for_pass = (prompt_user_pass and (not (host_instance.roles & entry[:roles]).empty?))
+          if ask_for_pass and attr_already_set
+            ask_for_pass = concur("#{attrname} has already been set, do you wish to change #{attrname} for all hosts in this deployment?")
+          end
+
+          if ask_for_pass
+            entry[:value] = ask("\nEnter the value for the #{attrname}. #{entry[:description]} ") { |q|
+              q.default = entry[:value]
+              q.validate = lambda { |p| is_valid_string?(p) }
+              q.responses[:not_valid] = "#{attrname} must be a non-empty string."
+            }.to_s
+          end
+
+          host_instance.send "#{attr.to_s}=", entry[:value]
+          @deployment.set_synchronized_attr!(attr, entry[:value])
+        end
+      end
+      @deployment.save_to_disk!
+    end
+
+    def edit_node_profile_and_district host_instance
+      if @deployment.get_node_profiles_nodes.empty?
+        say "\nA gear profile, or gear size, specifies the parameters of the gears provided by a node host. Note, this only sets the name of the profile.  For more information about gear profiles see: #{get_url 'node_profile_url'}"
+      end
+      node_profiles=@deployment.get_node_profiles_all
+      host_instance.node_profile = ask("\nKnown Profiles: #{node_profiles.join(', ')}\nGear profile for this host: ") { |q|
+        if host_instance.node_profile.nil? or host_instance.node_profile.empty?
+          q.default = node_profiles.empty? ? "small" : node_profiles.first
+        else
+          q.default = host_instance.node_profile
+        end
+        q.validate = lambda { |p| is_valid_string?(p) }
+        q.responses[:not_valid] = "Enter a valid gear profile name"
+      }.to_s
+      districts=@deployment.get_districts
+      if districts.empty?
+        say "\nAn OpenShift district defines a set of node hosts, and the gear profile they share in order to enable transparent migration of gears between hosts.  For more information about districts see #{get_url 'districts_url'}"
+      end
+      host_instance.district = ask("\nKnown Districts: #{districts.join(', ')}\nDistrict this host should belong to: ") { |q|
+        if host_instance.district.nil? or host_instance.district.empty?
+          q.default = "default_#{host_instance.node_profile}"
+        else
+          q.default = host_instance.district
+        end
+        q.validate = lambda do |p|
+          district_profile = @deployment.get_profile_for_district(p)
+          district_profile.nil? || district_profile == host_instance.node_profile
+        end
+        q.responses[:not_valid] = "Selected district is not valid for the selected node profile (#{host_instance.node_profile})."
+      }.to_s
+
+      @deployment.update_valid_gear_sizes!
+      @deployment.update_district_mappings!
     end
 
     def manual_ip_info_for_host_instance(host_instance, ip_addrs)
@@ -974,10 +1180,13 @@ module Installer
             end
             value = has_roles.length > 0 ? has_roles.join(', ') : '[unset]'
           end
+          if attr == :district_mappings
+            value=value.map {|district,nodes| "#{district}:#{nodes.join(',')}"}.join(';')
+          end
           if attr == :named_ip_addr
             t.add_row ['BIND DNS Addr', value]
           else
-            t.add_row [attr.to_s.split('_').map{ |word| ['db','ssh','ip'].include?(word) ? word.upcase : word.capitalize }.join(' '), value]
+            t.add_row [capitalize_attribute(attr), value]
           end
         end
       end

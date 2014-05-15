@@ -3,16 +3,22 @@
 require 'yaml'
 require 'tempfile'
 require 'net/ssh'
+require 'installer/helpers'
+require 'installer/config'
+require 'installer/deployment'
+require 'installer/host_instance'
 
 COMPONENT_INSTALL_ORDER = %w[ named datastore activemq broker node ]
 # steps/states/actions are arrays with corresponding indices
-INSTALL_STEPS = %w[ . prepare install configure define_hosts ]
-INSTALL_STATES = %w[ new prepared installed completed completed validated broken ]
+INSTALL_STEPS = %w[ . prepare install configure define_hosts post_deploy run_diagnostics ]
+INSTALL_STATES = %w[ new prepared installed completed completed completed completed validated broken ]
 INSTALL_ACTIONS = %w[ .
                       init_message,validate_preflight,configure_repos
                       install_rpms
-                      configure_host,configure_openshift
+                      configure_host,configure_openshift,restart_services
                       register_named_entries
+                      post_deploy
+                      run_diagnostics
                     ]
 STEP_SUCCESS_MSG = <<"MSGS".split "\n"
 .
@@ -20,6 +26,8 @@ OpenShift: Completed configuring repos.
 OpenShift: Completed installing RPMs.
 OpenShift: Completed configuring OpenShift.
 OpenShift: Completed updating host DNS entries.
+OpenShift: Completed post deployment steps.
+OpenShift: Completed running oo-diagnostics.
 MSGS
 
 # Check ENV for an alternate config file location.
@@ -39,21 +47,6 @@ end
 # be passed via the command line
 @target_node_hostname = ARGV[0]
 @target_node_ssh_host = nil
-
-def env_backup
-  @env_backup ||= ENV.clone
-end
-
-def clear_env
-  env_backup
-  ENV.delete_if{ |name,value| not name.nil? }
-end
-
-def restore_env
-  env_backup.each_pair do |name,value|
-    ENV[name] = value
-  end
-end
 
 def components_list host_instance
   values = []
@@ -83,7 +76,7 @@ end
 # ...to support running the installer w/ Ruby 1.8.7
 def shellescape(str)
   # An empty argument will be skipped, so return empty quotes.
-  return "''" if str.empty?
+  return "''" if str.nil? or str.empty?
 
   str = str.dup
 
@@ -166,13 +159,60 @@ def run_on_host(host, step)
 
   @env_map['CONF_INSTALL_COMPONENTS'] = components_list(host)
   @env_map['CONF_ACTIONS'] = INSTALL_ACTIONS[INSTALL_STEPS.index step]
-  # Only include the node config setting for hosts that will have a node installation
-  if host['roles'].include?('node')
-    @env_map[@role_map['node'][0]['env_hostname']] = host['host']
-    @env_map[@role_map['node'][0]['env_ip_addr']] = host['ip_addr']
-  else
-    @env_map.delete(@role_map['node'][0]['env_hostname'])
-    @env_map.delete(@role_map['node'][0]['env_ip_addr'])
+
+  # Cleanup host specific env vars from any previous runs
+  host['roles'].each do |role|
+    @role_map[role].each do |ose_role|
+      ose_role.values.each do |env_var|
+        @env_map.delete(env_var)
+      end
+    end
+  end
+
+  # Set host specific env vars
+  host['roles'].each do |role|
+    @role_map[role].each do |ose_role|
+      ose_role.each do |config_var, env_var|
+        case config_var
+        when 'env_hostname'
+          @env_map[env_var] = host['host']
+        when 'env_ip_addr'
+          if env_var == 'CONF_NAMED_IP_ADDR' and host.has_key?('named_ip_addr')
+            @env_map[env_var] = host['named_ip_addr']
+          else
+            @env_map[env_var] = host['ip_addr']
+          end
+        when 'district_mappings'
+          @env_map[env_var] = host['district_mappings'].map {|district,nodes| "#{district}:#{nodes.join(',')}"}.join(';')
+        when 'conf_default_districts'
+          @env_map[env_var] = 'false'
+        else
+          @env_map[env_var] = host[config_var] unless host[config_var].nil?
+        end
+      end
+    end
+
+    # Set needed env variables that are not explicitly configured on the host
+    @hosts.values.each do |host_info|
+      # Both the broker and node need to set the activemq hostname, but it is not stored in the config
+      if ['broker','node'].include?(role) and host_info['roles'].include?('msgserver')
+        @env_map['CONF_ACTIVEMQ_HOSTNAME'] = host_info['host']
+      end
+
+      # The broker needs to set the datastore hostname, but it is not stored in the config
+      if role == 'broker' and host_info['roles'].include?('dbserver')
+        @env_map['CONF_DATASTORE_HOSTNAME'] = host_info['host']
+      end
+
+      # All hosts need to set the named ip address, but only the broker stores it in the config
+      if role != 'broker' and host_info['roles'].include?('broker')
+        @env_map['CONF_NAMED_IP_ADDR'] = host_info['named_ip_addr']
+      end
+
+      if role == 'node' and host_info['roles'].include?('broker')
+        @env_map['CONF_BROKER_HOSTNAME'] = host_info['host']
+      end
+    end
   end
 
   # Write the openshift.sh settings (safely escaped) to a wrapper script
@@ -197,24 +237,18 @@ def run_on_host(host, step)
     puts "Executing deployment script on localhost (#{host['host']}).\n"
     puts "  You can watch the full log with:\n"
     puts "  #{sudo}tail -f #{logfile}"
-    # Local installation. Clean out the ENV.
-    clear_env
     # Run the launcher
-    IO.popen("bash -l -c '#{sudo}#{localfile.path}' 2>&1") do |pipe|
-      pipe.each { |line| script_output += line; puts line }
-    end
-    success = $?.success?
-    # Now restore the original env
-    restore_env
-    success or return {
+    result = @deployment.get_host_instance_by_hostname(host['host']).local_exec!("bash -l -c '#{sudo}#{localfile.path}' 2>&1", true)
+    script_output+=result[:stdout]
+    result[:success] or return {
       :success => false,
       :recoverable => step != 'configure',
       :message => "Please examine #{logfile} on #{host['ssh_host']} to troubleshoot."
     }
   else
     puts "Copying deployment scripts to target #{host['ssh_host']}.\n"
-    bail = proc do |output|
-      localfile.delete # ensure it's gone before bailing
+    bail = Proc.new do |output|
+      localfile.delete if localfile.path # ensure it's gone before bailing
       return {
         :success => false,
         :recoverable => true,
@@ -227,15 +261,14 @@ def run_on_host(host, step)
     # then the wrapper script
     output = `#{@scp_cmd} #{localfile.path} #{ssh_path}/#{hostfile} 2>&1`
     $?.success? or bail.call output
-    localfile.delete # ensure it's gone before proceeding.
+    localfile.delete if localfile.path # ensure it's gone before proceeding.
     # now run it
     puts "Executing deployment script on #{host['ssh_host']} (#{host['host']}).\n"
     puts "  You can watch the full log with:\n"
-    puts "  #{@ssh_cmd} #{ssh_target} '#{sudo}tail -f #{logfile}'"
-    IO.popen("#{@ssh_cmd} #{ssh_target} '#{sudo}chmod u+x /tmp/#{hostfile} /tmp/openshift.sh \&\& #{sudo}/tmp/#{hostfile}' 2>&1") do |pipe|
-      pipe.each { |line| script_output += line; puts line }
-    end
-    $?.success? or return {
+    puts "  #{@ssh_cmd} #{ssh_target} '#{sudo}tail -f #{logfile}'\n"
+    result = @deployment.get_host_instance_by_hostname(host['host']).ssh_exec!("#{sudo}chmod u+x /tmp/#{hostfile} /tmp/openshift.sh \&\& #{sudo}/tmp/#{hostfile} 2>&1", true)
+    script_output+=result[:stdout]
+    result[:exit_code] == 0 or return {
       :success => false,
       # At this point, two ssh commands just succeeded. It's possible, but unlikely
       # that the third one fails before connecting and issuing the command.
@@ -244,7 +277,14 @@ def run_on_host(host, step)
       :message => "Execution of deployment script on remote host failed:\n#{script_output}\n"
     }
   end
-  script_output.split("\n").include?(STEP_SUCCESS_MSG[INSTALL_STEPS.index step]) or return {
+
+  step == 'run_diagnostics'and script_output.match(/FAIL:/) and return {
+    :success => false,
+    :recoverable => true,
+    :message => "Please examine #{logfile} on #{host['ssh_host']} to troubleshoot."
+  }
+
+  script_output.gsub("\r",'').split("\n").include?(STEP_SUCCESS_MSG[INSTALL_STEPS.index step]) or return {
     :success => false,
     :recoverable => step != 'configure',
     :message => "Please examine #{logfile} on #{host['ssh_host']} to troubleshoot."
@@ -288,13 +328,37 @@ end
 # Maps openshift.sh roles to oo-install deployment components
 @role_map =
 { 'broker' => [
-    { 'component' => 'broker', 'env_hostname' => 'CONF_BROKER_HOSTNAME', 'env_ip_addr' => 'CONF_BROKER_IP_ADDR' },
+    { 'component' => 'broker', 'env_hostname' => 'CONF_BROKER_HOSTNAME', 'env_ip_addr' => 'CONF_BROKER_IP_ADDR',
+      'valid_gear_sizes' => 'CONF_VALID_GEAR_SIZES', 'conf_default_districts' => 'CONF_DEFAULT_DISTRICTS',
+      'district_mappings' => 'CONF_DISTRICT_MAPPINGS', 'default_gear_size' => 'CONF_DEFAULT_GEAR_SIZE',
+      'default_gear_capabilities' => 'CONF_DEFAULT_GEAR_CAPABILITIES',
+      'mcollective_user' => 'CONF_MCOLLECTIVE_USER',
+      'mcollective_password' => 'CONF_MCOLLECTIVE_PASSWORD',
+      'mongodb_broker_user' => 'CONF_MONGODB_BROKER_USER',
+      'mongodb_broker_password' => 'CONF_MONGODB_BROKER_PASSWORD',
+      'openshift_user' => 'CONF_OPENSHIFT_USER1',
+      'openshift_password' => 'CONF_OPENSHIFT_PASSWORD1' },
     { 'component' => 'named', 'env_hostname' => 'CONF_NAMED_HOSTNAME', 'env_ip_addr' => 'CONF_NAMED_IP_ADDR' },
   ],
-  'node' => [{ 'component' => 'node', 'env_hostname' => 'CONF_NODE_HOSTNAME', 'env_ip_addr' => 'CONF_NODE_IP_ADDR' }],
-  'msgserver' => [{ 'component' => 'activemq', 'env_hostname' => 'CONF_ACTIVEMQ_HOSTNAME' }],
-  'dbserver' => [{ 'component' => 'datastore', 'env_hostname' => 'CONF_DATASTORE_HOSTNAME' }],
+  'node' => [{ 'component' => 'node', 'env_hostname' => 'CONF_NODE_HOSTNAME',
+               'env_ip_addr' => 'CONF_NODE_IP_ADDR', 'node_profile' => 'CONF_NODE_PROFILE',
+               'mcollective_user' => 'CONF_MCOLLECTIVE_USER',
+               'mcollective_password' => 'CONF_MCOLLECTIVE_PASSWORD' }],
+  'msgserver' => [{ 'component' => 'activemq', 'env_hostname' => 'CONF_ACTIVEMQ_HOSTNAME',
+                    'mcollective_user' => 'CONF_MCOLLECTIVE_USER',
+                    'mcollective_password' => 'CONF_MCOLLECTIVE_PASSWORD' }],
+  'dbserver' => [{ 'component' => 'datastore', 'env_hostname' => 'CONF_DATASTORE_HOSTNAME',
+                   'mongodb_admin_user' => 'CONF_MONGODB_ADMIN_USER',
+                   'mongodb_admin_password' => 'CONF_MONGODB_ADMIN_PASSWORD',
+                   'mongodb_broker_user' => 'CONF_MONGODB_BROKER_USER',
+                   'mongodb_broker_password' => 'CONF_MONGODB_BROKER_PASSWORD' }],
 }
+
+include Installer::Helpers
+set_context(:ose)
+set_debug(false)
+@install_config = Installer::Config.new(@config_file)
+@deployment = @install_config.get_deployment
 
 # Will map hosts to roles
 @hosts = {}
@@ -341,19 +405,6 @@ if @config.has_key?('Deployment') and @config['Deployment'].has_key?('Hosts') an
         end
         # Bail out if this is a node; we'll come back to nodes later.
         break
-      end
-
-      @role_map[role].each do |ose_cfg|
-
-        # Get the rest of the OSE-role-specific settings
-        @env_map[ose_cfg['env_hostname']] = host_info['host']
-        if ose_cfg.has_key?('env_ip_addr')
-          if ose_cfg['env_ip_addr'] == 'CONF_NAMED_IP_ADDR' and host_info.has_key?('named_ip_addr')
-            @env_map[ose_cfg['env_ip_addr']] = host_info['named_ip_addr']
-          else
-            @env_map[ose_cfg['env_ip_addr']] = host_info['ip_addr']
-          end
-        end
       end
     end
   end
@@ -447,7 +498,7 @@ host_order.select {|host| !state_already? host, 'completed' }.each do |host|
     host['state'] = 'completed'
   else
     puts "\n---------------------------------------"
-    puts "Install step '#{step}' FAILED for:"
+    puts "Install step 'configure' FAILED for:"
     puts "  * #{host['ssh_host']} (#{host['host']})"
     if result[:recoverable]
       puts "It is safe to run this deployment again after problem resolution."
@@ -462,9 +513,8 @@ host_order.select {|host| !state_already? host, 'completed' }.each do |host|
   end
 end
 
-# Use broker to define DNS entries for new host(s), but not original deployment
-if 'Y' == @config['Deployment']['DNS']['register_components'] and
-          @hosts.size > host_order.size # deploying new host(s)
+# Use broker to define DNS entries for new host(s)
+if 'Y' == @config['Deployment']['DNS']['register_components']
   @hosts.each do |ssh_host, host|
     next unless host['roles'].include? 'broker'
     result = run_on_host host, 'define_hosts'
@@ -476,7 +526,32 @@ if 'Y' == @config['Deployment']['DNS']['register_components'] and
   end
 end
 
+# Run post_deploy steps on brokers/nodes
+@hosts.each do |ssh_host, host|
+  next unless ['completed','validated'].include? host['state']
+  next unless host['roles'].include? 'broker'
+  result = run_on_host host, 'post_deploy'
+  puts result[:message]
+  if !result[:success]
+    puts "\n---------------------------------------"
+    puts "Install step post_deploy FAILED for:"
+    puts "  * #{host['ssh_host']} (#{host['host']})"
+    puts "--------------------------------------------"
+  end
+end
+
+@hosts.each do |ssh_host, host|
+  next unless host['roles'].include? 'broker' or host['roles'].include? 'node'
+  result = run_on_host host, 'run_diagnostics'
+  puts result[:message]
+  if !result[:success]
+    puts "\n---------------------------------------"
+    puts "Install step run_diagnostics FAILED for:"
+    puts "  * #{host['ssh_host']} (#{host['host']})"
+    puts "--------------------------------------------"
+  end
+end
+
 # total success
 puts "All installer steps are complete."
-puts "Please reboot newly-installed systems to complete the deployment."
 save_and_exit
