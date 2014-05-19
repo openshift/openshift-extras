@@ -237,7 +237,7 @@ configure_rhscl_repo()
 name=rhscl
 baseurl=${rhscl_repo_base}/rhscl/1/os/
 enabled=1
-priority=30
+priority=10
 gpgcheck=0
 sslverify=false
 
