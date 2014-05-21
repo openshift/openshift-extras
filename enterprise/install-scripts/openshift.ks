@@ -666,8 +666,8 @@ reboot
 part /boot --fstype=ext4 --size=500
 part pv.253002 --grow --size=1
 volgroup vg_vm1 --pesize=4096 pv.253002
-logvol / --fstype=ext4 --name=lv_root --vgname=vg_vm1 --grow --size=7168 --maxsize=51200
-logvol swap --name=lv_swap --vgname=vg_vm1 --grow --size=2016 --maxsize=2016
+logvol / --fstype=ext4 --name=lv_root --vgname=vg_vm1 --grow --size=8192 --maxsize=51200
+logvol swap --name=lv_swap --vgname=vg_vm1 --grow --size=1024 --maxsize=2048
 
 %packages
 @core
