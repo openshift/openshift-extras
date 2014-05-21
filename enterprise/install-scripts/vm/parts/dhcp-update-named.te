@@ -1,0 +1,26 @@
+module dhcp-update-named 1.0;
+
+require {
+        type etc_t;
+        type dnssec_t;
+        type ndc_exec_t;
+        type named_zone_t;
+        type named_cache_t;
+        type dhcpc_t;
+        class dir { write remove_name search add_name };
+        class file { rename execute setattr read create ioctl execute_no_trans write getattr unlink open };
+}
+
+# allow to edit node.conf
+allow dhcpc_t etc_t:file { write rename create unlink setattr };
+# allow to read rndc key
+allow dhcpc_t dnssec_t:file { read getattr open };
+# allow to run rndc
+allow dhcpc_t ndc_exec_t:file { read getattr open execute execute_no_trans };
+# allow to descend into /var/named
+allow dhcpc_t named_zone_t:dir search;
+# allow to change /var/named/dynamic/*.db
+allow dhcpc_t named_cache_t:dir { write remove_name search add_name };
+allow dhcpc_t named_cache_t:file { rename setattr read create ioctl write getattr unlink open };
+
+

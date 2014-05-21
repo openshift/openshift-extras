@@ -1,0 +1,65 @@
+#!/bin/bash
+#
+# openshift-await-eth0        Work around network race condition
+#
+# chkconfig: - 85 20
+# description: This service exists solely to work around a VM problem.
+#   It should be started just before the openshift-broker service.
+#   When starting a VM with a new network device or new network, there
+#   is a period of many seconds *after* network initialization when
+#   eth0 seems nevertheless unconfigured. The openshift-broker and
+#   openshift-console services generally start during this period and
+#   try to listen on 127.0.0.1 with httpd; due to an odd bug in httpd,
+#   this crashes and the VM comes up with no broker or console.
+#    (Ref. https://issues.apache.org/bugzilla/show_bug.cgi?id=52709)
+#   This service waits up to 60 seconds for eth0 to be configured.
+#   Once the VM has a stable network interface, eth0 configuration
+#   finishes much faster, and this service generally exits immediately.
+
+# Source function library.
+. /etc/init.d/functions
+
+set -e
+set -u
+
+prog="openshift-await-eth0"
+
+start() {
+        echo -n $"Starting ${prog}: "
+
+	for i in {1..60}; do
+		/sbin/ifconfig eth0 | grep -q 'inet addr:' && break
+		if [ "$i" = 60 ] ; then 
+			failure; echo
+			return 1
+		fi
+		sleep 1
+	done
+	success; echo
+	return 0
+}
+
+stop() {
+        echo -n $"Stopping ${prog}: "
+	# nothing to do on stop...
+	success; echo
+	return 0
+}
+
+RETVAL=0
+# See how we were called.
+case "$1" in
+  start)
+	start
+	RETVAL=$?
+	;;
+  stop)
+	stop
+	RETVAL=$?
+	;;
+  *)
+	echo $"Usage: $prog {start|stop}"
+	RETVAL=2
+esac
+
+exit $RETVAL

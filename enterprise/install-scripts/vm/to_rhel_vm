@@ -1,13 +1,77 @@
 #!/bin/bash
 
-# Switch environment to 'vm'
-sed -i -e 's/^\s*environment=ks/environment=vm/' $2
+if [ ! -f vm/parts/parameters.sh ]; then
+	echo "vm/parts/parameters.sh file is needed."
+	exit 1
+fi
 
-# Insert VM packages
-sed -i -e '/^\@server-policy/a \
+# Switch environment to 'vm' and insert VM packages and functions
+sed -e '
+/^skipx/ d
+
+/^%packages/a \
 @desktop \
-eclipse \
 firefox \
-' $2
+screen \
+java-1.7.0-openjdk-devel \
+system-config-lvm \
+xorg-x11-drv-qxl \
+-subscription-manager-gui
 
-chmod +x $2
+/^%post/ {
+	# insert parameter definitions
+	r vm/parts/parameters.sh
+
+	# insert generic content
+	r vm/parts/vm_insert.sh
+
+	# fabricate functions to lay down contents of parts/ files
+	a \
+create_vm_files() {\
+	cat <<"AWAIT" > /etc/init.d/openshift-await-eth0
+	r vm/parts/openshift-await-eth0
+	a \
+AWAIT\
+	cat <<"FIRSTBOOT" > /etc/init.d/openshift-vmfirstboot
+	r vm/parts/openshift-vmfirstboot
+	a \
+FIRSTBOOT\
+	cat <<"POLICY" > /tmp/dhcp-update-named.te
+	r vm/parts/dhcp-update-named.te
+	a \
+POLICY\
+}
+
+	a \
+create_vmuser_files() {\
+        mkdir -p /home/openshift/.openshift/ \
+        mkdir -p /home/openshift/.config/autostart/ \
+        mkdir -p /home/openshift/jbdevstudio/ \
+        mkdir -p /home/openshift/git/ \
+	cat <<"WELCOME_FILE" > /home/openshift/.openshift/welcome.html
+	r vm/parts/welcome.html
+	a \
+WELCOME_FILE\
+
+	a \
+	cat <<"DESKTOP_FILE" > /home/openshift/.config/autostart/com.redhat.OSEwelcome.desktop
+	r vm/parts/com.redhat.OSEwelcome.desktop
+	a \
+DESKTOP_FILE\
+	cat <<"DESKTOP_FILE" > /home/openshift/.config/autostart/com.redhat.terminal.desktop
+	r vm/parts/com.redhat.terminal.desktop
+	a \
+DESKTOP_FILE\
+
+	a \
+	cat <<"INSTALL_FILE" > /home/openshift/jbdevstudio/jbds-install.xml
+	r vm/parts/jbds-install.xml
+	a \
+INSTALL_FILE\
+}  # create_user_files()
+
+} # done inserting functions under %post
+
+s/^\s*environment=ks/environment=vm/
+
+' $1 > $2

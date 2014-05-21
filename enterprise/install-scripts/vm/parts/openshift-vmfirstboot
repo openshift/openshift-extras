@@ -1,0 +1,103 @@
+#!/bin/bash
+#
+# openshift-vmfirstboot        Update VM parameters the first time it boots
+#
+# ought to start before named
+#
+# chkconfig: - 20 85
+# description: This script modifies defaults in the OpenShift Enterprise
+#   VM image so that e.g. passwords and keys are not shared between
+#   multiple instances of the VM.
+# config: /etc/sysconfig/osevm1stboot
+#
+
+# Source function library.
+. /etc/init.d/functions
+
+set -e
+set -u
+
+prog="openshift-vmfirstboot"
+marker=/etc/sysconfig/osevm1stboot
+randomval() {
+	local randomized=$(openssl rand -base64 30 2> /dev/null)
+	echo -n ${randomized//[![:alnum:]]}
+}
+
+start() {
+        echo -n $"Starting ${prog}: "
+	if [ -f ${marker} ]; then
+		success
+		return 0  # nothing to do
+	fi
+
+	# generate new rsync keys
+	rm /root/.ssh/rsync_id_rsa*
+	ssh-keygen -q -t rsa -b 2048 -P "" -f /root/.ssh/rsync_id_rsa 
+	cp /root/.ssh/rsync_id_rsa* /etc/openshift/
+	cp /root/.ssh/rsync_id_rsa.pub /root/.ssh/authorized_keys
+	cp /root/.ssh/rsync_id_rsa.pub /var/www/html/
+
+	# generate new broker AUTH_SALT, key
+	sed -i -e "/^AUTH_SALT/ cAUTH_SALT=$(randomval)" /etc/openshift/broker.conf
+	openssl genrsa -out /etc/openshift/server_priv.pem 2048 >& /dev/null
+	openssl rsa -in /etc/openshift/server_priv.pem -pubout > /etc/openshift/server_pub.pem 2> /dev/null
+	chown apache:apache /etc/openshift/server_pub.pem
+	chmod 640 /etc/openshift/server_pub.pem
+
+	# generate new rails session secrets
+	sed -i -e "/^SESSION_SECRET/ cSESSION_SECRET=$(randomval)" /etc/openshift/broker.conf
+	sed -i -e "/^SESSION_SECRET/ cSESSION_SECRET=$(randomval)" /etc/openshift/console.conf
+
+	# generate&configure new BIND update key
+	local tmp=$(mktemp -d /tmp/key.XXXXXXXX)
+	local zone=openshift.example.com
+	dnssec-keygen -q -a HMAC-SHA256 -b 256 -n USER -r /dev/urandom -K $tmp $zone >& /dev/null
+	local bind_key="$(grep Key: $tmp/K${zone}*.private | cut -d ' ' -f 2)"
+	rm -rf $tmp
+	sed -i -e "/^\s*secret/ c  secret \"${bind_key}\";" /var/named/*.key
+	sed -i -e "/^BIND_KEYVALUE/ cBIND_KEYVALUE=\"${bind_key}\"" /etc/openshift/plugins.d/openshift-origin-dns-nsupdate.conf
+
+	touch ${marker}
+	success
+	return 0
+}
+
+stop() {
+	# nothing to do on stop... yet
+	success
+	return 0
+}
+
+status() {
+	if [ -f ${marker} ]; then
+		echo "$marker present; $prog will do nothing on next boot."
+	else
+		echo "$marker not present; $prog will operate on next boot."
+	fi
+	return 0
+}
+
+RETVAL=0
+# See how we were called.
+case "$1" in
+  start)
+	trap "RETVAL=1; failure; echo" EXIT
+	start
+	echo
+	trap - EXIT
+	;;
+  stop)
+	echo -n $"Stopping ${prog}: "
+	stop
+	echo
+	;;
+  status)
+	status
+	;;
+  *)
+	echo $"Usage: $prog {start|stop|status}"
+	RETVAL=2
+esac
+
+exit $RETVAL

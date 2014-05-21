@@ -1,0 +1,26 @@
+# these are to be filled in as parameters.sh which will not be stored in git
+
+CONF_INSTALL_METHOD=yum
+CONF_CDN_REPO_BASE=
+CONF_OSE_REPO_BASE=
+JBDS_URL=
+OO_INSTALL_URL=
+
+# set in order to enable debugging, which means clean_vm won't blow away
+# all the artifacts of the build (like logs and the kickstart)
+DEBUG_VM=
+
+# start with everything pointing at localhost, fix when NIC comes up
+ip=127.0.0.1
+CONF_NAMED_IP_ADDR=$ip
+CONF_BROKER_IP_ADDR=$ip
+CONF_NODE_IP_ADDR=$ip
+CONF_DOMAIN=openshift.example.com
+# include hosts in same domain so the wildcard cert works
+CONF_BROKER_HOSTNAME=vm.openshift.example.com
+CONF_NAMED_ENTRIES=vm:$ip,activemq:$ip,datastore:$ip
+
+CONF_OPENSHIFT_PASSWORD1="openshift"   # demo/openshift
+
+# Invoke functions specifically for the VM install
+CONF_ACTIONS=do_all_actions,post_deploy,setup_vm
