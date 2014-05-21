@@ -1,0 +1,14 @@
+#!/bin/bash
+
+sed -e '
+	0,/^%post/d;/^%end/,$d
+' $1 > $2
+sed -i -e '
+	1r amazon/openshift-amz.sh.conf
+	1d
+	s/2012-10-22/2012-10-23/g
+	s/^\s*environment=ks/environment=amz/
+	s/^\s*configure_rhel_repo$/#&/
+	s/^\s*gpgcheck=0/gpgcheck=0\nsslverify=false/g
+	$r amazon/openshift-amz-ext.sh
+' $2
