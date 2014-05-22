@@ -2121,13 +2121,13 @@ configure_named_zone()
 
   if [ "x$bind_key" = x ]; then
     # Generate a new secret key
-    rm -f /var/named/K${zone}*
+    zone_tolower="${zone,,}"
+    rm -f /var/named/K${zone_tolower}*
     dnssec-keygen -a ${bind_keyalgorithm} -b ${bind_keysize} -n USER -r /dev/urandom -K /var/named ${zone}
     # $zone may have uppercase letters in it.  However the file that
     # dnssec-keygen creates will have the zone in lowercase.
-    zone_tolower="${zone,,}"
     bind_key="$(grep Key: /var/named/K${zone_tolower}*.private | cut -d ' ' -f 2)"
-    rm -f /var/named/K${zone}*
+    rm -f /var/named/K${zone_tolower}*
   fi
 
   # Install the key where BIND and oo-register-dns expect it.
