@@ -1523,6 +1523,8 @@ configure_datastore_add_users()
     echo "db.addUser('${mongodb_broker_user}', '${mongodb_broker_password}')"
   )"
   set -x
+  
+  PASSWORDS_TO_DISPLAY=true
 }
 
 # This configuration step should only be performed on the primary in
@@ -3203,6 +3205,9 @@ configure_openshift()
   node && install_rsync_pub_key
 
   sysctl -p
+
+  PASSWORDS_TO_DISPLAY=true
+
   echo "OpenShift: Completed configuring OpenShift."
 }
 
@@ -3344,6 +3349,7 @@ vm)
 esac
 
 declare -A passwords
+PASSWORDS_TO_DISPLAY=false
 
 set_defaults
 
@@ -3353,6 +3359,6 @@ do
   "$action"
 done
 
-display_passwords
+$PASSWORDS_TO_DISPLAY && display_passwords
 
 
