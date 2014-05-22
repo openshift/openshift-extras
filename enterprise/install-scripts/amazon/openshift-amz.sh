@@ -516,6 +516,7 @@ parse_cartridges()
     [jbossews]=openshift-origin-cartridge-jbossews
     [jbosseap]=openshift-origin-cartridge-jbosseap
     [jenkins]='openshift-origin-cartridge-jenkins-client openshift-origin-cartridge-jenkins'
+    [mongodb]=openshift-origin-cartridge-mongodb
     [mysql]=openshift-origin-cartridge-mysql
     [nodejs]=openshift-origin-cartridge-nodejs
     [perl]=openshift-origin-cartridge-perl
