@@ -1078,7 +1078,7 @@ module Installer
       end
       host_instance.district = ask("\nKnown Districts: #{districts.join(', ')}\nDistrict this host should belong to: ") { |q|
         if host_instance.district.nil? or host_instance.district.empty?
-          q.default = "default_#{host_instance.node_profile}"
+          q.default = "default-#{host_instance.node_profile}"
         else
           q.default = host_instance.district
         end

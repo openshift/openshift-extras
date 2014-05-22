@@ -106,7 +106,7 @@ end
 
 # All sanity checking has to happen after the arguments are gathered.
 if not options[:workflow_id].nil? and not Installer::Workflow.ids.include?(options[:workflow_id])
-  puts "Unknown workflow ID '#{options[:workflow_id]}'. Valid values are:\n\n#{Installer::Workflow.ids.sort.map{ |i| "* #{i}" }.join("\n")}\n\nExiting."
+  puts "Unknown workflow ID '#{options[:workflow_id]}'. Valid values are:\n\n#{Installer::Workflow.list(installer_context).sort_by{ |w| w.id }.map{ |w| "* #{w.id}" }.join("\n")}\n\nExiting."
   exit 1
 end
 if options[:subscription_type].nil? and (not options[:rh_username].nil? or not options[:rh_password].nil?)
