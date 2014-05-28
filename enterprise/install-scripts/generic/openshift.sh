@@ -2362,6 +2362,9 @@ EOF
 # Configure httpd for authentication.
 configure_httpd_auth()
 {
+  # Configure the broker to use the remote-user authentication plugin.
+  cp -p /etc/openshift/plugins.d/openshift-origin-auth-remote-user.conf{.example,}
+
   # Configure mod_auth_kerb if both CONF_BROKER_KRB_SERVICE_NAME
   # and CONF_BROKER_KRB_AUTH_REALMS are specified
   if [ -n "$CONF_BROKER_KRB_SERVICE_NAME" ] && [ -n "$CONF_BROKER_KRB_AUTH_REALMS" ]
@@ -2375,9 +2378,6 @@ configure_httpd_auth()
     done
     return
   fi
-
-  # Configure the broker to use the remote-user authentication plugin.
-  cp -p /etc/openshift/plugins.d/openshift-origin-auth-remote-user.conf{.example,}
 
   # Install the Apache Basic Authentication configuration file.
   cp -p /var/www/openshift/broker/httpd/conf.d/openshift-origin-auth-remote-user-basic.conf.sample \
