@@ -12,7 +12,7 @@ if [ $OO_INSTALL_CONTEXT != 'origin_vm' ]
 then
   echo "Checking for necessary tools..."
 fi
-for i in ruby unzip ssh
+for i in ruby ssh
 do
   command -v $i >/dev/null 2>&1 || { echo >&2 "OpenShift installation requires $i but it does not appear to be available. Correct this and rerun the installer."; exit 1; }
 done
@@ -22,14 +22,14 @@ then
 fi
 
 # All instances of INSTALLPKGNAME are replaced during packaging with the actual package name.
-if [[ -e ./INSTALLPKGNAME.zip ]]
+if [[ -e ./INSTALLPKGNAME.tgz ]]
 then
   if [ $OO_INSTALL_CONTEXT != 'origin_vm' ]
   then
     echo "Using bundled assets."
   fi
-  cp INSTALLPKGNAME.zip ${TMPDIR}/INSTALLPKGNAME.zip
-elif [[ $OO_INSTALL_KEEP_ASSETS == 'true' && -e ${TMPDIR}/INSTALLPKGNAME.zip ]]
+  cp INSTALLPKGNAME.tgz ${TMPDIR}/INSTALLPKGNAME.tgz
+elif [[ $OO_INSTALL_KEEP_ASSETS == 'true' && -e ${TMPDIR}/INSTALLPKGNAME.tgz ]]
 then
   if [ $OO_INSTALL_CONTEXT != 'origin_vm' ]
   then
@@ -37,14 +37,14 @@ then
   fi
 else
   echo "Downloading oo-install package..."
-  curl -s -o ${TMPDIR}INSTALLPKGNAME.zip https://install.openshift.com/INSTALLVERPATHINSTALLPKGNAME.zip
+  curl -s -o ${TMPDIR}INSTALLPKGNAME.tgz https://install.openshift.com/INSTALLVERPATHINSTALLPKGNAME.tgz
 fi
 
 if [ $OO_INSTALL_CONTEXT != 'origin_vm' ]
 then
   echo "Extracting oo-install to temporary directory..."
 fi
-unzip -qq -o ${TMPDIR}INSTALLPKGNAME.zip -d $TMPDIR
+tar xzf ${TMPDIR}INSTALLPKGNAME.tgz -C ${TMPDIR}
 
 if [ $OO_INSTALL_CONTEXT != 'origin_vm' ]
 then
