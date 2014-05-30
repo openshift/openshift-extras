@@ -98,8 +98,8 @@ task :package do
     end
 
     # Zip up the source and copy it to the package dir
-    system "cd #{@tmpdir} && rm -rf #{pkgname}/package && zip -qq -x \*.swp -r #{pkgname}.zip #{pkgname}"
-    system 'mv', "#{@tmpdir}#{pkgname}.zip", pkgdir
+    system "cd #{@tmpdir} && rm -rf #{pkgname}/package && tar czf #{pkgname}.tgz #{pkgname}"
+    system 'mv', "#{@tmpdir}#{pkgname}.tgz", pkgdir
 
     # Copy the bootstrap file to the package dir
     system 'cp', 'site_assets/oo-install-bootstrap.sh', "#{pkgdir}/index.html"
@@ -124,12 +124,12 @@ task :package do
       build_name = build[:version]
     end
     system "cd #{pkgdir} && cp index.html #{@portable_dir}/#{launcher_name} && chmod +x #{@portable_dir}/#{launcher_name}"
-    system "cd #{pkgdir} && cp #{pkgname}.zip #{@portable_dir}/#{pkgname}.zip"
+    system "cd #{pkgdir} && cp #{pkgname}.tgz #{@portable_dir}/#{pkgname}.tgz"
     system "cp #{@site_assets_dir}/#{@portable_readme} #{@portable_dir}"
     system "#{@sed_cmd}.bak 's/LAUNCHERNAME/#{launcher_name}/g' #{@portable_dir}/#{@portable_readme}"
     system "rm #{@portable_dir}/#{@portable_readme}.bak"
-    system "cd #{@portable_dir} && zip -qq #{launcher_name}.zip #{launcher_name} #{@portable_readme} #{pkgname}.zip"
-    system "cd #{@portable_dir} && rm #{launcher_name} #{pkgname}.zip #{@portable_readme}"
+    system "cd #{@portable_dir} && tar czf #{launcher_name}.tgz #{launcher_name} #{@portable_readme} #{pkgname}.tgz"
+    system "cd #{@portable_dir} && rm #{launcher_name} #{pkgname}.tgz #{@portable_readme}"
 
     if build[:portable_only]
       system 'rm', '-rf', pkgdir
