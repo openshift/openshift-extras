@@ -127,7 +127,7 @@ module Installer
     def urls_cache
       @urls_cache ||= parse_config_file('urls', url_file_path).first
     end
- 
+
     def ui_title
       title = translate(is_origin_vm? ? :vm_title : :title)
       if not version_text.nil? and not version_text.empty?
@@ -311,10 +311,13 @@ module Installer
       say "\nThat's all of the DNS information that we need right now. Next, we need to gather information about the hosts in your OpenShift deployment."
       Installer::Deployment.display_order.each do |role|
         role_item = Installer::Deployment.role_map[role].chop
+
         puts "\n" + horizontal_rule
         say "#{role_item} Configuration"
         puts horizontal_rule
-        instance_exists = false
+
+        # Determine if the user is describing previously configured instances or brand new ones.
+        instances_exist = false
         if use_origin_vm_as_broker
           if role == :broker
             # We've already set up the Broker; move along.
@@ -322,53 +325,72 @@ module Installer
             next
           end
         else
-          instance_exists = role == :broker ? has_running_broker : concur("Do you already have a running #{role_item}?")
+          instances_exist = role == :broker ? has_running_broker : concur("Do you already have a running #{role_item}?")
         end
-        if instance_exists
-          say "\nOkay. I'm going to need you to tell me about the host where the #{role_item} is installed."
-        else
-          say "\nOkay. I'm going to need you to tell me about the host where you want to install the #{role_item}."
-        end
-        create_host_instance = true
-        if deployment.hosts.length > 0
-          hosts_choice_help = "You have the option of installing more than one OpenShift role on a given host. If you would prefer to install the #{role_item} on a host that you haven't described yet, answer 'n' and you will be asked to provide details for that host instance."
-          say "\nYou have already desribed the following host system(s):"
-          deployment.hosts.each do |host_instance|
-            say "* #{host_instance.summarize}"
-          end
-          if deployment.hosts.length == 1
-            if concur("\nDo you want to assign the #{role_item} role to #{deployment.hosts[0].host}?", hosts_choice_help)
-              say "\nOkay. Adding the #{role_item} role to #{deployment.hosts[0].host}."
-              deployment.hosts[0].add_role(role)
-              create_host_instance = false
-              edit_node_profile_and_district deployment.hosts[0] if (role == :node && get_context == :ose)
-              edit_service_user_passwords(deployment.hosts[0],role)
+
+        # Multi-host loop.
+        first_role_host = true
+        while true do
+          if first_role_host
+            if instances_exist
+              say "\nOkay. I'm going to need you to tell me about the host where the #{role_item} is installed."
+            else
+              say "\nOkay. I'm going to need you to tell me about the host where you want to install the #{role_item}."
             end
           else
-            if concur("\nDo you want to assign the #{role_item} role to one of the hosts that you've already described?", hosts_choice_help)
-              create_host_instance = false
-              choose do |menu|
-                menu.header = "\nWhich host would you like to assign this role to?"
-                deployment.hosts.each do |host_instance|
-                  menu.choice(host_instance.summarize) do
-                    say "Okay. Adding the #{role_item} role to #{host_instance.host}"
-                    host_instance.add_role(role)
-                    edit_node_profile_and_district host_instance if (role == :node && get_context == :ose)
-                    edit_service_user_passwords(host_instance,role)
+            puts "\n" + horizontal_rule
+            say "#{role_item} Configuration"
+            puts horizontal_rule
+          end
+          create_host_instance = true
+          if deployment.get_hosts_without_role(role).length > 0
+            hosts_choice_help = "You have the option of installing more than one OpenShift role on a given host. If you would prefer to install the #{role_item} on a host that you haven't described yet, answer 'n' and you will be asked to provide details for that host instance."
+            say "\nYou have already desribed the following host system(s):"
+            deployment.hosts.each do |host_instance|
+              say "* #{host_instance.summarize}"
+            end
+            if deployment.hosts.length == 1
+              if concur("\nDo you want to assign the #{role_item} role to #{deployment.hosts[0].host}?", hosts_choice_help)
+               say "\nOkay. Adding the #{role_item} role to #{deployment.hosts[0].host}."
+                deployment.hosts[0].add_role(role)
+                create_host_instance = false
+                edit_node_profile_and_district deployment.hosts[0] if (role == :node && get_context == :ose)
+                edit_service_user_passwords(deployment.hosts[0],role)
+              end
+            else
+              if concur("\nDo you want to assign the #{role_item} role to one of the hosts that you've already described?", hosts_choice_help)
+                create_host_instance = false
+                choose do |menu|
+                  menu.header = "\nWhich host would you like to assign this role to?"
+                  deployment.get_hosts_without_role(role).each do |host_instance|
+                    menu.choice(host_instance.summarize) do
+                      say "Okay. Adding the #{role_item} role to #{host_instance.host}"
+                      host_instance.add_role(role)
+                      edit_node_profile_and_district host_instance if (role == :node && get_context == :ose)
+                      edit_service_user_passwords(host_instance,role)
+                    end
                   end
                 end
               end
             end
           end
+          if create_host_instance
+            say "\nOkay, please provide information about this #{role_item} host." if deployment.hosts.length > 0
+            ui_edit_host_instance(nil, role, 0, instances_exist, first_role_host)
+          end
+          # We don't add hosts when there is an existing host instance.
+          question = "\nThat's everything we need to know right now for this #{role_item}. Do you want to configure an additional #{role_item}?"
+          if instances_exist
+            question = "\nIs there an additional _previously installed_ #{role_item} that you would like to configure?"
+          end
+          if concur(question)
+            first_role_host = false
+          else
+            break
+          end
         end
-        if create_host_instance
-          say "\nOkay, please provide information about the #{role_item} host." if deployment.hosts.length > 0
-          ui_edit_host_instance(nil, role, 0, instance_exists)
-        end
-        if role == Installer::Deployment.display_order.last
-          say "\nThat's everything we need to know right now for the #{role_item}."
-        else
-          say "\nThat's everything we need to know right now for the #{role_item}. Moving on to the next role."
+        if not role == Installer::Deployment.display_order.last
+          say "\nMoving on to the next role."
         end
       end
 
@@ -455,14 +477,12 @@ module Installer
         if resolved_issues
           ui_show_deployment
         end
-        node_choice = deployment.nodes.length > 1 ? "Add or remove a Node host" : "Add another Node host"
         choose do |menu|
           menu.header = "\nChoose from the following deployment configuration options"
           menu.prompt = "#{translate(:menu_prompt)} "
           menu.choice("Change the DNS configuration") { ui_modify_dns }
-          menu.choice("Move an OpenShift role to a different host") { ui_move_role }
-          menu.choice("Modify the information for an existing host") { ui_modify_host }
-          menu.choice(node_choice) { ui_add_remove_host_by_role :node }
+          menu.choice("Add, modify or remove a host") { ui_modify_host }
+          menu.choice("Add, modify or remove an OpenShift role") { ui_modify_role } #TODO: ui_move_role #ui_add_remove_host_by_role
           menu.choice("Finish editing the deployment configuration") { exit_loop = true }
           menu.hidden("q") { return_to_main_menu }
         end
@@ -580,17 +600,35 @@ module Installer
     end
 
     def ui_modify_host
-      if deployment.hosts.length == 1
-        ui_edit_host_instance deployment.hosts[0]
-      else
-        choose do |menu|
-          menu.header = "\nSelect a host instance to modify"
-          menu.prompt = "#{translate(:menu_prompt)} "
-          deployment.hosts.each do |host_instance|
-            menu.choice(host_instance.summarize) { ui_edit_host_instance host_instance }
-          end
-          menu.hidden("q") { return_to_main_menu }
+      host_action = :modify
+      choose do |menu|
+        menu.header = deployment.hosts.length == 1 ? "\nDo you want to add a host or modify the existing one?" : "\nDo you want to add, modify, or remove a host?"
+        menu.prompt = "#{translate(:menu_prompt)} "
+        menu.choice('Add a host') { host_action = :add }
+        menu.choice('Modify a host') { host_action = :modify }
+        if deployment.hosts.length > 1
+          menu.choice('Remove a host') { host_action = :remove }
         end
+        menu.hidden("q") { return_to_main_menu }
+      end
+
+      if host_action == :add
+        # Calling ui_edit_host_instance without arguments implicitly instantiates a new host
+        ui_edit_host_instance
+      elsif host_action == :modify
+        if deployment.hosts.length > 1
+          choose do |menu|
+            menu.header = "\nSelect a host instance to modify"
+            menu.prompt = "#{translate(:menu_prompt)} "
+            deployment.hosts.each do |host_instance|
+              menu.choice(host_instance.summarize) { ui_edit_host_instance host_instance }
+            end
+            menu.hidden("q") { return_to_main_menu }
+          end
+        else
+          ui_edit_host_instance deployment.hosts[0]
+        end
+      elsif host_action == :remove
       end
     end
 
@@ -748,7 +786,7 @@ module Installer
       true
     end
 
-    def ui_edit_host_instance(host_instance=nil, role_focus=nil, role_count=0, is_installed=false)
+    def ui_edit_host_instance(host_instance=nil, role_focus=nil, role_count=0, is_installed=false, first_role_host=false)
       puts "\n"
       new_host = host_instance.nil?
       if new_host
@@ -773,7 +811,7 @@ module Installer
           }
         end
       else
-        edit_host_instance host_instance
+        edit_host_instance(host_instance, first_role_host)
         if new_host
           deployment.add_host_instance! host_instance
         else
@@ -782,21 +820,28 @@ module Installer
       end
     end
 
-    def edit_host_instance host_instance
+    def edit_host_instance(host_instance, first_role_host=false)
       host_instance_is_valid = false
       while not host_instance_is_valid
         first_pass = true
+        good_hostname = true
         loop do
           # Get the FQDN
           question_text = first_pass ? 'Hostname (the FQDN that other OpenShift hosts will use to connect to the host that you are describing):' : "\nPlease enter a valid hostname:"
           first_pass = false
           host_instance.host = ask("#{question_text} ") { |q|
-            if not host_instance.host.nil?
+            if not host_instance.host.nil? and good_hostname
               q.default = host_instance.host
             end
             q.validate = lambda { |p| is_valid_hostname?(p) and not p == 'localhost' }
             q.responses[:not_valid] = "Enter a valid fully-qualified domain name. 'localhost' is not valid here."
           }.to_s
+          if deployment.get_hosts_by_fqdn(host_instance.host).length > 0
+            say "\nYou have already defined a host with the name '#{host_instance.host}'. Please specify a different host."
+            good_hostname = false
+            next
+          end
+          good_hostname = true
           if not deployment.dns.component_domain.nil?
             if not host_instance.host.match(/\./)
               say "Appending component domain '#{deployment.dns.component_domain}' to hostname."
@@ -887,7 +932,7 @@ module Installer
             ip_addrs.each do |info|
               say "* #{info[1]} on interface #{info[0]}"
             end
-            question = "Do you want Nodes to use one of these IP addresses to reach this Broker?"
+            question = "Do you want other hosts to use one of these IP addresses to reach this host?"
             if host_instance.is_node?
               question = "Do you want to use one of these as the public IP information for this Node?"
             end
@@ -908,7 +953,39 @@ module Installer
             end
           end
         end
-        if host_instance.is_broker?
+        if host_instance.roles.length == 0
+          say "\nCurrently this host has no roles associated with it."
+          loop do
+            current_roles = host_instance.roles.map{ |r| Installer::Deployment.role_map[role].chop }
+            if host_instance.is_all_in_one?
+              say "\nThis host is now configured with all roles."
+              break
+            else
+              question = ''
+              if current_roles.length == 1
+                question = "This host now has the #{current_roles[0]} role."
+              elsif current_roles.length > 1
+                question = "This host now has the following roles: #{current_roles.join(', ')}."
+              end
+              if concur("#{question} Do you want to add another role?")
+                choose do |menu|
+                  menu.header = "Choose a role to add to this host:"
+                  menu.prompt = "#{translate(:menu_prompt)} "
+                  Installer::Deployment.role_map.each_pair do |key, name|
+                    if host_instance.has_role?(key)
+                      next
+                    end
+                    menu.choice(name.chop) { host_instance.add_role(key) }
+                    menu.hidden("q") { return_to_main_menu }
+                  end
+                end
+              else
+                break
+              end
+            end
+          end
+        end
+        if host_instance.is_broker? and first_role_host
           # Optionally allow the user to set a distinct named_ip_addr for their broker.
           host_instance.named_ip_addr = ask("\nNormally, the BIND DNS server that is installed on this Broker will be reachable from other OpenShift components using the Broker's configured IP address (#{host_instance.ip_addr}).\n\nIf that will work in your deployment, press <enter> to accept the default value. Otherwise, provide an alternate IP address that will enable other OpenShift components to reach the BIND DNS service on the Broker: ") { |q|
             q.default = host_instance.ip_addr
@@ -949,11 +1026,11 @@ module Installer
 
     def edit_service_user_passwords host_instance, newrole=nil
       prompt_user_pass = false
- 
+
       if newrole.nil?
-        qtext = "Do you want to specify usernames and passwords for services configured on this host? Otherwise default usernames and randomized passwords will be configured."
+        qtext = "\nDo you want to specify usernames and passwords for services configured on this host? Otherwise default usernames and randomized passwords will be configured."
       else
-        qtext = "Do you want to specify any new usernames and passwords needed for this role?"
+        qtext = "\nDo you want to specify any new usernames and passwords needed for this role?"
       end
       if concur(qtext)
         prompt_user_pass = true
