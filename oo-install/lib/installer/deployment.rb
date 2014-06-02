@@ -255,9 +255,16 @@ module Installer
       save_to_disk!
     end
 
-    private
     def get_hosts_by_role role
       hosts.select{ |h| h.roles.include?(role) }
+    end
+
+    def get_hosts_without_role role
+      hosts.select{ |h| not h.roles.include?(role) }
+    end
+
+    def get_hosts_by_fqdn(fqdn)
+      hosts.select{ |h| h.host == fqdn }
     end
   end
 end

@@ -121,6 +121,10 @@ module Installer
       roles.include?(:node)
     end
 
+    def has_role?(role)
+      roles.include?(role)
+    end
+
     def is_valid?(check=:basic)
       errors = []
       if not is_valid_hostname?(host) or host == 'localhost'
