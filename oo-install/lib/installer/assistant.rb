@@ -330,7 +330,7 @@ module Installer
 
         # Multi-host loop.
         first_role_host = true
-        while true do
+        loop do
           if first_role_host
             if instances_exist
               say "\nOkay. I'm going to need you to tell me about the host where the #{role_item} is installed."
@@ -477,12 +477,15 @@ module Installer
         if resolved_issues
           ui_show_deployment
         end
+        host_option = deployment.hosts.length > 1 ? "Add, modify or remove a host" : "Add or modify a host"
         choose do |menu|
           menu.header = "\nChoose from the following deployment configuration options"
           menu.prompt = "#{translate(:menu_prompt)} "
           menu.choice("Change the DNS configuration") { ui_modify_dns }
-          menu.choice("Add, modify or remove a host") { ui_modify_host }
-          menu.choice("Add, modify or remove an OpenShift role") { ui_modify_role } #TODO: ui_move_role #ui_add_remove_host_by_role
+          menu.choice(host_option) { ui_modify_host }
+          if deployment.hosts.length > 1
+            menu.choice("Add, modify or remove an OpenShift role") { ui_modify_role } #TODO: ui_add_remove_host_by_role
+          end
           menu.choice("Finish editing the deployment configuration") { exit_loop = true }
           menu.hidden("q") { return_to_main_menu }
         end
@@ -507,7 +510,7 @@ module Installer
       say "\nRole Assignments"
       list_role_host_map
       say "\nHost Information"
-      deployment.hosts.each do |host_instance|
+      deployment.hosts.sort_by{ |h| h.host }.each do |host_instance|
         list_host_instance host_instance
       end
     end
@@ -599,36 +602,173 @@ module Installer
       puts table
     end
 
+    def ui_modify_role
+      role_action = :modify
+      target_role = :broker
+      target_name = 'Broker'
+
+      # You need more than one host to modify role assignments
+      if deployment.hosts.length <= 1
+        say "\nIn order to reassign roles, first add additional hosts to your deployment."
+        return
+      end
+
+      # Pick an action
+      choose do |menu|
+        menu.header = "\nDo you want to add, move, or remove a role?"
+        menu.prompt = "#{translate(:menu_prompt)} "
+        menu.choice('Add a role to a host') { role_action = :add }
+        menu.choice('Move a role from one host to another') { role_action = :move }
+        menu.choice('Remove a role from a host') { role_action = :remove }
+        menu.hidden("q") { return }
+      end
+
+      # Pick a role
+      choose do |menu|
+        menu.header = "\nWhich role do you want to #{role_action.to_s}?"
+        menu.prompt = "#{translate(:menu_prompt)} "
+        Installer::Deployment.role_map.sort_by{ |k,v| v }.each do |key,value|
+          menu.choice(value.chop) { target_name = value.chop; target_role = key }
+        end
+        menu.hidden("q") { return }
+      end
+
+      source_hosts = deployment.get_hosts_by_role(target_role).sort_by{ |h| h.summarize }
+      hosts_without_role = deployment.get_hosts_without_role(target_role).sort_by{ |h| h.summarize }
+
+      # On the Move & Remove cases
+      # Change actions or bail out if the selected role isn't currently assigned to any hosts, or if the user
+      # is attempting a Remove when the role is only assigned to one host.
+      if [:move,:remove].include?(role_action)
+        if source_hosts.length == 0
+          if concur("\nThe #{target_name} role is not assigned to any currently defined hosts. Do you want to add this role to a host instead?")
+            role_action = :add
+          else
+            return
+          end
+        elsif role_action == :remove and source_hosts.length == 1
+          if concur("\nThe #{target_name} role is only assigned to one host, so it cannot be removed. Do you want to move the role to a different host instead?")
+            role_action = :move
+          else
+            return
+          end
+        end
+      end
+
+      # Handle the Add case
+      if role_action == :add
+        if source_hosts.length > 0
+          say "\nThe following hosts currently have the #{target_role} role:"
+          source_hosts.each do |host_instance|
+            puts "    * #{host_instance.summarize}"
+          end
+        end
+        choose do |menu|
+          menu.header = "\nSelect the host where you would like to add the #{target_name} role"
+          menu.prompt = "#{translate(:menu_prompt)} "
+          hosts_without_role.each do |host_instance|
+            menu.choice(host_instance.summarize) {
+              host_instance.add_role(target_role)
+              if target_role == :node
+                edit_node_profile_and_district host_instance
+              end
+              edit_service_user_passwords(host_instance,target_role)
+              deployment.save_to_disk!
+              say "\nRole #{target_name} has been added to #{host_instance.host}."
+            }
+          end
+          menu.choice("Create a new host") { ui_edit_host_instance(nil, target_role) }
+          menu.hidden("q") { return }
+        end
+        return
+      end
+
+      # Select the source host for the Move / Remove
+      source_host = nil
+      target_host = nil
+      choose_text = role_action == :move ? "\nChoose the source host from which you would like to move the #{target_name} role" : "\nChoose the host from which you would like to remove the #{target_name} role"
+      choose do |menu|
+        menu.header = choose_text
+        menu.prompt = "#{translate(:menu_prompt)} "
+        source_hosts.each do |host_instance|
+          menu.choice(host_instance.summarize) { source_host = host_instance }
+        end
+        menu.hidden("q") { return }
+      end
+
+      # Handle the Move action
+      if role_action == :move
+        choose do |menu|
+          menu.header = "\nChoose the destination host to which you would like to move the #{target_name} role"
+          menu.prompt = "#{translate(:menu_prompt)} "
+          hosts_without_role.each do |host_instance|
+            menu.choice(host_instance.summarize) { target_host = host_instance }
+          end
+          menu.choice("Create a new host") { source_host.remove_role(target_role); ui_edit_host_instance(nil, target_role) }
+          menu.hidden("q") { return }
+        end
+        if remove_role(source_host, target_role)
+          target_host.add_role(target_role)
+          edit_node_profile_and_district target_host if target_role == :node
+          edit_service_user_passwords(target_host,target_role)
+          deployment.save_to_disk!
+        end
+        return
+      end
+
+      # Handle the Remove action.
+      remove_role(source_host, target_role)
+    end
+
     def ui_modify_host
       host_action = :modify
+      removable_hosts = deployment.get_removable_hosts
       choose do |menu|
-        menu.header = deployment.hosts.length == 1 ? "\nDo you want to add a host or modify the existing one?" : "\nDo you want to add, modify, or remove a host?"
+        menu.header = removable_hosts.length > 0 ? "\nDo you want to add, modify, or remove a host?" : "\nDo you want to add a host or modify the existing one?"
         menu.prompt = "#{translate(:menu_prompt)} "
         menu.choice('Add a host') { host_action = :add }
         menu.choice('Modify a host') { host_action = :modify }
-        if deployment.hosts.length > 1
+        if removable_hosts.length > 0
           menu.choice('Remove a host') { host_action = :remove }
         end
-        menu.hidden("q") { return_to_main_menu }
+        menu.hidden("q") { return }
       end
 
       if host_action == :add
-        # Calling ui_edit_host_instance without arguments implicitly instantiates a new host
+        # Calling ui_edit_host_instance without arguments implicitly instantiates a new host.
+        # Calling it without a role will trigger the host config to ask for roles.
         ui_edit_host_instance
       elsif host_action == :modify
         if deployment.hosts.length > 1
           choose do |menu|
             menu.header = "\nSelect a host instance to modify"
             menu.prompt = "#{translate(:menu_prompt)} "
-            deployment.hosts.each do |host_instance|
+            deployment.hosts.sort_by{ |h| h.summarize }.each do |host_instance|
               menu.choice(host_instance.summarize) { ui_edit_host_instance host_instance }
             end
-            menu.hidden("q") { return_to_main_menu }
+            menu.hidden("q") { return }
           end
         else
           ui_edit_host_instance deployment.hosts[0]
         end
       elsif host_action == :remove
+        unremovable_hosts = deployment.get_unremovable_hosts
+        say("\nThe following host(s) _cannot_ be removed because they contain one or more roles that are not assigned to any other hosts:")
+        unremovable_hosts.sort_by{ |h| h.summarize }.each do |host_instance|
+          puts "    * #{host_instance.summarize}"
+        end
+        say('To remove any of the above, you will need to assign their role(s) to other hosts, first.')
+        choose do |menu|
+          menu.header = "\nHere is the list of hosts that can be removed at this point. Please select one"
+          menu.prompt = "#{translate(:menu_prompt)} "
+          removable_hosts.sort_by{ |h| h.summarize }.each do |host_instance|
+            menu.choice(host_instance.summarize) {
+              say "\nHost instance #{host_instance.host} has been removed."
+              deployment.remove_host_instance!(host_instance)
+            }
+          end
+          menu.hidden("q") { return }
+        end
       end
     end
 
@@ -665,110 +805,6 @@ module Installer
       deployment.save_to_disk!
     end
 
-    def ui_add_remove_host_by_role role
-      role_list = deployment.send(Installer::Deployment.list_map[role])
-      target_list = deployment.hosts.select{ |h| not h.roles.include?(role) }
-      group_name = Installer::Deployment.role_map[role]
-      if role_list.length < 2 and target_list.length == 0
-        ui_edit_host_instance(nil, role)
-      else
-        deletable_list = role_list.length == 1 ? [] : role_list.select{ |h| h.roles.length == 1 }
-        non_deletable_list = role_list.select{ |h| h.roles.length > 1 }
-        if deletable_list.length == 0 and target_list.length == 0
-          say "Currently you cannot delete any #{group_name} because they are all sharing hosts with other OpenShift components. Move the other roles to different hosts and then you will be able to delete them."
-          if concur("Do you want to add a new #{group_name.chop}?")
-            ui_edit_host_instance(nil, role)
-          end
-        else
-          header = "\nAdd a new host, add the role to an existing host, or choose one to remove"
-          if deletable_list.length == 0
-            header = "\nAdd a new host or add the #{group_name.chop} role to another existing host"
-          elsif target_list.length == 0
-            header = "\nAdd a new host or choose one to remove"
-          end
-          if non_deletable_list.length > 0
-            addendum = ".\nNote that the following hosts cannot be deleted because they are configured for other roles as well:\n\n"
-            non_deletable_list.each do |host_instance|
-              addendum << "* #{host_instance.summarize}\n"
-            end
-            addendum << "\nMove the other roles to different hosts and then you will be able to delete them.\n\nChoose an action"
-            header << addendum
-          end
-          choose do |menu|
-            menu.header = header
-            menu.prompt = "#{translate(:menu_prompt)} "
-            menu.choice("Add a new host") { ui_edit_host_instance(nil, role) }
-            target_list.each do |host_instance|
-              menu.choice("Add role to #{host_instance.host}") {
-                host_instance.add_role(role)
-                edit_node_profile_and_district host_instance if (role == :node && get_context == :ose)
-                edit_service_user_passwords(host_instance,role)
-                deployment.save_to_disk!
-                say "\nAdded #{role.to_s} role to #{host_instance.host}"
-              }
-            end
-            deletable_list.each do |host_instance|
-              menu.choice("Remove #{host_instance.host}") {
-                deployment.remove_host_instance!(host_instance)
-                say "\nRemoved #{host_instance.host}"
-              }
-            end
-            menu.hidden("q") { return_to_main_menu }
-          end
-        end
-      end
-    end
-
-    def ui_move_role
-      move_role = nil
-      choose do |menu|
-        menu.header = "\nWhich role do you want to move to a different host?"
-        menu.prompt = "#{translate(:menu_prompt)} "
-        Installer::Deployment.display_order.each do |role|
-          group = Installer::Deployment.role_map[role]
-          menu.choice(group.chop) { move_role = role }
-        end
-        menu.hidden("q") { return_to_main_menu }
-      end
-      source_list = deployment.send(Installer::Deployment.list_map[move_role])
-      source_host = nil
-      if source_list.length > 1
-        choose do |menu|
-          menu.header = "\nWhich host should no longer include the role?"
-          menu.prompt = "#{translate(:menu_prompt)} "
-          source_list.each do |host_instance|
-            menu.choice(host_instance.summarize) { source_host = host_instance }
-          end
-          menu.hidden("q") { return_to_main_menu }
-        end
-      else
-        source_host = source_list[0]
-      end
-      # Figure out if any currently existing host instances could be a new landing place.
-      target_hosts = deployment.hosts.select{ |h| not h.roles.include?(move_role) }
-      if target_hosts.length > 0
-        choose do |menu|
-          menu.header = "\nSelect a host to use for this role:"
-          menu.prompt = "#{translate(:menu_prompt)} "
-          target_hosts.each do |host_instance|
-            menu.choice(host_instance.summarize) {
-              if remove_role(source_host, move_role)
-                host_instance.add_role(move_role)
-                edit_node_profile_and_district host_instance if (move_role == :node && get_context == :ose)
-                edit_service_user_passwords(host_instance,move_role)
-                deployment.save_to_disk!
-              end
-            }
-          end
-          menu.choice("Create a new host") { source_host.remove_role(move_role); ui_edit_host_instance(nil, move_role) }
-          menu.hidden("q") { return_to_main_menu }
-        end
-      else
-        source_host.remove_role(move_role)
-        ui_edit_host_instance(nil, move_role)
-      end
-    end
-
     def remove_role source_host, role
       if source_host.roles.length == 1
         if concur("\nThe #{role.to_s} role was the only one assigned to host #{source_host.host}. If you move the role, this host will be removed from the deployment. Is it okay to proceed?")
@@ -776,7 +812,7 @@ module Installer
           deployment.remove_host_instance!(source_host)
           return true
         else
-          say "\nOkay; cancelling role move."
+          say "\nOkay; cancelling change."
           return false
         end
       elsif source_host.roles.length > 1
@@ -938,7 +974,7 @@ module Installer
             end
             if concur(question, translate(:ip_config_help_text))
               choose do |menu|
-                menu.header = "The following network interfaces were found on this host. Choose the one that it uses for communication on the local subnet."
+                menu.header = "The following network interfaces were found on this host. Choose the one that it uses for communication on the local subnet"
                 menu.prompt = "#{translate(:menu_prompt)} "
                 ip_addrs.each do |info|
                   ip_interface = info[0]
@@ -953,23 +989,25 @@ module Installer
             end
           end
         end
+        # If this host has no roles, add some.
         if host_instance.roles.length == 0
           say "\nCurrently this host has no roles associated with it."
+          first_pass = true
           loop do
-            current_roles = host_instance.roles.map{ |r| Installer::Deployment.role_map[role].chop }
+            current_roles = host_instance.roles.map{ |role| Installer::Deployment.role_map[role].chop }
             if host_instance.is_all_in_one?
               say "\nThis host is now configured with all roles."
               break
             else
               question = ''
               if current_roles.length == 1
-                question = "This host now has the #{current_roles[0]} role."
+                question = "\nThis host now has the #{current_roles[0]} role.\n"
               elsif current_roles.length > 1
-                question = "This host now has the following roles: #{current_roles.join(', ')}."
+                question = "\nThis host now has the following roles: #{current_roles.join(', ')}.\n"
               end
-              if concur("#{question} Do you want to add another role?")
+              if first_pass or concur("#{question} Do you want to add another role?")
                 choose do |menu|
-                  menu.header = "Choose a role to add to this host:"
+                  menu.header = "Choose a role to add to this host"
                   menu.prompt = "#{translate(:menu_prompt)} "
                   Installer::Deployment.role_map.each_pair do |key, name|
                     if host_instance.has_role?(key)
@@ -983,6 +1021,7 @@ module Installer
                 break
               end
             end
+            first_pass = false
           end
         end
         if host_instance.is_broker? and first_role_host
@@ -1015,7 +1054,7 @@ module Installer
           end
         end
         if host_instance.is_node?
-          edit_node_profile_and_district host_instance if get_context == :ose
+          edit_node_profile_and_district host_instance
         end
 
         edit_service_user_passwords host_instance
@@ -1222,7 +1261,7 @@ module Installer
     def list_role_host_map
       table = Terminal::Table.new do |t|
         Installer::Deployment.display_order.each do |role|
-          hosts = deployment.hosts.select{ |h| h.roles.include?(role) }.map{ |h| h.host }
+          hosts = deployment.hosts.select{ |h| h.roles.include?(role) }.map{ |h| h.host }.sort
           role_title = Installer::Deployment.role_map[role]
           if hosts.length == 1
             role_title = role_title.chop

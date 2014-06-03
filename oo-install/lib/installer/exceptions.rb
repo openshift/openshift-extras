@@ -97,12 +97,6 @@ module Installer
     end
   end
 
-  class DeploymentMultipleRoleHostsException < Exception
-    def initialize(message="The installer currently does not support deployments with multiple instances of some roles.", code=1)
-      super(message, code)
-    end
-  end
-
   class DNSConfigDomainInvalidException < Exception
     def initialize(message="One of the domains specified in the DNS configuration is invalid.", code=1)
       super(message, code)
