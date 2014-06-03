@@ -119,9 +119,6 @@ module Installer
         if group_list.length == 0
           return false if check == :basic
           errors << Installer::DeploymentRoleMissingException.new("There must be at least one #{role.to_s} in the deployment configuration.")
-        elsif not group == :nodes and group_list.length > 1
-          return false if check == :basic
-          errors << Installer::DeploymentMultipleRoleHostsException.new("There cannot be more than one #{role.to_s} host in the deployment configuration.")
         end
       end
       # Check the host entries
@@ -265,6 +262,44 @@ module Installer
 
     def get_hosts_by_fqdn(fqdn)
       hosts.select{ |h| h.host == fqdn }
+    end
+
+    # A removable host is not the only host in the deployment,
+    # and shares its roles with at least one other host.
+    def get_removable_hosts
+      return [] if hosts.length <= 1
+      removable_hosts = []
+      hosts.each do |host_instance|
+        removable = true
+        host_instance.roles.each do |role|
+          next if get_hosts_by_role(role).length > 1
+          removable = false
+          break
+        end
+        if removable
+          removable_hosts << host_instance
+        end
+      end
+      removable_hosts
+    end
+
+    # An unremovable host is the only host in the deployment,
+    # or a host with a role that no other host has.
+    def get_unremovable_hosts
+      return hosts if hosts.length == 1
+      unremovable_hosts = []
+      hosts.each do |host_instance|
+        unremovable = false
+        host_instance.roles.each do |role|
+          next if get_hosts_by_role(role).length > 1
+          unremovable = true
+          break
+        end
+        if unremovable
+          unremovable_hosts << host_instance
+        end
+      end
+      unremovable_hosts
     end
   end
 end
