@@ -326,6 +326,12 @@
 #   The network domain under which app DNS entries will be placed.
 #CONF_DOMAIN="example.com"
 
+# interface / CONF_INTERFACE
+#   Default: eth0
+#   The network device to configure.  Used by configure_network, 
+#   configure_dns_resolution, and configure_node
+#CONF_INTERFACE="eth0"
+
 # hosts_domain / CONF_HOSTS_DOMAIN
 #   Default: hosts.example.com
 #   If specified and host DNS is to be created, this domain will be created
@@ -2235,12 +2241,12 @@ register_named_entries()
 configure_network()
 {
   # Ensure interface is configured to come up on boot
-  sed -i -e 's/ONBOOT="no"/ONBOOT="yes"/' /etc/sysconfig/network-scripts/ifcfg-$iface
+  sed -i -e 's/ONBOOT="no"/ONBOOT="yes"/' /etc/sysconfig/network-scripts/ifcfg-$interface
 
   # Check if static IP configured
-  if grep -q "IPADDR" /etc/sysconfig/network-scripts/ifcfg-$iface; then
-    sed -i -e 's/BOOTPROTO="dhcp"/BOOTPROTO="none"/' /etc/sysconfig/network-scripts/ifcfg-$iface
-    sed -i -e 's/IPV6INIT="yes"/IPV6INIT="no"/' /etc/sysconfig/network-scripts/ifcfg-$iface
+  if grep -q "IPADDR" /etc/sysconfig/network-scripts/ifcfg-$interface; then
+    sed -i -e 's/BOOTPROTO="dhcp"/BOOTPROTO="none"/' /etc/sysconfig/network-scripts/ifcfg-$interface
+    sed -i -e 's/IPV6INIT="yes"/IPV6INIT="no"/' /etc/sysconfig/network-scripts/ifcfg-$interface
   fi
 }
 
@@ -2258,9 +2264,9 @@ configure_dns_resolution()
   sed -i -e "/search/ d; 1i# The named we install for our OpenShift PaaS must appear first.\\nsearch ${hosts_domain}.\\nnameserver ${named_ip_addr}\\n" /etc/resolv.conf
 
   # Append resolution conf to the DHCP configuration.
-  sed -i -e "/prepend domain-name-servers ${named_ip_addr};/d" /etc/dhcp/dhclient-$iface.conf
-  sed -i -e "/prepend domain-search ${hosts_domain};/d" /etc/dhcp/dhclient-$iface.conf
-  cat <<EOF >> /etc/dhcp/dhclient-$iface.conf
+  sed -i -e "/prepend domain-name-servers ${named_ip_addr};/d" /etc/dhcp/dhclient-$interface.conf
+  sed -i -e "/prepend domain-search ${hosts_domain};/d" /etc/dhcp/dhclient-$interface.conf
+  cat <<EOF >> /etc/dhcp/dhclient-$interface.conf
 
 prepend domain-name-servers ${named_ip_addr};
 prepend domain-search "${hosts_domain}";
@@ -2364,6 +2370,9 @@ EOF
 # Configure httpd for authentication.
 configure_httpd_auth()
 {
+  # Configure the broker to use the remote-user authentication plugin.
+  cp -p /etc/openshift/plugins.d/openshift-origin-auth-remote-user.conf{.example,}
+
   # Configure mod_auth_kerb if both CONF_BROKER_KRB_SERVICE_NAME
   # and CONF_BROKER_KRB_AUTH_REALMS are specified
   if [ -n "$CONF_BROKER_KRB_SERVICE_NAME" ] && [ -n "$CONF_BROKER_KRB_AUTH_REALMS" ]
@@ -2377,9 +2386,6 @@ configure_httpd_auth()
     done
     return
   fi
-
-  # Configure the broker to use the remote-user authentication plugin.
-  cp -p /etc/openshift/plugins.d/openshift-origin-auth-remote-user.conf{.example,}
 
   # Install the Apache Basic Authentication configuration file.
   cp -p /var/www/openshift/broker/httpd/conf.d/openshift-origin-auth-remote-user-basic.conf.sample \
@@ -2512,7 +2518,8 @@ configure_node()
   sed -i -e "s/^PUBLIC_IP=.*$/PUBLIC_IP=${node_ip_addr}/;
              s/^CLOUD_DOMAIN=.*$/CLOUD_DOMAIN=${domain}/;
              s/^PUBLIC_HOSTNAME=.*$/PUBLIC_HOSTNAME=${hostname}/;
-             s/^BROKER_HOST=.*$/BROKER_HOST=${broker_hostname}/" \
+             s/^BROKER_HOST=.*$/BROKER_HOST=${broker_hostname}/;
+             s/^[# ]*EXTERNAL_ETH_DEV=.*$/EXTERNAL_ETH_DEV='${interface}'/" \
       /etc/openshift/node.conf
 
   sed -i -e "s/^node_profile=.*$/node_profile=${node_profile}/" \
@@ -2893,7 +2900,7 @@ set_defaults()
   nameservers="$(awk '/nameserver/ { printf "%s; ", $2 }' /etc/resolv.conf)"
 
   # Main interface to configure
-  iface="${CONF_INTERFACE:-eth0}"
+  interface="${CONF_INTERFACE:-eth0}"
 
   # Set $bind_krb_keytab and $bind_krb_principal to the values of
   # $CONF_BIND_KRB_KEYTAB and $CONF_BIND_KRB_PRINCIPAL if these values

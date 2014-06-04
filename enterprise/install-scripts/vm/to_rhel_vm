@@ -1,8 +1,8 @@
 #!/bin/bash
 
 if [ ! -f vm/parts/parameters.sh ]; then
-	echo "vm/parts/parameters.sh file is needed."
-	exit 1
+	echo "Skipping VM kickstart: vm/parts/parameters.sh file is needed."
+	exit 0
 fi
 
 # Switch environment to 'vm' and insert VM packages and functions

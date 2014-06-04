@@ -20,11 +20,11 @@ setup_vm_host()
   chkconfig openshift-vmfirstboot on
 
   # create a hook that updates the DNS record when our IP changes
-  local name=${broker_hostname%$hosts_domain}
+  local name=${broker_hostname%.$hosts_domain}
   cat <<HOOK > /etc/dhcp/dhclient-eth0-up-hooks
     if [[ "\$new_ip_address"x != x ]]; then
       /usr/sbin/rndc freeze ${hosts_domain}
-      sed -i -e "s/^vm\s\+\(IN \)\?A\s\+.*/vm A \$new_ip_address/" /var/named/dynamic/${hosts_domain}.db
+      sed -i -e "s/^$name\s\+\(IN \)\?A\s\+.*/$name A \$new_ip_address/" /var/named/dynamic/${hosts_domain}.db
       /usr/sbin/rndc thaw ${hosts_domain}
       sed -i -e "s/^PUBLIC_IP=.*/PUBLIC_IP=\$new_ip_address/" /etc/openshift/node.conf
     fi
@@ -130,7 +130,20 @@ Host *.${hosts_domain}
 SSHCONF
   chmod -R go-r /home/openshift/.ssh
 
-  # TODO: enable openshift user capabilities by default: allow HA apps, private ssl certs, teams, ...
+  # enable openshift user capabilities by default: allow HA apps, private ssl certs, teams, ...
+  sed -i -e "
+    /^DEFAULT_ALLOW_HA/ cDEFAULT_ALLOW_HA=true
+    /^DEFAULT_MAX_TEAMS/ cDEFAULT_MAX_TEAMS=10
+    /^DEFAULT_VIEW_GLOBAL_TEAMS/ cDEFAULT_VIEW_GLOBAL_TEAMS=true
+    /^ALLOW_HA_APPLICATIONS/ cALLOW_HA_APPLICATIONS=true
+    /^MANAGE_HA_DNS/ cMANAGE_HA_DNS=true
+    /^ROUTER_HOSTNAME/ cROUTER_HOSTNAME=${broker_hostname}
+    /^ALLOW_MULTIPLE_HAPROXY_ON_NODE/ cALLOW_MULTIPLE_HAPROXY_ON_NODE=true
+    /^ALLOW_ALIAS_IN_DOMAIN/ cALLOW_ALIAS_IN_DOMAIN=true
+  " /etc/openshift/broker.conf
+  # TODO: there ought to be a broker.conf setting for allowing custom certs too;
+  # since there isn't, add capability explicitly to the initial user.
+  oo-admin-ctl-user -c -l "${openshift_user1}" --allowprivatesslcertificates true
 
   # install oo-install and default config
   wget $OO_INSTALL_URL -O /home/openshift/oo-install.zip --no-check-certificate -nv
