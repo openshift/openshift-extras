@@ -146,9 +146,9 @@ SSHCONF
   oo-admin-ctl-user -c -l "${openshift_user1}" --allowprivatesslcertificates true
 
   # install oo-install and default config
-  wget $OO_INSTALL_URL -O /home/openshift/oo-install.zip --no-check-certificate -nv
-  su - openshift -c 'unzip oo-install.zip -d oo-install'
-  rm /home/openshift/oo-install.zip
+  wget $OO_INSTALL_URL -O /home/openshift/oo-install.tgz --no-check-certificate -nv
+  su - openshift -c 'mkdir -p oo-install && tar zfx oo-install.tgz -C oo-install'
+  rm /home/openshift/oo-install.tgz
 
   # fix ownership
   chown -R openshift:openshift /home/openshift
