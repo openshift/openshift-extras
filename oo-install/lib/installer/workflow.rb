@@ -180,8 +180,8 @@ module Installer
           return false if check == :basic
           errors << Installer::WorkflowConfigurationIncompleteException.new("The installer configuration is missing a '#{q.id}' value for the #{id} workflow.")
         else
-          return q.valid?(deployment, workflow_cfg[q.id], check) if check == :basic
-          errors.concat(q.valid?(deployment, workflow_cfg[q.id], check))
+          return q.is_valid?(deployment, workflow_cfg[q.id], check) if check == :basic
+          errors.concat(q.is_valid?(deployment, workflow_cfg[q.id], check))
         end
       end
       return true if check == :basic
