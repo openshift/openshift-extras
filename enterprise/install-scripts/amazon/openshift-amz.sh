@@ -446,6 +446,8 @@ install_broker_pkgs()
   is_true "$CONF_ROUTING_PLUGIN" && pkgs="$pkgs rubygem-openshift-origin-routing-activemq"
 
   yum_install_or_exit $pkgs
+
+  RESTART_NEEDED=true
 }
 
 # Install node-specific packages.
@@ -476,6 +478,8 @@ install_node_pkgs()
   esac
 
   yum_install_or_exit $pkgs
+
+  RESTART_NEEDED=true
 }
 
 # Remove abrt-addon-python if necessary
@@ -842,6 +846,8 @@ configure_sshd_on_node()
   # Up the limits on the number of connections to a given node.
   sed -i -e "s/^#MaxSessions .*$/MaxSessions 40/" /etc/ssh/sshd_config
   sed -i -e "s/^#MaxStartups .*$/MaxStartups 40/" /etc/ssh/sshd_config
+
+  RESTART_NEEDED=true
 }
 
 install_datastore_pkgs()
@@ -1009,6 +1015,8 @@ configure_datastore()
     # This mongod will _not_ be part of a replicated setup.
     configure_datastore_add_users
   fi
+
+  RESTART_NEEDED=true
 }
 
 
@@ -1127,6 +1135,8 @@ EOF
   # if root owns it, the broker (apache user) can't log to it.
   touch /var/log/openshift/broker/ruby193-mcollective-client.log
   chown apache:root /var/log/openshift/broker/ruby193-mcollective-client.log
+
+  RESTART_NEEDED=true
 }
 
 
@@ -1159,6 +1169,8 @@ plugin.yaml = /opt/rh/ruby193/root/etc/mcollective/facts.yaml
 EOF
 
   chkconfig ruby193-mcollective on
+
+  RESTART_NEEDED=true
 }
 
 
@@ -1400,6 +1412,8 @@ EOF
 
   # Configure ActiveMQ to start on boot.
   chkconfig activemq on
+
+  RESTART_NEEDED=true
 }
 
 install_named_pkgs()
@@ -1546,7 +1560,6 @@ zone "${zone}" IN {
 	allow-update { key ${zone} ; } ;
 };
 EOF
-
 }
 
 ensure_domain()
@@ -1655,6 +1668,8 @@ update_controller_gear_size_configs()
       -e "s/^DEFAULT_GEAR_CAPABILITIES=.*/DEFAULT_GEAR_CAPABILITIES=\"${default_gear_capabilities}\"/" \
       -e "s/^DEFAULT_GEAR_SIZE=.*/DEFAULT_GEAR_SIZE=\"${default_gear_size}\"/" \
       /etc/openshift/broker.conf
+
+  RESTART_NEEDED=true
 }
 
 # Update the controller configuration.
@@ -1702,11 +1717,14 @@ configure_controller()
   # Configure the broker service to start on boot.
   chkconfig openshift-broker on
   chkconfig openshift-console on
+
+  RESTART_NEEDED=true
 }
 
 configure_messaging_plugin()
 {
   cp /etc/openshift/plugins.d/openshift-origin-msg-broker-mcollective.conf{.example,}
+  RESTART_NEEDED=true
 }
 
 # Configure the broker to use the BIND DNS plug-in.
@@ -1739,6 +1757,8 @@ BIND_KRB_PRINCIPAL="${bind_krb_principal}"
 BIND_KRB_KEYTAB="${bind_krb_keytab}"
 EOF
   fi
+
+  RESTART_NEEDED=true
 }
 
 # Configure httpd for authentication.
@@ -1781,6 +1801,8 @@ configure_httpd_auth()
   # TODO: In the future, we will want to edit
   # /etc/openshift/plugins.d/openshift-origin-auth-remote-user.conf to
   # put in a random salt.
+
+  RESTART_NEEDED=true
 }
 
 configure_routing_plugin()
@@ -1795,6 +1817,7 @@ configure_routing_plugin()
     echo "ACTIVEMQ_HOST='$routinghost'" >> $conffile
     echo "ACTIVEMQ_USERNAME='$routing_plugin_user'" >> $conffile
     echo "ACTIVEMQ_PASSWORD='$routing_plugin_pass'" >> $conffile
+    RESTART_NEEDED=true
   fi
 }
 
@@ -1920,6 +1943,8 @@ configure_node()
   # Set the ServerName for httpd
   sed -i -e "s/ServerName .*$/ServerName ${hostname}/" \
       /etc/httpd/conf.d/000001_openshift_origin_node_servername.conf
+
+  RESTART_NEEDED=true
 }
 
 # Run the cronjob installed by openshift-origin-msg-node-mcollective immediately
@@ -2289,13 +2314,20 @@ set_defaults()
   bind_keysize="${CONF_BIND_KEYSIZE:-256}"
   fi
 
+  for s in valid_gear_sizes default_gear_capabilities default_gear_size; do
+    eval "isset_${s}() { false; }"
+  done
+
   # Set $valid_gear_sizes to $CONF_VALID_GEAR_SIZES
+  [ -n "$CONF_VALID_GEAR_SIZES" ] && isset_valid_gear_sizes() { :; }
   broker && valid_gear_sizes="${CONF_VALID_GEAR_SIZES:-small}"
 
   # Set $default_gear_capabilities to $CONF_DEFAULT_GEAR_CAPABILITIES
+  [ -n "$CONF_DEFAULT_GEAR_CAPABILITIES" ] && isset_default_gear_capabilities() { :; }
   broker && default_gear_capabilities="${CONF_DEFAULT_GEAR_CAPABILITIES:-${valid_gear_sizes}}"
 
   # Set $default_gear_size to $CONF_DEFAULT_GEAR_SIZE
+  [ -n "$CONF_DEFAULT_GEAR_SIZE" ] && isset_default_gear_size() { :; }
   broker && default_gear_size="${CONF_DEFAULT_GEAR_SIZE:-${valid_gear_sizes%%,*}}"
 
   # Set $node_profile to $CONF_NODE_PROFILE
@@ -2593,7 +2625,7 @@ configure_openshift()
   sysctl -p
 
   PASSWORDS_TO_DISPLAY=true
-
+  RESTART_NEEDED=true
   echo "OpenShift: Completed configuring OpenShift."
 }
 
@@ -2681,8 +2713,9 @@ post_deploy()
   echo "OpenShift: Begin post deployment steps."
 
   if broker; then
-    update_controller_gear_size_configs
-    restart_services
+    if isset_valid_gear_sizes || isset_default_gear_capabilities || isset_default_gear_size; then
+      update_controller_gear_size_configs
+    fi
 
     # import cartridges
     oo-admin-ctl-cartridge -c import-node --activate --obsolete
@@ -2704,7 +2737,6 @@ do_all_actions()
   install_rpms
   configure_host
   configure_openshift
-  restart_services
   echo 'Installation and configuration complete.'
 }
 
@@ -2736,6 +2768,7 @@ esac
 
 declare -A passwords
 PASSWORDS_TO_DISPLAY=false
+RESTART_NEEDED=false
 
 set_defaults
 
@@ -2744,6 +2777,8 @@ do
   [ "$(type -t "$action")" = function ] || abort_install "Invalid action: ${action}"
   "$action"
 done
+
+$RESTART_NEEDED && restart_services
 
 $PASSWORDS_TO_DISPLAY && display_passwords
 
