@@ -280,34 +280,21 @@ module Installer
 
     def ui_create_deployment
       use_origin_vm_as_broker = false
-      has_running_broker = false
       if is_origin_vm?
         say "Before we do that, we need to gather information about the Origin system that you want to deploy. It can consist of one or more hosts systems, including this VM. See:\n\n#{get_url 'oo_install_docs_url'}\n\nfor information on how to integrate this VM into a larger OpenShift deployment."
-        use_origin_vm_as_broker = concur("\n#{horizontal_rule}\nNOTE: Using this VM in a Full Deployment\n#{horizontal_rule}\nBe aware that if this VM is reconfigured as part of a larger deployment, you will potentially lose access to any applications that you have already built here. Additionally, this system will switch from mDNS to BIND, which means that you will need to do some DNS configuration in your own network to be able to connect to this VM by hostname.\n\nIf you answer 'no', we'll gather information about your intended Broker host in a moment.\n\nDo you want to use this VM as the Broker for a multi-host deployment?")
+        use_origin_vm_as_broker = concur("\n#{horizontal_rule}\nNOTE: Using this VM in a Full Deployment\n#{horizontal_rule}\nBe aware that if this VM is reconfigured as part of a larger deployment, you will potentially lose access to any applications that you have already built here. Additionally, this VM will stop using mDNS in favor of a BIND DNS server or a DNS configuration that you have deployed outside of the scope of the OpenShift system.\n\nIf you answer 'no', we'll gather information about your intended Broker host in a moment.\n\nDo you want to use this VM as a Broker for a multi-host deployment?")
+        if use_origin_vm_as_broker
+          vm_hash = vm_installer_host.to_hash
+          vm_hash['roles'] = ['broker']
+          deployment.add_host_instance! Installer::HostInstance.new(vm_hash)
+          say "\nOkay. This VM will be reconfigured as a Broker for a larger deployment."
+        end
       else
         say "It looks like you are running oo-install for the first time on a new system. The installer will guide you through the process of defining your OpenShift deployment."
       end
-      if not use_origin_vm_as_broker
-        broker_question = is_origin_vm? ? 'Is there already a running Broker in the OpenShift system that you want to deploy?' : 'First things first: do you already have a running Broker?'
-        has_running_broker = concur("\n#{broker_question}")
-      else
-        has_running_broker = true
-      end
-      if use_origin_vm_as_broker
-        vm_hash = vm_installer_host.to_hash
-        vm_hash['roles'] = ['broker']
-        deployment.add_host_instance! Installer::HostInstance.new(vm_hash)
-        say "\nOkay. This VM will be reconfigured as the Broker for a larger deployment."
-      elsif has_running_broker
-        say "\nOkay. We will collect information about your Broker in a moment."
-      else
-        say "\nOkay. We will gather information to install a Broker in a moment."
-      end
-      if not is_origin_vm?
-        say "Before we do that, we need to collect some information about your OpenShift DNS configuration."
-      end
       # Now grab the DNS config
-      ui_modify_dns((has_running_broker and not use_origin_vm_as_broker))
+      say "\nFirst off, we will configure some DNS information for this system."
+      ui_modify_dns
       say "\nThat's all of the DNS information that we need right now. Next, we need to gather information about the hosts in your OpenShift deployment."
       Installer::Deployment.display_order.each do |role|
         role_item = Installer::Deployment.role_map[role].chop
@@ -325,7 +312,7 @@ module Installer
             next
           end
         else
-          instances_exist = role == :broker ? has_running_broker : concur("Do you already have a running #{role_item}?")
+          instances_exist = concur("Do you already have a running #{role_item}?")
         end
 
         # Multi-host loop.
@@ -446,14 +433,18 @@ module Installer
         ui_modify_dns
       end
       # Zip through the roles and make sure there is a host instance assigned to each.
+      puts "ADV: #{advanced_mode?.inspect}\nDOR: #{Installer::Deployment.display_order.inspect}"
       Installer::Deployment.display_order.each do |role|
+        if role == :nameserver and not deployment.dns.deploy_dns?
+          next
+        end
         group_name = Installer::Deployment.role_map[role]
         group_item = group_name.chop
         group_list = Installer::Deployment.list_map[role]
         if deployment.send(group_list).length == 0
           resolved_issues = true
           say "\nYou must specify a #{group_item} host instance."
-          ui_add_remove_host_by_role role
+          ui_add_role role
         end
       end
       # Zip through the hosts and make sure they are legit.
@@ -484,7 +475,7 @@ module Installer
           menu.choice("Change the DNS configuration") { ui_modify_dns }
           menu.choice(host_option) { ui_modify_host }
           if deployment.hosts.length > 1
-            menu.choice("Add, modify or remove an OpenShift role") { ui_modify_role } #TODO: ui_add_remove_host_by_role
+            menu.choice("Add, modify or remove an OpenShift role") { ui_modify_role }
           end
           menu.choice("Finish editing the deployment configuration") { exit_loop = true }
           menu.hidden("q") { return_to_main_menu }
@@ -720,6 +711,21 @@ module Installer
       remove_role(source_host, target_role)
     end
 
+    def ui_add_role role
+      if deployment.hosts.length > 0
+        choose do |menu|
+          menu.header = "\nChoose a target host for the #{role.to_s} role"
+          menu.prompt = "#{translate(:menu_prompt)} "
+          deployment.hosts.sort_by{ |h| h.summarize }.each do |host_instance|
+            menu.choice(host_instance.summarize) { host_instance.add_role(role) }
+          end
+          menu.choice("Add a new host") { ui_edit_host_instance(nil, role) }
+        end
+      else
+        ui_edit_host_instance(nil, role)
+      end
+    end
+
     def ui_modify_host
       host_action = :modify
       removable_hosts = deployment.get_removable_hosts
@@ -772,35 +778,88 @@ module Installer
       end
     end
 
-    def ui_modify_dns(has_running_broker=false)
-      question_text = has_running_broker ? 'What domain is being used for applications that are hosted by the OpenShift deployment?' : 'What domain do you want to use for applications that are hosted by this OpenShift deployment?'
-      deployment.dns.app_domain = ask("\n#{question_text} ") { |q|
+    def ui_modify_dns
+      deployment.dns.deploy_dns = concur("\nDo you want me to install a new DNS server for OpenShift-hosted applications, or do you want this system to use an existing DNS server? (Answer 'yes' to have me install a DNS server.)", translate(:help_dns_deployment))
+      app_domain_q = "\nAll of your hosted applications will have a DNS name of the form:\n\n<app_name>-<owner_namespace>.<all_applications_domain>\n\nWhat domain name should be used for all of the hosted apps in your OpenShift system? "
+      if not deployment.dns.deploy_dns?
+        if remove_role(deployment.nameservers[0], :nameserver)
+          deployment.dns.register_components = false
+          deployment.dns.component_domain = nil
+          app_domain_q << "(Since you are using an existing DNS, make sure that this value corresponds with the dynamic zone configured on that DNS service.): "
+        else
+          deployment.dns.deploy_dns = true
+        end
+      end
+      if deployment.dns.deploy_dns?
+        deployment.dns.dns_host_ip = nil
+        deployment.dns.dnssec_key = nil
+      end
+      deployment.dns.app_domain = ask(app_domain_q) { |q|
         if not deployment.dns.app_domain.nil?
           q.default = deployment.dns.app_domain
         end
         q.validate = lambda { |p| is_valid_domain?(p) }
         q.responses[:not_valid] = "Enter a valid domain"
       }.to_s
-      question_text = has_running_broker ? 'Does the OpenShift DNS server include records for the OpenShift hosts themselves? Enter \'n\' if you don\'t know.' : 'Do you want to register DNS entries for your OpenShift hosts with the same OpenShift DNS service that will be managing DNS records for the hosted applications?'
-      deployment.dns.register_components = concur("\n#{question_text}")
-      if deployment.dns.register_components?
-        loop do
-          question_text = has_running_broker ? 'What domain do the OpenShift hosts reside in? ' : 'What domain do you want to use for the OpenShift hosts?'
-          deployment.dns.component_domain = ask("\n#{question_text} ") { |q|
-            if not deployment.dns.component_domain.nil?
-              q.default = deployment.dns.component_domain
+      if deployment.dns.deploy_dns?
+        deployment.dns.register_components = concur("\nDo you want to register DNS entries for your OpenShift hosts with the same OpenShift DNS service that will be managing DNS records for the hosted applications?")
+        if deployment.dns.register_components?
+          loop do
+            deployment.dns.component_domain = ask("\nWhat domain do you want to use for the OpenShift hosts? ") { |q|
+              if not deployment.dns.component_domain.nil?
+                q.default = deployment.dns.component_domain
+              end
+              q.validate = lambda { |p| is_valid_domain?(p) }
+              q.responses[:not_valid] = "Enter a valid domain"
+            }.to_s
+            if deployment.dns.app_domain == deployment.dns.component_domain
+              break if concur("\nYou have specified the same domain for your applications and your OpenShift components. Do you wish to keep these settings?")
+            else
+              break
             end
-            q.validate = lambda { |p| is_valid_domain?(p) }
-            q.responses[:not_valid] = "Enter a valid domain"
-          }.to_s
-          if not has_running_broker and deployment.dns.app_domain == deployment.dns.component_domain
-            break if concur("\nYou have specified the same domain for your applications and your OpenShift components. Do you wish to keep these settings?")
-          else
-            break
           end
+        else
+          deployment.dns.component_domain = nil
         end
       else
-        deployment.dns.component_domain = nil
+        deployment.dns.dns_host_ip = ask("\nWhat is the IP address of the existing DNS server? ") { |q|
+          if not deployment.dns.dns_host_ip.nil?
+            q.default = deployment.dns.dns_host_ip
+          end
+          q.validate = lambda { |p| is_valid_ip_addr?(p) }
+          q.responses[:not_valid] = "Enter a valid IP address"
+        }.to_s
+        deployment.dns.dnssec_key = ask("\nWhat is the DNSSEC key value for nsupdates against this DNS server? ") { |q|
+          if not deployment.dns.dnssec_key.nil?
+            q.default = deployment.dns.dnssec_key
+          end
+          q.validate = lambda { |p| is_valid_string?(p) }
+          q.responses[:not_valid] = "Enter a valid DNSSEC key value"
+        }.to_s
+      end
+      if deployment.dns.deploy_dns?
+        select_host = true
+        if deployment.nameservers.length == 0
+          say "\nYou have indicated that you want the installer to deploy DNS. "
+        else
+          select_host = concur("\nThe DNS service is currently set to deploy on #{deployment.nameservers[0].host}. Do you want to change that?")
+        end
+        if select_host
+          if deployment.hosts.length > 0
+            choose do |menu|
+              menu.header = "Please choose a host to use as the nameserver"
+              menu.prompt = "#{translate(:menu_prompt)} "
+              deployment.hosts.sort_by{ |h| h.summarize }.each do |host_instance|
+                menu.choice(host_instance.summarize) { host_instance.add_role(:nameserver) }
+              end
+              menu.choice('Add a new host') { ui_edit_host_instance(nil, :nameserver) }
+              menu.hidden("q") { return }
+            end
+          else
+            say "Please configure a host to use as the nameserver."
+            ui_edit_host_instance(nil, :nameserver)
+          end
+        end
       end
       deployment.save_to_disk!
     end
@@ -1009,13 +1068,23 @@ module Installer
                 choose do |menu|
                   menu.header = "Choose a role to add to this host"
                   menu.prompt = "#{translate(:menu_prompt)} "
-                  Installer::Deployment.role_map.each_pair do |key, name|
+                  Installer::Deployment.role_map.sort_by{ |k,v| v }.each do |key, name|
                     if host_instance.has_role?(key)
                       next
                     end
-                    menu.choice(name.chop) { host_instance.add_role(key) }
-                    menu.hidden("q") { return_to_main_menu }
+                    menu.choice(name.chop) {
+                      if key == :nameserver and deployment.nameservers.length > 0
+                        dns_host = deployment.nameservers[0]
+                        if concur("Host #{dns_host.host} is already configured as the DNS host. Do you want to move the NameServer role to this host instead?")
+                          dns_host.remove_role(key)
+                          host_instance.add_role(key)
+                        end
+                      else
+                        host_instance.add_role(key)
+                      end
+                    }
                   end
+                  menu.hidden("q") { return_to_main_menu }
                 end
               else
                 break
@@ -1024,34 +1093,36 @@ module Installer
             first_pass = false
           end
         end
-        if host_instance.is_broker? and first_role_host
+        if host_instance.has_role?(:nameserver)
           # Optionally allow the user to set a distinct named_ip_addr for their broker.
           host_instance.named_ip_addr = ask("\nNormally, the BIND DNS server that is installed on this Broker will be reachable from other OpenShift components using the Broker's configured IP address (#{host_instance.ip_addr}).\n\nIf that will work in your deployment, press <enter> to accept the default value. Otherwise, provide an alternate IP address that will enable other OpenShift components to reach the BIND DNS service on the Broker: ") { |q|
             q.default = host_instance.ip_addr
             q.validate = lambda { |p| is_valid_ip_addr?(p) }
             q.responses[:not_valid] = "Enter a valid IP address for the BIND DNS service"
           }.to_s
-          if get_context == :ose
-            valid_gear_sizes = @deployment.get_valid_gear_sizes
-            host_instance.valid_gear_sizes = ask("\nValid Gear Sizes for this deployment: ") { |q|
-              q.default = valid_gear_sizes.nil? ? "small" : valid_gear_sizes
-              q.validate = lambda { |p| is_valid_string?(p) }
-              q.responses[:not_valid] = "Enter a comma separated string of valid gear sizes"
-            }.to_s
-            default_gear_capabilities = host_instance.default_gear_capabilities
-            host_instance.default_gear_capabilities = ask("\nDefault Gear Capabilties for new users: ") { |q|
-              q.default = default_gear_capabilities.nil? ? host_instance.valid_gear_sizes : default_gear_capabilities
-              # verify that default_gear_capabilities is a subset of valid_gear_sizes
-              q.validate = lambda { |p| is_valid_string?(p) && (p.split(',') - host_instance.valid_gear_sizes.split(',')).empty? }
-              q.responses[:not_valid] = "Enter a comma separated string of default gear capabilities for new users.  Must be a subset of the Valid Gear Sizes."
-            }.to_s
-            default_gear_size = host_instance.default_gear_size
-            host_instance.default_gear_size = ask("\nDefault Gear Size for new applications: ") { |q|
-              q.default = default_gear_size.nil? ? host_instance.default_gear_capabilities.split(',').first : default_gear_size
-              q.validate = lambda { |p| is_valid_string?(p) && host_instance.default_gear_capabilities.split(',').include?(p) }
-              q.responses[:not_valid] = "Enter the default gear size for new applications. Must be a member of the Default Gear Capabilities"
-            }.to_s
-          end
+        else
+          host_instance.named_ip_addr = nil
+        end
+        if host_instance.is_broker? and first_role_host
+          valid_gear_sizes = @deployment.get_valid_gear_sizes
+          host_instance.valid_gear_sizes = ask("\nValid Gear Sizes for this deployment: ") { |q|
+            q.default = valid_gear_sizes.nil? ? "small" : valid_gear_sizes
+            q.validate = lambda { |p| is_valid_string?(p) }
+            q.responses[:not_valid] = "Enter a comma separated string of valid gear sizes"
+          }.to_s
+          default_gear_capabilities = host_instance.default_gear_capabilities
+          host_instance.default_gear_capabilities = ask("\nDefault Gear Capabilties for new users: ") { |q|
+            q.default = default_gear_capabilities.nil? ? host_instance.valid_gear_sizes : default_gear_capabilities
+            # verify that default_gear_capabilities is a subset of valid_gear_sizes
+            q.validate = lambda { |p| is_valid_string?(p) && (p.split(',') - host_instance.valid_gear_sizes.split(',')).empty? }
+            q.responses[:not_valid] = "Enter a comma separated string of default gear capabilities for new users.  Must be a subset of the Valid Gear Sizes."
+          }.to_s
+          default_gear_size = host_instance.default_gear_size
+          host_instance.default_gear_size = ask("\nDefault Gear Size for new applications: ") { |q|
+            q.default = default_gear_size.nil? ? host_instance.default_gear_capabilities.split(',').first : default_gear_size
+            q.validate = lambda { |p| is_valid_string?(p) && host_instance.default_gear_capabilities.split(',').include?(p) }
+            q.responses[:not_valid] = "Enter the default gear size for new applications. Must be a member of the Default Gear Capabilities"
+          }.to_s
         end
         if host_instance.is_node?
           edit_node_profile_and_district host_instance
@@ -1243,18 +1314,29 @@ module Installer
 
     def list_dns
       say "\nDNS Settings\n"
-      say "  * App Domain: #{deployment.dns.app_domain || '[unset]'}"
-      say "  * Register OpenShift components with OpenShift DNS? "
-      case deployment.dns.register_components
-      when nil
-        say "[unset]"
-      when true
-        say "Yes"
-      when false
-        say "No"
+      if deployment.dns.deploy_dns?
+        say "  * Installer will deploy DNS"
+      else
+        say "  * OpenShift will use existing DNS"
       end
-      if not deployment.dns.component_domain.nil?
-        say "  * Component Domain: #{deployment.dns.component_domain}"
+      say "  * Application Domain: #{deployment.dns.app_domain || '[unset]'}"
+      if deployment.dns.deploy_dns?
+        say "  * Register OpenShift hosts with DNS? "
+        case deployment.dns.register_components
+        when nil
+          say "[unset]"
+        when true
+          say "Yes"
+          if not deployment.dns.component_domain.nil?
+            say "  * Component Domain: #{deployment.dns.component_domain}"
+          end
+        when false
+          say "No"
+        end
+      else
+        say "  * DNS Host IP: #{deployment.dns.dns_host_ip || '[unset]'}"
+        say "  * DNSSEC key: #{deployment.dns.dnssec_key || '[unset]'}"
+
       end
     end
 
@@ -1391,20 +1473,24 @@ module Installer
         end
 
         # Check for all required components
+        has_channels       = false
+        all_channels_found = true
+        uninstalled_pkgs   = []
         workflow.components.each do |component|
-          incompatible = false
+          incompatible  = false
           check_on_role = :all
           check_on_type = :all
-          repo = nil
-          util = nil
-          pkg = nil
-          sub_util = nil
+          channel       = nil
+          repo          = nil
+          util          = nil
+          sub_util      = nil
+          pkg           = nil
 
           # Figure out the kind of check we're doing
           component_info = component.split(":")
-          incompatible = component_info[0] == 'incompatible' ? true : false
-          check_type = component_info[1].to_sym
-          role_or_type = component_info[2].to_sym
+          incompatible   = component_info[0] == 'incompatible' ? true : false
+          check_type     = component_info[1].to_sym
+          role_or_type   = component_info[2].to_sym
           if not role_or_type == :all
             if supported_targets.has_key?(role_or_type)
               check_on_type = role_or_type
@@ -1427,6 +1513,36 @@ module Installer
             repo = component_info[3]
           elsif check_type == :pkg
             pkg = component_info[3]
+          elsif check_type == :channel
+            channel = component_info[3]
+          end
+
+          # Channel checks first.
+          if not channel.nil?
+            has_channels = true
+            rhn_cmd      = "rhn-channel -l | grep #{channel}"
+            rhsm_cmd     = 'subscription-manager repos'
+
+            rhn_cmd_result = host_instance.exec_on_host!(rhn_cmd)
+            if not rhn_cmd_result[:exit_code] == 0
+              say "* Could not find #{channel} channel through RHN."
+              rhsm_cmd_result = host_instance.exec_on_host!(rhsm_cmd)
+              if not rhsm_cmd_result[:exit_code] == 0
+                say "* RHSM channel listing failed."
+                all_channels_found = false
+              else
+                # The RHSM output is multi-line and has to be hacked back into a logical state.
+                if rhsm_enabled_repo?(rhsm_cmd_result[:stdout], channel)
+                  say "* Found enabled #{channel} repo through RHSM."
+                else
+                  say "* Could not find enabled #{channel} repo through RHSM."
+                  all_channels_found = false
+                end
+              end
+            else
+              say "* Found #{channel} channel through RHN."
+            end
+            next
           end
 
           # Handle repo checks
@@ -1457,21 +1573,16 @@ module Installer
           end
 
           if not pkg.nil?
-            pkg_cmd = "yum list installed | grep #{pkg}"
+            pkg_cmd = "yum list installed #{pkg}"
             cmd_result = host_instance.exec_on_host!(pkg_cmd)
             if not cmd_result[:exit_code] == 0
               if not incompatible
-                say "* ERROR: Could not perform package check for #{pkg}. Try running `#{pkg_cmd}` manually to troubleshoot."
-                deployment_good = false
-              end
-            elsif not cmd_result[:stdout].match(/#{pkg}/)
-              if not incompatible
-                say "* ERROR: The '#{pkg}' package is not installed on this host. Try running `yum install #{pkg}` and then try again."
-                deployment_good = false
+                say "* The '#{pkg}' package is not installed on this host."
+                uninstalled_pkgs << pkg
               end
             else
               if not incompatible
-                say "* #{repo} repository is present and enabled"
+                say "* #{pkg} RPM is installed."
               else
                 say "* ERROR: The '#{pkg}' package is installed on this host. OpenShift has known incompatibility issues with it, so please remove it (`yum remove #{pkg}`) and then rerun the installer."
                 deployment_good = false
@@ -1521,6 +1632,7 @@ module Installer
               end
             end
           end
+
           # SELinux configuration check
           if util == 'getenforce'
             cmd_result = host_instance.exec_on_host!("#{util}")
@@ -1534,18 +1646,71 @@ module Installer
               say "* SELinux is running in #{cmd_result[:stdout].chomp.strip.downcase} mode"
             end
           end
-          # SCL collection check
-          if util == 'scl' and not sub_util.nil?
-            cmd_result = host_instance.exec_on_host!("scl -l | grep #{sub_util}")
-            if not cmd_result[:exit_code] == 0
-              say "* ERROR: Could not run #{util} to determine presence of #{sub_util} collection."
-              deployment_good = false
-            elsif not cmd_result[:stdout].chomp.strip.downcase.match(/#{sub_util}/)
-              say "* ERROR: The #{sub_util} software collection is not installed. Correct this by running `yum install #{sub_util}` on this system."
-              deployment_good = false
-            else
-              say "* The #{sub_util} software collection is installed."
+        end
+
+        # Now decide what to do if we couldn't find all of the subscription channels.
+        if has_channels and not all_channels_found and not force_install?
+          if not concur("\nThe installer could not determine if the necessary subscription channels were enabled on this host. If they are not available, the installer may not be able to satisfy necessary RPM dependencies. Do you want to proceed anyway?")
+            deployment_good = false
+            break
+          end
+        end
+
+        # Next deal with uninstalled packages.
+        if uninstalled_pkgs.length > 0
+          install_pkgs_text = ''
+          if uninstalled_pkgs.length == 1
+            install_pkgs_text = "\nThe '#{uninstalled_pkgs[0]}' RPM is required, but not installed on #{host_instance.host}. Do you want me to try to install it for you?"
+          else
+            install_pkgs_text = "\nThe following RPMs are required, but not installed on this host:\n#{uninstalled_pkgs.map{ |rpm| "* #{rpm}" }.join("\n")}\nDo you want to want me to try to install them for you?"
+          end
+          if force_install? or concur(install_pkgs_text)
+            failed_pkgs = []
+            uninstalled_pkgs.each do |rpm|
+              say "\nChecking availability of '#{rpm}' RPM... "
+              rpm_check = host_instance.exec_on_host!("yum list #{rpm}")
+              if rpm_check[:exit_code] == 0
+                say "available.\nAttempting to install... "
+                install_attempt = host_instance.exec_on_host!("yum install #{rpm} -y")
+                if install_attempt[:exit_code] == 0
+                  say "success!"
+                else
+                  say "not successful: #{install_attempt[:stdout]}"
+                  failed_pkgs << rpm
+                end
+              elsif rpm == 'puppet' and not merged_subscription.puppet_repo_rpm.nil?
+                # Special case; for puppet we'll install the repo and try again.
+                say "not available.\nAttempting to install the puppet repo RPM... "
+                repo_install = host_instance.exec_on_host!("rpm -ivh #{merged_subscription.puppet_repo_rpm}")
+                if repo_install[:exit_code] == 0
+                  say "repo added.\nAttemtmping to install puppet... "
+                  install_attempt = host_instance.exec_on_host!("yum install #{rpm} -y")
+                  if install_attempt[:exit_code] == 0
+                    say "success!"
+                  else
+                    say "not successful: #{install_attempt[:stdout]}"
+                    failed_pkgs << rpm
+                  end
+                else
+                  say "not successful. You will need to manually add puppet to this host and then retry the installation."
+                  failed_pks << rpm
+                end
+              else
+                say "not available."
+                failed_pkgs << rpm
+              end
             end
+            if failed_pkgs.length > 0
+              deployment_good = false
+              if failed_pkgs.length == 1
+                say "\nThe '#{failed_pkgs[0]}' RPM could not be installed. See above for more information."
+              else
+                failed_list = failed_pkgs.map{ |rpm| "\n* #{rpm}" }.join('')
+                say "\nThe following packages could not be installed on this host. See above for more information:\n#{failed_list}"
+              end
+            end
+          else
+            deployment_good = false
           end
         end
 
@@ -1561,6 +1726,7 @@ module Installer
             deployment_good = false
           end
         end
+
         if deployment_good == false
           raise Installer::DeploymentCheckFailedException.new
         end

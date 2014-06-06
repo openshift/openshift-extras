@@ -4,16 +4,23 @@ module Installer
   class DNSConfig
     include Installer::Helpers
 
-    attr_accessor :app_domain, :component_domain, :register_components
+    attr_accessor :app_domain, :component_domain, :register_components, :deploy_dns, :dns_host_ip, :dnssec_key
 
     def initialize dns_config
       @app_domain = dns_config['app_domain'] || 'example.com'
       @component_domain = dns_config['component_domain']
       @register_components = dns_config.has_key?('register_components') && dns_config['register_components'].downcase == 'y'
+      @deploy_dns = (not dns_config.has_key?('deploy_dns') or dns_config['deploy_dns'].downcase == 'y')
+      @dns_host_ip = dns_config['dns_host_ip']
+      @dnssec_key = dns_config['dnssec_key']
     end
 
     def register_components?
       @register_components
+    end
+
+    def deploy_dns?
+      @deploy_dns
     end
 
     def is_valid?(check=:basic)
@@ -25,6 +32,14 @@ module Installer
       if register_components.nil?
         return false if check == :basic
         errors << Installer::DNSConfigMissingSettingException.new("The DNS configuration is missing a value for the 'register_components' setting.")
+      end
+      if deploy_dns.nil?
+        return false if check == :basic
+        errors << Installer::DNSConfigMissingSettingException.new("The DNS configuration is missing a value for the 'deploy_dns' setting.")
+      end
+      if not deploy_dns and (dns_host_ip.nil? or dnssec_key.nil?)
+        return false if check == :basic
+        errors << Installer::DNSConfigMissingSettingException.new("When OpenShift is not deploying its own DNS service, you must provide a 'dns_host_ip' value and a 'dnssec_key' value so that Nodes can register user applications with your DNS system.")
       end
       if register_components? and component_domain.nil?
         return false if check == :basic
@@ -42,9 +57,14 @@ module Installer
       output = {
         'app_domain' => app_domain,
         'register_components' => (register_components? ? 'Y' : 'N'),
+        'deploy_dns' => (deploy_dns? ? 'Y' : 'N'),
       }
       if not component_domain.nil?
         output['component_domain'] = component_domain
+      end
+      if not deploy_dns?
+        output['dns_host_ip'] = dns_host_ip
+        output['dnssec_key'] = dnssec_key
       end
       output
     end

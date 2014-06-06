@@ -100,8 +100,8 @@ module Installer
     end
 
     def is_basic_broker?
-      # Basic broker has three roles
-      roles.length == 3 and roles.include?(:broker) and roles.include?(:mqserver) and roles.include?(:dbserver)
+      # Basic broker has three roles (and possibly also 'nameserver', but not 'node')
+      is_broker? and roles.include?(:mqserver) and roles.include?(:dbserver) and not is_node?
     end
 
     def is_broker?
@@ -109,12 +109,12 @@ module Installer
     end
 
     def is_basic_node?
-      # This specifically checks for node hosts with no other roles. For general use, call 'is_node?' instead.
-      roles.length == 1 and roles[0] == :node
+      # This specifically checks for node hosts with no other roles (except possibly 'nameserver') For general use, call 'is_node?' instead.
+      is_node? and not is_broker? and not roles.include?(:mqserver) and not roles.include?(:dbserver)
     end
 
     def is_all_in_one?
-      roles.length == 4 and roles.include?(:broker) and roles.include?(:mqserver) and roles.include?(:dbserver) and roles.include?(:node)
+      is_broker? and is_node? and roles.include?(:mqserver) and roles.include?(:dbserver)
     end
 
     def is_node?
@@ -177,8 +177,8 @@ module Installer
           type_output = exec_on_host!('export LC_CTYPE=en_US.utf8 && cat /etc/redhat-release')
           type_result = :other
           if type_output[:exit_code] == 0
-            if type_output[:stdout].match(/^Fedora/)
-              type_result = :fedora
+            if type_output[:stdout].match(/^CentOS/)
+              type_result = :centos
             elsif type_output[:stdout].match(/^Red Hat Enterprise Linux/)
               type_result = :rhel
             end

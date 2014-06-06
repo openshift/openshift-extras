@@ -12,23 +12,28 @@ module Installer
 
     class << self
       def role_map
-        { :broker => 'Brokers',
-          :node => 'Nodes',
-          :mqserver => 'MsgServers',
-          :dbserver => 'DBServers',
+        { :broker     => 'Brokers',
+          :nameserver => 'NameServers',
+          :node       => 'Nodes',
+          :mqserver   => 'MsgServers',
+          :dbserver   => 'DBServers',
         }
       end
 
       def list_map
-        { :broker => :brokers,
-          :node => :nodes,
-          :mqserver => :mqservers,
-          :dbserver => :dbservers,
+        { :broker     => :brokers,
+          :nameserver => :nameservers,
+          :node       => :nodes,
+          :mqserver   => :mqservers,
+          :dbserver   => :dbservers,
         }
       end
 
       def display_order
-        advanced_mode? ? [:broker,:mqserver,:dbserver,:node] : [:broker,:node]
+        if advanced_mode?
+          return [:broker,:nameserver,:mqserver,:dbserver,:node]
+        end
+        [:broker,:nameserver,:node]
       end
 
       def roles
@@ -50,6 +55,10 @@ module Installer
 
     def brokers
       get_hosts_by_role :broker
+    end
+
+    def nameservers
+      get_hosts_by_role :nameserver
     end
 
     def mqservers
@@ -94,12 +103,13 @@ module Installer
       # Also remove standalone mqserver and dbserver hosts
       to_delete = []
       hosts.each do |host_instance|
+        dns_host = host_instance.has_role?(:nameserver)
         if host_instance.roles.include?(:broker)
           # Broker hosts (which may also contain a node) get mqserver and dbserver as well
           host_instance.roles = [:mqserver,:dbserver].concat(host_instance.roles).uniq
         elsif host_instance.roles.include?(:node)
           # Node hosts (which don't include brokers) get any other roles removed
-          host_instance.roles = [:node]
+          host_instance.roles = dns_host ? [:node,:nameserver] : [:node]
         else
           # Other hosts get nuked.
           to_delete << host_instance.id
@@ -113,10 +123,19 @@ module Installer
 
     def is_valid?(check=:basic)
       errors = []
+      # Check the DNS setup
+      if check == :basic
+        return false if not dns.is_valid?(check)
+      else
+        errors.concat(dns.is_valid?(check))
+      end
       # See if there's at least one of each role
       self.class.list_map.each_pair do |role,group|
         group_list = self.send(group)
         if group_list.length == 0
+          if role == :nameserver and not dns.deploy_dns?
+            next
+          end
           return false if check == :basic
           errors << Installer::DeploymentRoleMissingException.new("There must be at least one #{role.to_s} in the deployment configuration.")
         end
@@ -131,12 +150,6 @@ module Installer
           errors.concat(host_instance.is_valid?(check))
         end
       end
-      # Check the DNS setup
-      if check == :basic
-        return false if not dns.is_valid?(check)
-      else
-        errors.concat(dns.is_valid?(check))
-      end
       return true if check == :basic
       errors
     end
@@ -144,7 +157,6 @@ module Installer
     def is_advanced?
       hosts.select{ |h| not h.is_basic_broker? and not h.is_basic_node? and not h.is_all_in_one? }.length > 0
     end
-
 
     def is_valid_role_list? role
       list = self.send(self.class.list_map[role])
