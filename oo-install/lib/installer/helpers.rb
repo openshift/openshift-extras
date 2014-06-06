@@ -44,9 +44,8 @@ module Installer
     end
 
     def supported_targets
-      { :fedora => 'Fedora',
-        :rhel => 'Red Hat Enterprise Linux',
-        :other => 'non-Fedora, non-RHEL',
+      { :rhel   => 'Red Hat Enterprise Linux',
+        :centos => 'CentOS',
       }
     end
 
@@ -87,6 +86,14 @@ module Installer
 
     def keep_puppet?
       Installer::KEEP_PUPPET
+    end
+
+    def set_force_install(force_install)
+      Installer.const_set("FORCE_INSTALL", force_install)
+    end
+
+    def force_install?
+      Installer::FORCE_INSTALL
     end
 
     # SOURCE for #which:
@@ -210,6 +217,36 @@ module Installer
           return false
         end
       end
+    end
+
+    # The output of the rhsm repo listing is of the multi-line format:
+    #
+    # Repo ID:   <repo_id>
+    # Repo Name: <repo_name>
+    # Repo URL:  <repo_url>
+    # Enabled:   <0|1>
+    #
+    # This helper matched repos by repo ID substring and correlates the
+    # ID to the 'enabled' flag reported in the same block.
+    def rhsm_enabled_repo?(rhsm_text, repo_substr)
+      in_repo_block = false
+      rhsm_text.split("\n").each do |line|
+        if not in_repo_block
+          if line =~ /^Repo ID/ and line =~ /#{repo_substr}/
+            in_repo_block = true
+          end
+          next
+        else
+          if line =~ /^\s*$/
+            in_repo_block = false
+          elsif line =~ /^Enabled/
+            if line =~ /1/
+              return true
+            end
+          end
+        end
+      end
+      return false
     end
 
     def capitalize_attribute(attr)

@@ -25,9 +25,8 @@ Name: OO Deployment from VM
 Contexts:
   - origin_vm
 Targets:
-  - fedora
   - rhel
-  - other
+  - centos
 Summary: Install OpenShift Origin on Other Systems
 Description: To install a new OpenShift Origin deployment on one or more target systems, select this option
 ID: origin_deploy
@@ -40,15 +39,11 @@ Repositories:
   - jenkins_repo_base
   - os_repo
   - os_optional_repo
+  - puppet_repo_rpm
 RequiredComponents:
-  - util:all:puppet
-  - util:all:augtool
-  - util:broker:dnssec-keygen
-  - util:broker:htpasswd
-  - util:rhel:scl:ruby193
-  - util:other:scl:ruby193
-  - repo:rhel:epel
-  - repo:other:epel
+  - channel:rhel:optional
+  - pkg:all:puppet
+  - pkg:broker:bind
 IncompatibleComponents:
   - pkg:all:firewalld
 ---
@@ -56,9 +51,8 @@ Name: OO Deployment
 Contexts:
   - origin
 Targets:
-  - fedora
   - rhel
-  - other
+  - centos
 Summary: Install OpenShift Origin
 Description: To install a new OpenShift Origin deployment on one or more target systems, select this option
 ID: origin_deploy
@@ -71,15 +65,11 @@ Repositories:
   - jenkins_repo_base
   - os_repo
   - os_optional_repo
+  - puppet_repo_rpm
 RequiredComponents:
-  - util:all:puppet
-  - util:all:augtool
-  - util:broker:dnssec-keygen
-  - util:broker:htpasswd
-  - util:rhel:scl:ruby193
-  - util:other:scl:ruby193
-  - repo:rhel:epel
-  - repo:other:epel
+  - channel:rhel:optional
+  - pkg:all:puppet
+  - pkg:broker:bind
 IncompatibleComponents:
   - pkg:all:firewalld
 ---
@@ -87,9 +77,8 @@ Name: OO Node Instance Deployment
 Contexts:
   - origin
 Targets:
-  - fedora
   - rhel
-  - other
+  - centos
 Summary: Add a Node to an OpenShift Origin deployment
 Description: If you have already deployed an OpenShift Enterprise system, use this option to add a new Node host to the existing system.
 ID: origin_add_node
@@ -107,13 +96,10 @@ Repositories:
   - jenkins_repo_base
   - os_repo
   - os_optional_repo
+  - puppet_repo_rpm
 RequiredComponents:
+  - channel:rhel:optional
   - util:all:puppet
-  - util:all:augtool
-  - util:rhel:scl:ruby193
-  - util:other:scl:ruby193
-  - repo:rhel:epel
-  - repo:other:epel
 IncompatibleComponents:
   - pkg:all:firewalld
 ---
@@ -122,9 +108,8 @@ Contexts:
   - origin
   - origin_vm
 Targets:
-  - fedora
   - rhel
-  - other
+  - centos
 Summary: Generate a Puppet Configuration File
 Description: Make a puppet configuration file that you can use to run an OpenShift Origin installation.
 ID: puppet_template
@@ -139,7 +124,7 @@ Repositories:
   - os_repo
   - os_optional_repo
 RequiredComponents:
-  - util:broker:dnssec-keygen
+  - pkg:broker:bind
 ---
 Name: OE Deployment
 Contexts:

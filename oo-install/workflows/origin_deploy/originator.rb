@@ -211,32 +211,6 @@ if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and 
         end
       end
     end
-
-    if host_info['roles'].include?('broker') and not @puppet_template_only
-      user = host_info['user']
-      host = host_info['host']
-      ssh_host = host_info['ssh_host']
-      # In order for the default htpasswd account to work, we must first create an htpasswd file.
-      htpasswd_cmds = {
-        :mkdir_openshift => 'mkdir -p /etc/openshift',
-        :touch_htpasswd => 'touch /etc/openshift/htpasswd',
-      }
-      if not user == 'root'
-        htpasswd_cmds.each_pair do |action,command|
-          htpasswd_cmds[action] = "sudo #{command}"
-        end
-      end
-      full_command = "#{htpasswd_cmds[:mkdir_openshift]} && #{htpasswd_cmds[:touch_htpasswd]}"
-      if not ssh_host == 'localhost'
-        full_command = "#{@ssh_cmd} #{user}@#{ssh_host} \"#{full_command}\""
-      end
-      puts "Setting up htpasswd for default user account."
-      system full_command
-      if $?.exitstatus > 0
-        puts "Could not create / verify '/etc/openshift/htpasswd' on target host. Exiting."
-        exit 1
-      end
-    end
   end
 
   # DNS Settings
@@ -353,7 +327,6 @@ host_order.each do |ssh_host|
     :apply => "puppet apply --verbose /tmp/#{hostfile} |& tee -a #{logfile}",
     :clear => "rm /tmp/#{hostfile}",
   }
-  puppet_commands = [:uninstall,:install,:apply]
   # We have to prep and run :typecheck first.
   command_list = commands.keys
   if not command_list[0] == :typecheck
@@ -364,17 +337,11 @@ host_order.each do |ssh_host|
   host_type = :fedora
   command_list.each do |action|
     if not ssh_host == 'localhost'
-      if host_type == :other and puppet_commands.include?(action)
-        commands[action] = "scl enable ruby193 \\\"#{commands[action]}\\\""
-      end
       if not user == 'root'
         commands[action] = "sudo sh -c '#{commands[action]}'"
       end
       commands[action] = "#{@ssh_cmd} #{user}@#{ssh_host} -C \"#{commands[action]}\""
     else
-      if host_type == :other and puppet_commands.include?(action)
-        commands[action] = "scl enable ruby193 \"#{commands[action]}\""
-      end
       commands[action] = "bash -l -c '#{commands[action]}'"
       if not user == 'root'
         commands[action] = "sudo #{commands[action]}"
