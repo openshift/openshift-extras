@@ -275,6 +275,8 @@ module Installer
 
     def local_exec!(command, display_output=false)
       stdout_data = ""
+      env_rubylib = ENV.delete('RUBYLIB')
+      env_gem_path = ENV.delete('GEM_PATH')
       IO.popen(command) do |pipe|
         pipe.each do |line|
           stdout_data += line
@@ -284,6 +286,8 @@ module Installer
       result = $?
       exit_code = result.exitstatus
       success = result.success?
+      ENV['RUBYLIB'] = env_rubylib
+      ENV['GEM_PATH'] = env_gem_path
       { :stdout => force_utf8(stdout_data), :exit_code => exit_code, :success => success }
     end
 
