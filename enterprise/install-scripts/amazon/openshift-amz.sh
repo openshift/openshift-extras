@@ -453,7 +453,7 @@ install_broker_pkgs()
 # Install node-specific packages.
 install_node_pkgs()
 {
-  pkgs="rubygem-openshift-origin-node ruby193-rubygem-passenger-native"
+  local pkgs="rubygem-openshift-origin-node ruby193-rubygem-passenger-native"
   pkgs="$pkgs openshift-origin-node-util"
   pkgs="$pkgs ruby193-mcollective openshift-origin-msg-node-mcollective"
 
@@ -463,6 +463,9 @@ install_node_pkgs()
 
   pkgs="$pkgs rubygem-openshift-origin-container-selinux"
   pkgs="$pkgs rubygem-openshift-origin-frontend-nodejs-websocket"
+  # technically not needed unless $CONF_SYSLOG includes gears, but it
+  # does not hurt to have them available:
+  pkgs="$pkgs rsyslog7 rsyslog7-mmopenshift"
 
   case "$node_apache_frontend" in
     mod_rewrite)
@@ -1034,6 +1037,65 @@ configure_gears()
 {
   # Make sure that gears are restarted on reboot.
   chkconfig openshift-gears on
+
+  # configure gear logging
+  if [[ "$CONF_SYSLOG" = *gears* ]]; then
+    # make the gear app servers log to syslog by default (overrideable)
+    sed -i -e '
+      /outputtype\b/I coutputType = syslog
+      /outputtypefromenviron/I coutputTypeFromEnviron = true
+    ' /etc/openshift/logshifter.conf
+    # use rsyslog7 so we can annotate
+    # disable some of the stock options shipped
+    sed -i -e '
+      /ModLoad imuxsock/ s/^/#/     # will load separately with custom options
+      /var\/log\/messages/ s/^/#/   # disable original messages log
+      /ModLoad imjournal/ s/^/#/    # imjournal module is not even available...
+      /IMJournalStateFile/ s/^/#/
+      /OmitLocalLogging/ s/^/#/
+      s/syslog.d/syslog7.d/         # use separate conf directory from regular syslog
+    ' /etc/rsyslog7.conf
+    # enable custom log format via imuxsock
+    cat <<'LOGCONF' >> /etc/rsyslog7.d/imuxsock-and-openshift-gears.conf
+# load the modules as necessary for gear logs to be annotated
+module(load="imuxsock" SysSock.Annotate="on" SysSock.ParseTrusted="on" SysSock.UsePIDFromSystem="on")
+module(load="mmopenshift")
+
+# template for gear logs that adds annotations
+template(name="OpenShift" type="list") {
+        property(name="timestamp")
+        constant(value=" ")
+        property(name="hostname")
+        constant(value=" ")
+        property(name="syslogtag")
+        constant(value=" app=")
+        property(name="$!OpenShift!OPENSHIFT_APP_NAME")
+        constant(value=" ns=")
+        property(name="$!OpenShift!OPENSHIFT_NAMESPACE")
+        constant(value=" appUuid=")
+        property(name="$!OpenShift!OPENSHIFT_APP_UUID")
+        constant(value=" gearUuid=")
+        property(name="$!OpenShift!OPENSHIFT_GEAR_UUID")
+        property(name="msg" spifno1stsp="on")
+        property(name="msg" droplastlf="on")
+        constant(value="\n")
+}
+
+# direct syslog entries appropriately
+action(type="mmopenshift")
+if $!OpenShift!OPENSHIFT_APP_UUID != '' then
+  # annotate and log syslog output from gears specially
+  *.* action(type="omfile" file="/var/log/openshift_gears" template="OpenShift")
+else
+  # otherwise send syslog where it usually goes
+  *.info;mail.none;authpriv.none;cron.none      action(type="omfile" file="/var/log/messages")
+
+LOGCONF
+    service rsyslog stop
+    chkconfig rsyslog off
+    chkconfig rsyslog7 on
+    service rsyslog7 start
+  fi
 }
 
 
@@ -1710,6 +1772,12 @@ configure_controller()
             s/MONGO_DB=.*$/MONGO_DB=\"${mongodb_name}\"/" \
       /etc/openshift/broker.conf
 
+  # configure broker logs for syslog
+  [[ "$CONF_SYSLOG" = *broker* ]] && \
+    sed -i -e '/SYSLOG_ENABLED=/ cSYSLOG_ENABLED="true"' /etc/openshift/broker.conf
+  [[ "$CONF_SYSLOG" = *console* ]] && \
+    echo 'SYSLOG_ENABLED="true"' >> /etc/openshift/console.conf
+
   # Set the ServerName for httpd
   sed -i -e "s/ServerName .*$/ServerName ${hostname}/" \
       /etc/httpd/conf.d/000002_openshift_origin_broker_servername.conf
@@ -1940,6 +2008,35 @@ configure_node()
     touch /var/lib/openshift/.settings/v1_cartridge_format
   fi
 
+  if [[ "$CONF_SYSLOG" = *node* ]]; then
+    # send the node platform logs to syslog instead
+    sed -i -e '
+      # comment out existing log settings
+      s/^PLATFORM_LOG_FILE/#PLATFORM_LOG_FILE/
+      s/^PLATFORM_TRACE_LOG_FILE/#PLATFORM_TRACE_LOG_FILE/
+      s/^PLATFORM_LOG_LEVEL/#PLATFORM_LOG_LEVEL/
+      s/^PLATFORM_TRACE_LOG_LEVEL/#PLATFORM_TRACE_LOG_LEVEL/
+      /PLATFORM_TRACE_LOG_LEVEL/ a\
+PLATFORM_LOG_CLASS=SyslogLogger\
+PLATFORM_SYSLOG_THRESHOLD=LOG_DEBUG\
+PLATFORM_SYSLOG_TRACE_ENABLED=1
+    ' /etc/openshift/node.conf
+    echo 'local0.*  /var/log/messages' > /etc/rsyslog.d/openshift-node-platform.conf
+    echo 'local0.*  /var/log/messages' > /etc/rsyslog7.d/openshift-node-platform.conf
+  fi
+  if [[ "$CONF_SYSLOG" = *frontend* ]]; then
+    # send the frontend logs to syslog (in addition to file)
+    sed -i -e 's/^#*\s*OPTIONS="\?\([^"]*\)"\?/OPTIONS="\1 -DOpenShiftFrontendSyslogEnabled"/' /etc/sysconfig/httpd
+  fi
+  if is_true "$CONF_NODE_LOG_CONTEXT"; then
+    # annotate the frontend logs with UUIDs
+    sed -i -e '
+      s/^.*PLATFORM_LOG_CONTEXT_ENABLED=.*/PLATFORM_LOG_CONTEXT_ENABLED=1/
+      s/^.*PLATFORM_LOG_CONTEXT_ATTRS=.*/PLATFORM_LOG_CONTEXT_ATTRS=request_id,app_uuid,container_uuid/
+    ' /etc/openshift/node.conf
+    sed -i -e 's/^#*\s*OPTIONS="\?\([^"]*\)"\?/OPTIONS="\1 -DOpenShiftAnnotateFrontendAccessLog"/' /etc/sysconfig/httpd
+  fi
+
   # Set the ServerName for httpd
   sed -i -e "s/ServerName .*$/ServerName ${hostname}/" \
       /etc/httpd/conf.d/000001_openshift_origin_node_servername.conf
@@ -2148,7 +2245,7 @@ set_defaults()
   # The declare statement below is generated by the following command:
   #
   #   echo declare -A valid_settings=\( $(grep -o 'CONF_[0-9A-Z_]\+' openshift.ks |sort -u |grep -v -F -e CONF_BAZ -e CONF_FOO |sed -e 's/.*/[&]=/') \)
-  declare -A valid_settings=( [CONF_ACTIONS]= [CONF_ACTIVEMQ_ADMIN_PASSWORD]= [CONF_ACTIVEMQ_AMQ_USER_PASSWORD]= [CONF_ACTIVEMQ_HOSTNAME]= [CONF_ACTIVEMQ_REPLICANTS]= [CONF_BIND_KEY]= [CONF_BIND_KEYALGORITHM]= [CONF_BIND_KEYSIZE]= [CONF_BIND_KEYVALUE]= [CONF_BIND_KRB_KEYTAB]= [CONF_BIND_KRB_PRINCIPAL]= [CONF_BROKER_AUTH_SALT]= [CONF_BROKER_HOSTNAME]= [CONF_BROKER_IP_ADDR]= [CONF_BROKER_KRB_AUTH_REALMS]= [CONF_BROKER_KRB_SERVICE_NAME]= [CONF_BROKER_SESSION_SECRET]= [CONF_CARTRIDGES]= [CONF_CDN_LAYOUT]= [CONF_CDN_REPO_BASE]= [CONF_CONSOLE_SESSION_SECRET]= [CONF_DATASTORE_HOSTNAME]= [CONF_DATASTORE_REPLICANTS]= [CONF_DEFAULT_DISTRICTS]= [CONF_DEFAULT_GEAR_CAPABILITIES]= [CONF_DEFAULT_GEAR_SIZE]= [CONF_DISTRICT_MAPPINGS]= [CONF_DOMAIN]= [CONF_FORWARD_DNS]= [CONF_HOSTS_DOMAIN]= [CONF_HOSTS_DOMAIN_KEYFILE]= [CONF_IDLE_INTERVAL]= [CONF_INSTALL_COMPONENTS]= [CONF_INSTALL_METHOD]= [CONF_INTERFACE]= [CONF_JBOSS_REPO_BASE]= [CONF_KEEP_HOSTNAME]= [CONF_KEEP_NAMESERVERS]= [CONF_MCOLLECTIVE_PASSWORD]= [CONF_MCOLLECTIVE_USER]= [CONF_METAPKGS]= [CONF_MONGODB_ADMIN_PASSWORD]= [CONF_MONGODB_ADMIN_USER]= [CONF_MONGODB_BROKER_PASSWORD]= [CONF_MONGODB_BROKER_USER]= [CONF_MONGODB_KEY]= [CONF_MONGODB_NAME]= [CONF_MONGODB_PASSWORD]= [CONF_MONGODB_REPLSET]= [CONF_NAMED_ENTRIES]= [CONF_NAMED_HOSTNAME]= [CONF_NAMED_IP_ADDR]= [CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST]= [CONF_NODE_APACHE_FRONTEND]= [CONF_NODE_HOSTNAME]= [CONF_NODE_IP_ADDR]= [CONF_NODE_PROFILE]= [CONF_NO_JBOSS]= [CONF_NO_JBOSSEAP]= [CONF_NO_JBOSSEWS]= [CONF_NO_NTP]= [CONF_NO_SCRAMBLE]= [CONF_OPENSHIFT_PASSWORD]= [CONF_OPENSHIFT_PASSWORD1]= [CONF_OPENSHIFT_USER]= [CONF_OPENSHIFT_USER1]= [CONF_OPTIONAL_REPO]= [CONF_OSE_ERRATA_BASE]= [CONF_OSE_EXTRA_REPO_BASE]= [CONF_OSE_REPO_BASE]= [CONF_PROFILE_NAME]= [CONF_REPOS_BASE]= [CONF_RHEL_OPTIONAL_REPO]= [CONF_RHEL_REPO]= [CONF_RHN_PASS]= [CONF_RHN_REG_ACTKEY]= [CONF_RHN_REG_NAME]= [CONF_RHN_REG_OPTS]= [CONF_RHN_REG_PASS]= [CONF_RHN_USER]= [CONF_RHSCL_REPO_BASE]= [CONF_ROUTING_PLUGIN]= [CONF_ROUTING_PLUGIN_PASS]= [CONF_ROUTING_PLUGIN_USER]= [CONF_SM_REG_NAME]= [CONF_SM_REG_PASS]= [CONF_SM_REG_POOL]= [CONF_VALID_GEAR_SIZES]= )
+  declare -A valid_settings=( [CONF_ACTIONS]= [CONF_ACTIVEMQ_ADMIN_PASSWORD]= [CONF_ACTIVEMQ_AMQ_USER_PASSWORD]= [CONF_ACTIVEMQ_HOSTNAME]= [CONF_ACTIVEMQ_REPLICANTS]= [CONF_BIND_KEY]= [CONF_BIND_KEYALGORITHM]= [CONF_BIND_KEYSIZE]= [CONF_BIND_KEYVALUE]= [CONF_BIND_KRB_KEYTAB]= [CONF_BIND_KRB_PRINCIPAL]= [CONF_BROKER_AUTH_SALT]= [CONF_BROKER_HOSTNAME]= [CONF_BROKER_IP_ADDR]= [CONF_BROKER_KRB_AUTH_REALMS]= [CONF_BROKER_KRB_SERVICE_NAME]= [CONF_BROKER_SESSION_SECRET]= [CONF_CARTRIDGES]= [CONF_CDN_LAYOUT]= [CONF_CDN_REPO_BASE]= [CONF_CONSOLE_SESSION_SECRET]= [CONF_DATASTORE_HOSTNAME]= [CONF_DATASTORE_REPLICANTS]= [CONF_DEFAULT_DISTRICTS]= [CONF_DEFAULT_GEAR_CAPABILITIES]= [CONF_DEFAULT_GEAR_SIZE]= [CONF_DISTRICT_MAPPINGS]= [CONF_DOMAIN]= [CONF_FORWARD_DNS]= [CONF_HOSTS_DOMAIN]= [CONF_HOSTS_DOMAIN_KEYFILE]= [CONF_IDLE_INTERVAL]= [CONF_INSTALL_COMPONENTS]= [CONF_INSTALL_METHOD]= [CONF_INTERFACE]= [CONF_JBOSS_REPO_BASE]= [CONF_KEEP_HOSTNAME]= [CONF_KEEP_NAMESERVERS]= [CONF_MCOLLECTIVE_PASSWORD]= [CONF_MCOLLECTIVE_USER]= [CONF_METAPKGS]= [CONF_MONGODB_ADMIN_PASSWORD]= [CONF_MONGODB_ADMIN_USER]= [CONF_MONGODB_BROKER_PASSWORD]= [CONF_MONGODB_BROKER_USER]= [CONF_MONGODB_KEY]= [CONF_MONGODB_NAME]= [CONF_MONGODB_PASSWORD]= [CONF_MONGODB_REPLSET]= [CONF_NAMED_ENTRIES]= [CONF_NAMED_HOSTNAME]= [CONF_NAMED_IP_ADDR]= [CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST]= [CONF_NODE_APACHE_FRONTEND]= [CONF_NODE_HOSTNAME]= [CONF_NODE_IP_ADDR]= [CONF_NODE_PROFILE]= [CONF_NO_JBOSS]= [CONF_NO_JBOSSEAP]= [CONF_NO_JBOSSEWS]= [CONF_NO_NTP]= [CONF_NO_SCRAMBLE]= [CONF_OPENSHIFT_PASSWORD]= [CONF_OPENSHIFT_PASSWORD1]= [CONF_OPENSHIFT_USER]= [CONF_OPENSHIFT_USER1]= [CONF_OPTIONAL_REPO]= [CONF_OSE_ERRATA_BASE]= [CONF_OSE_EXTRA_REPO_BASE]= [CONF_OSE_REPO_BASE]= [CONF_PROFILE_NAME]= [CONF_REPOS_BASE]= [CONF_RHEL_OPTIONAL_REPO]= [CONF_RHEL_REPO]= [CONF_RHN_PASS]= [CONF_RHN_REG_ACTKEY]= [CONF_RHN_REG_NAME]= [CONF_RHN_REG_OPTS]= [CONF_RHN_REG_PASS]= [CONF_RHN_USER]= [CONF_RHSCL_REPO_BASE]= [CONF_ROUTING_PLUGIN]= [CONF_ROUTING_PLUGIN_PASS]= [CONF_ROUTING_PLUGIN_USER]= [CONF_SM_REG_NAME]= [CONF_SM_REG_PASS]= [CONF_SM_REG_POOL]= [CONF_VALID_GEAR_SIZES]= [CONF_SYSLOG]= [CONF_NODE_LOG_CONTEXT]=)
   for setting in "${!CONF_@}"
   do
     [[ ${valid_settings[$setting]+1} ]] || abort_install "Unrecognized setting: $setting"
