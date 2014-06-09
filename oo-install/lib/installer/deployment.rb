@@ -1,6 +1,7 @@
 require 'installer/helpers'
 require 'installer/host_instance'
 require 'installer/dns_config'
+require 'installer/broker_global_config'
 require 'set'
 
 module Installer
@@ -8,7 +9,7 @@ module Installer
     include Installer::Helpers
 
     attr_reader :config
-    attr_accessor :dns, :hosts
+    attr_accessor :dns, :hosts, :broker_global, :districts
 
     class << self
       def role_map
@@ -51,6 +52,14 @@ module Installer
       end
       dns_config = deployment.has_key?('DNS') ? deployment['DNS'] : {}
       @dns = Installer::DNSConfig.new(dns_config)
+      broker_global_config = deployment.has_key?('Global') ? deployment['Global'] : {}
+      @broker_global = Installer::BrokerGlobalConfig.new(broker_global_config)
+      @districts = []
+      if deployment.has_key?('Districts') and not deployment['Districts'].nil? and deployment['Districts'].length > 0
+        deployment['Districts'].each do |district|
+          districts << Installer::District.new(district)
+        end
+      end
     end
 
     def brokers
@@ -141,16 +150,84 @@ module Installer
         end
       end
       # Check the host entries
-      if check == :basic
-        if hosts.select{ |h| h.is_valid?(check) == false }.length > 0
-          return false
-        end
-      else
+      if hosts.select{ |h| not h.is_valid?(:basic) }.length > 0
+        return false if check == :basic
         hosts.each do |host_instance|
           errors.concat(host_instance.is_valid?(check))
         end
       end
+      # Check the HA settings
+      if check == :basic
+        return false if not is_ha_valid?(check)
+      else
+        errors.concat(is_ha_valid?(check))
+      end
+      # Check the Broker global config settings
+      if check == :basic
+        return false if not broker_global.is_valid?(check)
+      else
+        errors.concat(broker_global.is_valid?(check))
+      end
+      # Check the district settings
+      if check == :basic
+        return false if not are_districts_valid?
+      else
+        errors.concat(are_districts_valid?(check))
+      end
+      # Still here? Good to go.
       return true if check == :basic
+      errors
+    end
+
+    def are_districts_valid?(check=:basic)
+      errors = []
+      if districts.select{ |d| not d.is_valid?(:basic,nodes,broker_global) }.length > 0
+        return false if check == :basic
+        districts.each do |district|
+          errors.concat(district.is_valid?(check),nodes,broker_global)
+        end
+      end
+      # Make sure no Nodes are in more than one district
+      district_nodes = {}
+      found_dupes    = {}
+      districts.each do |district|
+        district.node_hosts.each do |node_hostname|
+          if district_nodes.has_key?(node_hostname) and not found_dupes.has_key?(node_hostname)
+            return false if check == :basic
+            errors << Installer::DistrictSettingsException.new("Node host '#{node_hostname}' is associated with multiple districts.")
+            district_nodes[node_hostname] = 1
+            found_dupes[node_hostname] = 1
+          end
+        end
+      end
+      # Make sure every node is in a district.
+      orphaned_nodes = nodes.select{ |h| not district_nodes.has_key?(host_instance.host) }
+      if orphaned_nodes.length > 0
+        return false if check == :basic
+        orphaned_nodes.each do |host_instance|
+          errors << Installer::DistrictSettingsException.new("Node host '#{host_instance.host}' is not associated with a district.")
+        end
+      end
+      return true if check == :basic
+      errors
+    end
+
+    def is_ha_valid?(check=:basic)
+      errors = []
+      if not is_ha?
+        return true if check == :basic
+        return errors
+      end
+      load_balancers = hosts.select{ |h| h.is_load_balancer? }
+      db_replica_primaries = hosts.select{ |h| h.is_db_replica_primary? }
+      if (brokers.length == 1 and load_balancer.length != 0) or (brokers.length > 1 and load_balancers.length != 1)
+        return false if check == :basic
+        errors << Installer::DeploymentHAMisconfiguredException.new("There must be one and only one load balancer host for a multi-Broker deployment.")
+      end
+      if (dbservers.length == 1 and db_replica_primaries.length != 0) or (dbservers.length > 1 and db_replica_primaries.length != 1)
+        return false if check == :basic
+        errors << Installer::DeploymentHAMisconfiguredException.new("There must be one and only one datastore replica primary for a replicated datastore deployment.")
+      end
       errors
     end
 
@@ -165,84 +242,20 @@ module Installer
       true
     end
 
+    def is_ha?
+      brokers.length > 0 or mqservers.length > 0 or dbservers.length > 0
+    end
+
     def to_hash
-      { 'Hosts' => hosts.map{ |h| h.to_hash },
-        'DNS' => dns.to_hash,
+      { 'Hosts'     => hosts.map{ |h| h.to_hash },
+        'DNS'       => dns.to_hash,
+        'Global'    => broker_global.to_hash,
+        'Districts' => districts.map{ |d| d.to_hash },
       }
     end
 
     def get_role_list role
       hosts.select{ |h| h.roles.include?(role) }
-    end
-
-    def get_node_profiles_nodes
-      nodes.map {|node| node.node_profile}.compact.uniq
-    end
-
-    def get_node_profiles_all
-      valid_gear_sizes = Set.new
-      valid_gear_sizes.merge(get_node_profiles_nodes)
-      brokers.each do |broker|
-        vgs = broker.valid_gear_sizes
-        valid_gear_sizes.merge(broker.valid_gear_sizes.split(',')) unless (vgs.nil? or vgs.empty?)
-      end
-      return valid_gear_sizes.to_a
-    end
-
-    def get_valid_gear_sizes
-      node_profiles = get_node_profiles_all
-      return node_profiles.empty? ? nil : node_profiles.join(',')
-    end
-
-    def update_valid_gear_sizes!
-      valid_gear_sizes = get_valid_gear_sizes
-      brokers.each do |broker|
-        broker.valid_gear_sizes=valid_gear_sizes
-      end
-      save_to_disk!
-    end
-
-    def get_districts
-      districts = nodes.map {|node| node.district} + brokers.map {|broker| broker.district_mappings.nil? ? nil : broker.district_mappings.keys}.flatten
-      return districts.compact.uniq
-    end
-
-    def get_profile_for_district district
-      brokers.each do |broker|
-        unless (broker.district_mappings.nil? or broker.district_mappings.empty?)
-          broker.district_mappings.each do |d,n|
-            if d == district
-              nodes.each do |node|
-                return node.node_profile if node.host == n[0]
-              end
-            end
-          end
-        end
-      end
-      return nil
-    end
-
-    def update_district_mappings!
-      district_mappings={}
-
-      nodes.each do |node|
-        (district_mappings[node.district] ||= []) << node.host if node.district
-      end
-
-      brokers.each do |broker|
-        unless broker.district_mappings.nil? or broker.district_mappings.empty?
-          district_mappings.merge(broker.district_mappings){|key, oldnodes, newnodes| oldnodes + newnodes}
-        end
-      end
-
-      district_mappings.each do |district,nodes|
-        district_mappings[district] = Set.new(nodes).to_a
-      end
-
-      brokers.each do |broker|
-        broker.district_mappings = district_mappings unless district_mappings.empty?
-      end
-      save_to_disk!
     end
 
     def get_synchronized_attr attr
@@ -277,11 +290,12 @@ module Installer
     end
 
     # A removable host is not the only host in the deployment,
-    # and shares its roles with at least one other host.
+    # shares its roles with at least one other host, and is not
+    # the Broker load balancer or the DB replica primary
     def get_removable_hosts
       return [] if hosts.length <= 1
       removable_hosts = []
-      hosts.each do |host_instance|
+      hosts.select{ |h| not h.is_load_balancer? and not h.is_db_replica_primary? }.each do |host_instance|
         removable = true
         host_instance.roles.each do |role|
           next if get_hosts_by_role(role).length > 1
@@ -302,10 +316,14 @@ module Installer
       unremovable_hosts = []
       hosts.each do |host_instance|
         unremovable = false
-        host_instance.roles.each do |role|
-          next if get_hosts_by_role(role).length > 1
+        if host_instance.is_load_balancer? or host_instance.is_db_replica_primary?
           unremovable = true
-          break
+        else
+          host_instance.roles.each do |role|
+            next if get_hosts_by_role(role).length > 1
+            unremovable = true
+            break
+          end
         end
         if unremovable
           unremovable_hosts << host_instance

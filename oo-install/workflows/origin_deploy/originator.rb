@@ -2,11 +2,18 @@
 
 require 'yaml'
 require 'net/ssh'
+require 'installer'
+require 'installer/helpers'
+require 'installer/config'
 
-SOCKET_IP_ADDR = 3
-VALID_IP_ADDR_RE = Regexp.new('^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')
+include Installer::Helpers
+
+######################################
+# Stage 1: Handle ENV and ARGV input #
+######################################
+
 @puppet_module_name = 'openshift/openshift_origin'
-@puppet_module_ver = '3.0.1'
+@puppet_module_ver = '4.0.0'
 
 # Check ENV for an alternate config file location.
 if ENV.has_key?('OO_INSTALL_CONFIG_FILE')
@@ -26,7 +33,27 @@ end
 if ENV.has_key?('OO_INSTALL_DEBUG') and ENV['OO_INSTALL_DEBUG'] == 'true'
   @ssh_cmd = 'ssh -t -v'
   @scp_cmd = 'scp -v'
+  set_debug(true)
+else
+  set_debug(false)
 end
+
+# If this is the add-a-node scenario, the node to be installed will
+# be passed via the command line
+if ARGV.length > 0
+  if not ARGV[0].nil? and not ARGV[0] == 'nil'
+    @target_node_hostname = ARGV[0]
+  end
+  if not ARGV[1].nil? and ARGV[1] == 'true'
+    @puppet_template_only = true
+  else
+    @puppet_template_only = false
+  end
+end
+
+###############################################
+# Stage 2: Define some locally useful methods #
+###############################################
 
 def env_backup
   @env_backup ||= ENV.to_hash
@@ -80,32 +107,61 @@ def components_list host_instance
   "[" + values.map{ |r| "'#{r}'" }.join(',') + "]"
 end
 
-# SOURCE for which:
-# http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
-def which(cmd)
-  exts = ENV['PATHEXT'] ? ENV['PATHEXT'].split(';') : ['']
-  ENV['PATH'].split(File::PATH_SEPARATOR).each do |path|
-    exts.each { |ext|
-      exe = File.join(path, "#{cmd}#{ext}")
-      return exe if File.executable? exe
-    }
-  end
-  return nil
+#############################################
+# Stage 3: Load and check the configuration #
+#############################################
+
+set_context(:origin)
+
+openshift_config = Installer::Config.new(@config_file)
+if not openshift_config.is_valid?
+  puts "Could not process config file at '#{@config_file}'. Exiting."
+  exit 1
 end
 
-# If this is the add-a-node scenario, the node to be installed will
-# be passed via the command line
-if ARGV.length > 0
-  if not ARGV[0].nil? and not ARGV[0] == 'nil'
-    @target_node_hostname = ARGV[0]
+deployment = openshift_config.get_deployment
+errors = deployment.is_valid?(:full)
+if errors.length > 0
+  puts "The OpenShift deployment configuration has the following errors:"
+  errors.each do |error|
+    puts "  * #{error}"
   end
-  if not ARGV[1].nil? and ARGV[1] == 'true'
-    @puppet_template_only = true
-  else
-    @puppet_template_only = false
+  puts "Rerun the installer to correct these errors."
+  exit 1
+end
+
+subscription = openshift_config.get_subscription
+errors = subscription.is_valid?(:full)
+if errors.length > 0
+  puts "The OpenShift subscription configuration has the following errors:"
+  errors.each do |error|
+    puts "  * #{error}"
+  end
+  puts "Rerun the installer to correct these errors."
+  exit 1
+end
+
+############################################
+# Stage 4: Workflow-specific configuration #
+############################################
+
+# See if the Node to add exists in the config
+host_installation_order = []
+if not @target_node_hostname.nil?
+  deployment.get_hosts_by_role(:node).select{ |h| h.roles.count == 1 and h.host == @target_node_hostname }.each do |host_instance|
+    @target_node_ssh_host = host_instance.ssh_host
+    host_installation_order << host_instance
+    break
+  end
+  if @target_node_ssh_host.nil?
+    puts "The list of nodes in the config file at #{@config_file} does not contain an entry for #{@target_node_hostname}. Exiting."
+    exit 1
   end
 end
-@target_node_ssh_host = nil
+
+###############################################
+# Stage 5: Map config to puppet for each host #
+###############################################
 
 # Default and baked-in config values for the Puppet deployment
 @puppet_map = {
@@ -113,173 +169,40 @@ end
   'jenkins_repo_base' => 'http://pkg.jenkins-ci.org/redhat',
 }
 
-# These values will be set in a Puppet config file
+# These values will be set in all Puppet config files
 @env_input_map = {
-  'subscription_type' => ['install_method'],
-  'repos_base' => ['repos_base'],
-  'os_repo' => ['os_repo'],
-  'jboss_repo_base' => ['jboss_repo_base'],
-  'os_optional_repo' => ['optional_repo'],
+  'subscription_type' => 'install_method',
+  'repos_base'        => 'repos_base',
+  'os_repo'           => 'os_repo',
+  'jboss_repo_base'   => 'jboss_repo_base',
+  'jenkins_repo_base' => 'jenkins_repo_base',
+  'os_optional_repo'  => 'optional_repo',
 }
 
 # Pull values that may have been passed on the command line into the launcher
-@env_input_map.each_pair do |input,target_list|
-  env_key = "OO_INSTALL_#{input.upcase}"
+@env_input_map.each_pair do |env_var,puppet_var|
+  env_key = "OO_INSTALL_#{env_var.upcase}"
   if ENV.has_key?(env_key)
-    target_list.each do |target|
-      @puppet_map[target] = ENV[env_key]
-    end
+    @puppet_map[puppet_var] = ENV[env_key]
   end
 end
 
-@utility_install_order = ['named','datastore','activemq','broker','node']
+# Possible HA Broker Configuration
+if deployment.brokers.length > 1
+  cluster_members  = []
+  cluster_ip_addrs = []
 
-# Maps openshift.sh roles to oo-install deployment components
-@role_map =
-{ 'broker' => [
-    { 'component' => 'broker', 'env_hostname' => 'broker_hostname', 'env_ip_addr' => 'broker_ip_addr',
-      'mcollective_user' => 'mcollective_user', 'mcollective_password' => 'mcollective_password',
-      'mongodb_broker_user' => 'mongodb_broker_user', 'mongodb_broker_password' => 'mongodb_broker_password',
-      'openshift_user' => 'openshift_user1', 'openshift_password' => 'openshift_password1' },
-    { 'component' => 'named', 'env_hostname' => 'named_hostname', 'env_ip_addr' => 'named_ip_addr' },
-  ],
-  'node' => [{ 'component' => 'node', 'env_hostname' => 'node_hostname', 'env_ip_addr' => 'node_ip_addr',
-               'env_ip_interface' => 'conf_node_external_eth_dev',
-               'mcollective_user' => 'mcollective_user', 'mcollective_password' => 'mcollective_password' }],
-  'msgserver' => [{ 'component' => 'activemq', 'env_hostname' => 'activemq_hostname',
-                    'mcollective_user' => 'mcollective_user', 'mcollective_password' => 'mcollective_password' }],
-  'dbserver' => [{ 'component' => 'datastore', 'env_hostname' => 'datastore_hostname',
-                   'mongodb_broker_user' => 'mongodb_broker_user',
-                   'mongodb_broker_password' => 'mongodb_broker_password',
-                   'mongodb_admin_user' => 'mongodb_admin_user',
-                   'mongodb_admin_password' => 'mongodb_admin_password' }],
-}
-
-# Will map hosts to roles
-@hosts = {}
-
-config = YAML.load_file(@config_file)
-
-# Set values from deployment configuration
-@seen_roles = {}
-if config.has_key?('Deployment') and config['Deployment'].has_key?('Hosts') and config['Deployment'].has_key?('DNS')
-  config_hosts = config['Deployment']['Hosts']
-  config_dns = config['Deployment']['DNS']
-
-  named_hosts = []
-  config_hosts.each do |host_info|
-    # Basic config file sanity check
-    ['ssh_host','host','user','roles','ip_addr'].each do |attr|
-      next if not host_info[attr].nil?
-      puts "One of the hosts in the configuration is missing the '#{attr}' setting. Exiting."
-      exit 1
-    end
-
-    # Save the fqdn:ipaddr for potential named use
-    named_hosts << "#{host_info['host']}:#{host_info['ip_addr']}"
-
-    # Map hosts by ssh alias
-    @hosts[host_info['ssh_host']] = host_info
-
-    # Set up the puppet-related ENV variables except node settings
-    host_info['roles'].each do |role|
-      # This addresses an error in older config files
-      if role == 'mqserver'
-        role = 'msgserver'
-      end
-      if not @seen_roles.has_key?(role)
-        @seen_roles[role] = 1
-      elsif not role == 'node'
-        puts "Error: The #{role} role has been assigned to multiple hosts. This is not currently supported. Exiting."
-        exit 1
-      end
-      if role == 'node'
-        if @target_node_hostname == host_info['host']
-          @target_node_ssh_host = host_info['ssh_host']
-        end
-        # Skip other node-oriented config for now.
-        next
-      end
-      @role_map[role].each do |puppet_cfg|
-        @puppet_map[puppet_cfg['env_hostname']] = host_info['host']
-        if puppet_cfg.has_key?('env_ip_addr')
-          if puppet_cfg['env_ip_addr'] == 'named_ip_addr' and host_info.has_key?('named_ip_addr')
-            @puppet_map[puppet_cfg['env_ip_addr']] = host_info['named_ip_addr']
-          else
-            @puppet_map[puppet_cfg['env_ip_addr']] = host_info['ip_addr']
-          end
-        end
-      end
-    end
-  end
-
-  # DNS Settings
-  @puppet_map['domain'] = config_dns['app_domain']
-  # TODO: Awaiting support from puppet module
-  #@puppet_map['hosts_domain'] = ''
-  #@puppet_map['hosts_dns_list'] = ''
-  if 'Y' == config_dns['register_components']
-    if not config_dns.has_key?('component_domain')
-      puts "Error: The config specifies registering OpenShift component hosts with OpenShift DNS, but no OpenShift component host domain has been specified. Exiting."
-      exit 1
-    end
-    if config_dns['component_domain'] == config_dns['app_domain']
-      @puppet_map['register_host_with_named'] = true
-    else
-      # TODO: Awaiting support from puppet module
-      #@puppet_map['hosts_domain'] = config_dns['component_domain']
-      #@puppet_map['hosts_dns_list'] = named_hosts.join(',')
-    end
-  else
-  end
+  @puppet_map['broker_cluster_members'] = "[#{deployment.brokers.
 end
 
-if @hosts.empty?
-  puts "The config file at #{@config_file} does not contain OpenShift deployment information. Exiting."
-  exit 1
-end
+@utility_install_order = ['nameserver','datastore','msgserver','broker','node']
 
-if not @target_node_hostname.nil? and @target_node_ssh_host.nil?
-  puts "The list of nodes in the config file at #{@config_file} does not contain an entry for #{@target_node_hostname}. Exiting."
-  exit 1
-end
-
-# Make sure the per-host config is legit
-@hosts.each_pair do |ssh_host,info|
-  roles = info['roles']
-  duplicate = roles.detect{ |e| roles.count(e) > 1 }
-  if not duplicate.nil?
-    puts "Multiple instances of role type '#{@role_map[duplicate]['role']}' are specified for installation on the same target host (#{ssh_host}).\nThis is not a valid configuration. Exiting."
-    exit 1
-  end
-  if not @target_node_hostname.nil? and @target_node_ssh_host == ssh_host and (roles.length > 1 or not roles[0] == 'node')
-    puts "The specified node to be added also contains other OpenShift components.\nNodes can only be added as standalone components on their own systems. Exiting."
-    exit 1
-  end
-end
-
-# Set the installation order
-host_order = []
-@utility_install_order.each do |order_role|
-  if not order_role == 'node' and not @target_node_ssh_host.nil?
-    next
-  end
-  @hosts.each_pair do |ssh_host,host_info|
-    host_info['roles'].each do |host_role|
-      # This addresses an error in older config files
-      if host_role == 'mqserver'
-        host_role = 'msgserver'
-      end
-      @role_map[host_role].each do |origin_info|
-        if origin_info['component'] == order_role
-          if not @target_node_ssh_host.nil? and not @target_node_ssh_host == ssh_host
-            next
-          end
-          if not host_order.include?(ssh_host)
-            host_order << ssh_host
-          end
-        end
-      end
+# Set the installation order (if the Add a Node workflow didn't already set it)
+if host_installation_order.length == 0
+  @utility_install_order.map{ |r| r.to_sym }.each do |order_role|
+    deployment.get_hosts_by_role(order_role).each do |host_instance|
+      next if host_order.include?(host_instance.host)
+      host_order << host_instance
     end
   end
 end
@@ -290,8 +213,8 @@ if @target_node_ssh_host.nil?
 else
   puts "\nPreparing to add this node to an OpenShift Origin system:\n"
 end
-host_order.each do |ssh_host|
-  puts "  * #{ssh_host}: #{@hosts[ssh_host]['roles'].join(', ')}\n"
+host_installation_order.each do |host_instance|
+  puts "  * #{host_instance.summarize}"
 end
 
 # Make it so

@@ -7,28 +7,34 @@ module Installer
 
     attr_accessor :host, :ip_addr, :named_ip_addr, :ip_interface, :ssh_host,
                   :user, :roles, :install_status, :node_profile, :district,
-                  :valid_gear_sizes, :default_gear_capabilities,
-                  :default_gear_size, :district_mappings,
                   :mcollective_user, :mcollective_password,
                   :mongodb_broker_user, :mongodb_broker_password,
                   :mongodb_admin_user, :mongodb_admin_password,
-                  :openshift_user, :openshift_password
+                  :openshift_user, :openshift_password,
+                  :broker_cluster_load_balancer,
+                  :broker_cluster_virtual_ip_addr,
+                  :mongodb_replica_primary,
+                  :mongodb_replica_key
 
     def self.attrs
       %w{host roles ssh_host user ip_addr named_ip_addr ip_interface
          install_status node_profile district valid_gear_sizes
-         default_gear_capabilities default_gear_size district_mappings
+         default_gear_capabilities default_gear_size
          mcollective_user mcollective_password mongodb_broker_user
          mongodb_broker_password mongodb_admin_user mongodb_admin_password
-         openshift_user openshift_password}.map{ |a| a.to_sym }
+         openshift_user openshift_password broker_cluster_load_balancer
+         broker_cluster_virtual_ip_addr mongodb_replica_primary
+         mongodb_replica_key}.map{ |a| a.to_sym }
     end
 
     def initialize(item={}, init_role=nil)
-      @roles = []
-      @install_status = item.has_key?('state') ? item['state'].to_sym : :new
+      @roles                        = []
+      @install_status               = item.has_key?('state') ? item['state'].to_sym : :new
+      @broker_cluster_load_balancer = item.has_key?('load_balancer') && item['load_balancer'].downcase == 'y'
+      @mongodb_replica_primary      = item.has_key?('db_replica_primary') && item['db_replica_primary'].downcase == 'y'
       self.class.attrs.each do |attr|
-        # Skip install_status here or the value will be nilled out
-        next if attr == :install_status
+        # Skip booleans here or their values will be nilled out
+        next if [:install_status,:broker_cluster_load_balancer,:mongodb_replica_primary].include?(attr)
         value = attr == :roles ? [] : nil
         if item.has_key?(attr.to_s)
           if attr == :roles
@@ -121,6 +127,14 @@ module Installer
       roles.include?(:node)
     end
 
+    def is_load_balancer?
+      broker_cluster_load_balancer
+    end
+
+    def is_db_replica_primary?
+      mongodb_replica_primary
+    end
+
     def has_role?(role)
       roles.include?(role)
     end
@@ -159,6 +173,26 @@ module Installer
         return false if check == :basic
         errors << Installer::HostInstanceIPInterfaceException.new("Host instance '#{host}' has a blank or missing ip interface setting.")
       end
+      if is_load_balancer?
+        if not is_broker?
+          return false if check == :basic
+          errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host}' is configured as a load balancer for an HA broker deployment, but it is not configured as a broker.")
+        end
+        if broker_cluster_virtual_ip_addr.nil? or not is_valid_ip_addr?(broker_cluster_virtual_ip_addr)
+          return false if check == :basic
+          errors << Installer::HostInstanceIPAddressException.new("Host instance '#{host}' has a missing or invalid Broker cluster virtual ip address '#{ip_addr}'.")
+        end
+      end
+      if is_db_replica_primary?
+        if not roles.include?(:dbserver)
+          return false if check == :basic
+          errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host}' is configured as the primary for a datastore replica set, but it is not configured as a datastore.")
+        end
+        if not is_valid_string?(mongodb_replica_key)
+          return false if check == :basic
+          errors << Installer::HostInstanceSettingException.new("Host instance '#{host}' has a missing or invalid MongoDB replica key '#{mongodb_replica_key}'.")
+        end
+      end
       return true if check == :basic
       errors
     end
@@ -193,6 +227,10 @@ module Installer
         next if self.send(attr).nil?
         if attr == :install_status
           output['state'] = self.send(attr).to_s
+        elsif attr == :broker_cluster_load_balancer
+          output['load_balancer'] = (is_load_balancer? ? 'Y' : 'N')
+        elsif attr == :mongodb_replica_primary
+          output['db_replica_primary'] = (is_db_replica_primary? ? 'Y' : 'N')
         else
           output[attr.to_s] = attr == :roles ? self.send(attr).map{ |r| r == :mqserver ? 'msgserver' : r.to_s } : self.send(attr)
         end
@@ -205,6 +243,12 @@ module Installer
       Installer::Deployment.display_order.each do |role|
         next if not roles.include?(role)
         display_roles << Installer::Deployment.role_map[role].chop
+      end
+      if is_load_balancer?
+        display_roles << 'Broker Load Balancer'
+      end
+      if is_db_replica_primary?
+        display_roles << 'DB Replica Primary'
       end
       "#{host} (#{display_roles.join(', ')})"
     end
