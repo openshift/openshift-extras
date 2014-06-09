@@ -163,6 +163,30 @@ module Installer
     end
   end
 
+  class HostInstanceMismatchedSettingsException < Exception
+    def initialize(message="A host instance has conflicting settings.", code=1)
+      super(message, code)
+    end
+  end
+
+  class HostInstanceSettingException < Exception
+    def initialize(message="A host instance has a missing or malformed setting value.", code=1)
+      super(message, code)
+    end
+  end
+
+  class BrokerGlobalSettingsException < Exception
+    def intialize(message="One of the Broker global settings is incorrect.")
+      super(message, code)
+    end
+  end
+
+  class DistrictSettingsException < Exception
+    def intialize(message="One of the District configuration settings is incorrect.")
+      super(message, code)
+    end
+  end
+
   class HostInstanceUnassignedException < Exception
     def initialize(message="A host instance is not configured to any OpenShift roles.", code=1)
       super(message, code)
