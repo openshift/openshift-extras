@@ -344,7 +344,9 @@ module Installer
                say "\nOkay. Adding the #{role_item} role to #{deployment.hosts[0].host}."
                 deployment.hosts[0].add_role(role)
                 create_host_instance = false
-                edit_node_profile_and_district deployment.hosts[0] if role == :node
+                if role == :node
+                  ui_add_node_host_to_district deployment.hosts[0]
+                end
                 edit_service_user_passwords(deployment.hosts[0],role)
               end
             else
@@ -356,7 +358,9 @@ module Installer
                     menu.choice(host_instance.summarize) do
                       say "Okay. Adding the #{role_item} role to #{host_instance.host}"
                       host_instance.add_role(role)
-                      edit_node_profile_and_district host_instance if role == :node
+                      if role == :node
+                        ui_add_node_host_to_district host_instance
+                      end
                       edit_service_user_passwords(host_instance,role)
                     end
                   end
@@ -459,7 +463,9 @@ module Installer
       # Check Broker global settings
       if not deployment.broker_global.is_valid?
         say "\nThe global gear configuration needs to be corrected."
-        #TODO
+        ui_modify_broker_global
+        deployment.save_to_disk!
+        resolved_issues = true
       end
       # Check the HA configuration
       if not deployment.is_ha_valid?
@@ -471,7 +477,7 @@ module Installer
       # Check the districts configuration
       if not deployment.are_districts_valid?
         say "\nThe district configurations are incorrect.\n\n"
-        #TODO
+        ui_modify_districts
       end
       # Now show the current deployment and provide an edit menu
       exit_loop = false
@@ -488,6 +494,8 @@ module Installer
           if deployment.hosts.length > 1
             menu.choice("Add, modify or remove an OpenShift role") { ui_modify_role }
           end
+          menu.choice("Change the global gear size options") { ui_modify_broker_global }
+          menu.choice("Change the Node district configuration") { ui_modify_districts }
           if deployment.brokers.length > 1 or deployment.dbservers.length > 1
             menu.choice("Change the HA configuration settings") { ui_modify_ha }
           end
@@ -679,7 +687,9 @@ module Installer
           hosts_without_role.each do |host_instance|
             menu.choice(host_instance.summarize) {
               host_instance.add_role(target_role)
-              edit_node_profile_and_district host_instance if target_role == :node
+              if target_role == :node
+                ui_add_node_host_to_district host_instance
+              end
               edit_service_user_passwords(host_instance,target_role)
               deployment.save_to_disk!
               say "\nRole #{target_name} has been added to #{host_instance.host}."
@@ -721,7 +731,9 @@ module Installer
             ui_edit_host_instance(nil, target_role)
           else
             target_host.add_role(target_role)
-            edit_node_profile_and_district target_host if target_role == :node
+            if target_role == :node
+              ui_add_node_host_to_district target_host
+            end
             edit_service_user_passwords(target_host,target_role)
           end
           deployment.save_to_disk!
@@ -743,7 +755,9 @@ module Installer
           deployment.hosts.sort_by{ |h| h.summarize }.each do |host_instance|
             menu.choice(host_instance.summarize) {
               host_instance.add_role(role)
-              edit_node_profile_and_district host_instance if role == :node
+              if target_role == :node
+                ui_add_node_host_to_district host_instance
+              end
               edit_service_user_passwords(host_instance,role)
             }
           end
@@ -973,6 +987,265 @@ module Installer
       end
     end
 
+    def ui_modify_broker_global
+      deployment.broker_global.valid_gear_sizes = ask("\nWhat is the complete list of valid gear size names for this deployment? Please provide a comma-delimited list") { |q|
+        q.default = deployment.broker_global.valid_gear_sizes.join(',')
+        # Make sure there's at least one value and no dupes.
+        q.validate = lambda { |p| is_valid_string?(p) and p.split(',').length == p.split(',').map{ |g| g.strip }.uniq.length }
+        q.responses[:not_valid] = "Enter a comma separated string of uniquely named valid gear sizes"
+      }.to_s.split(',').map{ |g| g.strip }
+      deployment.broker_global.user_default_gear_sizes = ask("\nBased on the complete list of valid gears sizes, what is the default set of gear sizes available to users? Please provide a comma-delimited list") { |q|
+        if deployment.broker_global.user_default_gear_sizes.length > 0
+          q.default = deployment.broker_global.user_default_gear_sizes.join(',')
+        else
+          q.default = deployment.broker_global.valid_gear_sizes.join(',')
+        end
+        # Confirm that all default gear sizes are unique and members of the valid gear sizes list.
+        q.validate = lambda { |p|
+          is_valid_string?(p) and
+          p.split(',').map{ |g| g.strip }.select{ |g| deployment.broker_global.valid_gear_sizes.include?(g) }.length == p.split(',') and
+          p.split(',').map{ |g| g.strip }.uniq.length == p.split(',').length
+        }
+        q.responses[:not_valid] = "Enter a comma separated string of unique members from the valid gear sizes list"
+      }.to_s.split(',').map{ |g| g.strip }
+      if deployment.broker_global.user_default_gear_sizes.length == 1
+        deployment.broker_global.default_gear_size = deployment.broker_global.user_default_gear_sizes[0]
+      else
+        choose do |menu|
+          menu.header = "\nSelect a default gear size for applications from the user-available defaults"
+          menu.prompt = "#{translate(:menu_prompt)} "
+          deployment.broker_global.user_default_gear_sizes.each do |gear|
+            menu.choice(gear) { deployment.broker_global.default_gear_size = gear }
+          end
+          menu.hidden("q") { return }
+        end
+      end
+      deployment.save_to_disk!
+    end
+
+    def ui_modify_districts
+      action = :add
+      if deployment.districts.length == 0
+        say "\nCurrently there are no districts defined in this deployment."
+      else
+        list_districts("\nHere are the currently defined districts:\n")
+        choose do |menu|
+          menu.header = "\nSelect an action from below"
+          menu.prompt = "#{translate(:menu_prompt)} "
+          menu.choice("Add a district") { action = :add }
+          menu.choice("Modify a district") { action = :modify }
+          if deployment.districts.length > 1
+            menu.choice("Remove a district") { action = :remove }
+          end
+          menu.hidden("q") { return }
+        end
+      end
+      if action == :add
+        ui_modify_district
+      elsif action == :modify
+        if deployment.districts.length == 1
+          ui_modify_district deployment.districts[0]
+        else
+          choose do |menu|
+            menu.header = "\nSelect a district to modify"
+            menu.prompt = "#{translate(:menu_prompt)} "
+            deployment.districts.sort_by{ |d| d.name }.each do |district|
+              menu.choice(district.name) { ui_modify_district district }
+            end
+            menu.hidden("q") { return }
+          end
+        end
+      elsif action == :remove
+        choose do |menu|
+          menu.header = "\nSelect a district to remove"
+          menu.prompt = "#{translate(:menu_prompt)} "
+          deployment.districts.sort_by{ |d| d.name }.each do |district|
+            menu.choice("#{district.name} (#{district.node_hosts.length} Node hosts)") { ui_remove_district district }
+          end
+          menu.hidden("q") { return }
+        end
+      end
+    end
+
+    def ui_remove_district district
+      if district.node_hosts.length == 0
+        deployment.remove_district! district
+        return
+      end
+      say "\nDistrict #{district.name} is associated with the following Node hosts:"
+      district.node_hosts.sort.each do |hostname|
+        say "  * #{hostname}"
+      end
+      if not concur("\nYou will be asked to select a target District for these Node hosts.\n\nDo you want to continue deleting this district?")
+        return
+      end
+      target_district = nil
+      choose do |menu|
+        menu.header = "\nSelect a target district for the Node hosts. You can make further adjustments to the Node / District assignments later"
+        menu.prompt = "#{translate(:menu_prompt)} "
+        deployment.districts.sort_by{ |d| d.name }.select{ |d| d.name != district.name }.each do |select_district|
+          menu.choice("#{select_district.name} (#{select_district.node_hosts.length} Node hosts)") { target_district = select_district }
+        end
+        menu.hidden("q") { return }
+      end
+      district.node_hosts.each do |hostname|
+        target_district.add_node_host(deployment.get_host_instance_by_hostname(hostname))
+      end
+      deployment.remove_district! district
+    end
+
+    def ui_modify_district(district=nil)
+      new_district = district.nil?
+      if new_district
+        district = Installer::District.new
+      end
+      district.name = ask("\nWhat is the name of the district?") { |q|
+        if not district.name.nil?
+          q.default = district.name
+        end
+        q.validate = lambda { |p| is_valid_string?(p) and not deployment.districts.select{ |d| d.name == p }.length > 0 }
+        q.responses[:not_valid] = "Enter a valid district name that is not already in use."
+      }.to_s
+      choose do |menu|
+        menu.header = "\nWhat gear size will be associated with this district?"
+        menu.prompt = "#{translate(:menu_prompt)} "
+        deployment.broker_global.valid_gear_sizes.each do |size|
+          menu.choice(size) { district.gear_size = size }
+        end
+        menu.hidden("q") { return }
+      end
+      if new_district or deployment.districts.length == 1
+        say "\nBecause this is the only district in the deployment, all Node hosts will automatically be associated with this district. You can change this later by adding more districts."
+        district.node_hosts = deployment.nodes.map{ |h| h.host }
+      else
+        # Node hosts loop
+        first_pass = true
+        loop do
+          action = :add
+          if district.node_hosts.length > 0
+            say "\nCurrently these Node hosts are associated with this district:"
+            district.node_hosts.sort.each do |hostname|
+              say "  * #{hostname}"
+            end
+            question = "\nDo you want to make any more changes to the Node list?"
+            if first_pass
+              question = "\nDo you want to add or remove Nodes from this district?"
+              first_pass = false
+            end
+            if not concur(question)
+              break
+            end
+            choose do |menu|
+              menu.header = "\nChoose an action"
+              menu.prompt = "#{translate(:menu_prompt)} "
+              menu.choice("Add a Node to this district") { action = :add }
+              menu.choice("Move a Node to another district") { action = :move }
+              menu.hidden("q") { return }
+            end
+          else
+            say "\nCurrently there are no Node hosts associated with this district."
+          end
+          if action == :add
+            node_to_add = nil
+            source_district = nil
+            choose do |menu|
+              menu.header = "\nChoose a Node host to add to this district"
+              menu.prompt = "#{translate(:menu_prompt)} "
+              deployment.nodes.sort_by{ |h| h.host }.each do |host_instance|
+                current_district = deployment.get_district_by_node(host_instance)
+                next if current_district.name == district.name
+                display_text = host_instance.host
+                if not current_district.nil?
+                  display_text << " (current district: #{current_district.name})"
+                end
+                menu.choice(display_text) {
+                  node_to_add = host_instance
+                  source_district = current_district
+                }
+              end
+              menu.hidden("q") { return }
+            end
+            if not source_district.nil?
+              ui_move_district_node_host(node_to_add,source_district,district)
+            else
+              district.add_node_host(node_to_add)
+              deployment.save_to_disk!
+            end
+          elsif action == :move
+            node_to_move = nil
+            target_district = nil
+            if district.node_hosts.length == 1
+              node_to_move = deployment.get_host_instance_by_hostname(district.node_hosts[0])
+            else
+              choose do |menu|
+                menu.header = "\nChoose a Node host to move from this district"
+                menu.prompt = "#{translate(:menu_prompt)} "
+                district.node_hosts.each do |hostname|
+                  menu.choice(hostname) { node_to_move = deployment.get_host_instance_by_hostname(hostname) }
+                end
+                menu.hidden("q") { return }
+              end
+            end
+            choose do |menu|
+              menu.header = "\nChoose the district where Node host #{mode_to_move.host} should be assigned"
+              menu.prompt = "#{translate(:menu_prompt)} "
+              deployment.districts.sort_by{ |d| d.name }.select{ |d| d.name != district.name }.each do |district_choice|
+                menu.choice(district_choice.summarize) { target_district = district_choice }
+              end
+              menu.hidden("q") { return }
+            end
+            ui_move_district_node_host(node_to_move,district,target_district)
+          end
+        end
+      end
+    end
+
+    def ui_add_node_host_to_district host_instance
+      return if not host_instance.is_node?
+      current_district = deployment.get_district_by_node host_instance
+      if current_district.nil?
+        if deployment.districts.length == 1
+          deployment.districts[0].add_node_host(host_instance)
+          return
+        end
+      elsif not concur("\nThis host is currently assigned to the #{current_district.name} district. Do you want to change that?")
+        return
+      end
+      target_district = nil
+      choose do |menu|
+        menu.header = "\nChoose the district where Node host #{host_instance.host} should be assigned"
+        menu.prompt = "#{translate(:menu_prompt)} "
+        deployment.districts.sort_by{ |d| d.name }.each do |district_choice|
+          next if not current_district.nil? and district_choice.name == current_district.name
+          menu.choice(district_choice.summarize) { target_district = district_choice }
+        end
+        menu.hidden("q") { return }
+      end
+      if not current_district.nil?
+        ui_move_district_node_host(host_instance,current_district,target_district)
+      else
+        target_district.add_node_host(host_instance)
+      end
+    end
+
+    def ui_move_district_node_host(node_to_move,source_district,target_district)
+      delete_source_district = false
+      if source_district.node_hosts.length == 1
+        if concur("\nThere is only one Node associated with the #{source_district.name} district. If you move it to another district, this district will be automatically deleted. Is it okay to proceed?")
+          delete_source_district = true
+        else
+          return
+        end
+      end
+      target_district.add_node_host(node_to_move)
+      if delete_source_district
+        deployment.delete_district! source_district
+      else
+        source_district.remove_node_host(node_to_move)
+        deployment.save_to_disk!
+      end
+    end
+
     def remove_role source_host, role
       broker_count   = deployment.brokers.length
       dbserver_count = deployment.dbservers.length
@@ -1010,8 +1283,20 @@ module Installer
           say cancel_text
           return false
         end
-      elsif role == :node and not delete_host
-        host_instance #TODO
+      elsif role == :node
+        current_district = deployment.get_district_by_node(source_host)
+        if not current_district.nil?
+          if current_district.node_hosts.length == 1
+            if concur("\nHost #{source_host.host} was the only Node associated with the #{current_district.name} district. If you remove this role, this district will also be removed from the deployment. Is it okay to proceed?")
+              deployment.remove_district!(current_district)
+            else
+              say cancel_text
+              return false
+            end
+          else
+            current_district.remove_node_host(source_host)
+          end
+        end
       end
       if delete_host
         deployment.remove_host_instance!(source_host)
@@ -1228,28 +1513,30 @@ module Installer
         else
           host_instance.named_ip_addr = nil
         end
-        if host_instance.is_broker? and first_role_host
-          valid_gear_sizes = @deployment.get_valid_gear_sizes
-          host_instance.valid_gear_sizes = ask("\nValid Gear Sizes for this deployment: ") { |q|
-            q.default = valid_gear_sizes.nil? ? "small" : valid_gear_sizes
-            q.validate = lambda { |p| is_valid_string?(p) }
-            q.responses[:not_valid] = "Enter a comma separated string of valid gear sizes"
-          }.to_s
-          default_gear_capabilities = host_instance.default_gear_capabilities
-          host_instance.default_gear_capabilities = ask("\nDefault Gear Capabilties for new users: ") { |q|
-            q.default = default_gear_capabilities.nil? ? host_instance.valid_gear_sizes : default_gear_capabilities
-            # verify that default_gear_capabilities is a subset of valid_gear_sizes
-            q.validate = lambda { |p| is_valid_string?(p) && (p.split(',') - host_instance.valid_gear_sizes.split(',')).empty? }
-            q.responses[:not_valid] = "Enter a comma separated string of default gear capabilities for new users.  Must be a subset of the Valid Gear Sizes."
-          }.to_s
-          default_gear_size = host_instance.default_gear_size
-          host_instance.default_gear_size = ask("\nDefault Gear Size for new applications: ") { |q|
-            q.default = default_gear_size.nil? ? host_instance.default_gear_capabilities.split(',').first : default_gear_size
-            q.validate = lambda { |p| is_valid_string?(p) && host_instance.default_gear_capabilities.split(',').include?(p) }
-            q.responses[:not_valid] = "Enter the default gear size for new applications. Must be a member of the Default Gear Capabilities"
-          }.to_s
+        if host_instance.is_node?
+          current_district = deployment.get_district_by_node host_instance
+          choose_district = false
+          if current_district.nil?
+            if deployment.districts.length == 1
+              # Quietly add this node to the sole district
+              deployment.districts[0].add_node_host(host_instance)
+            else
+              choose_district = true
+            end
+          elsif concur("\nThis Node host is currently associated with the #{current_district.name} district. Do you want to change this district assignment?")
+            choose_district = true
+          end
+          if choose_district
+            choose do |menu|
+              menu.header = "\nSelect a destination district for this Node host"
+              menu.prompt = "#{translate(:menu_prompt)} "
+              deployment.districts.select{ |d| d.name != current_district.name }.sort_by{ |d| d.name }.each do |district|
+                menu.choice(district.summarize) { ui_move_district_node_host(host_instance,current_district,district) }
+              end
+              menu.hidden("q") { return_to_main_menu }
+            end
+          end
         end
-        edit_node_profile_and_district host_instance if host_instance.is_node?
         edit_service_user_passwords host_instance
         host_instance_is_valid = true
       end
@@ -1366,40 +1653,6 @@ module Installer
       @deployment.save_to_disk!
     end
 
-    def edit_node_profile_and_district host_instance
-      if @deployment.get_node_profiles_nodes.empty?
-        say "\nA gear profile, or gear size, specifies the parameters of the gears provided by a node host. Note, this only sets the name of the profile.  For more information about gear profiles see: #{get_url 'node_profile_url'}"
-      end
-      node_profiles=@deployment.get_node_profiles_all
-      host_instance.node_profile = ask("\nKnown Profiles: #{node_profiles.join(', ')}\nGear profile for this host: ") { |q|
-        if host_instance.node_profile.nil? or host_instance.node_profile.empty?
-          q.default = node_profiles.empty? ? "small" : node_profiles.first
-        else
-          q.default = host_instance.node_profile
-        end
-        q.validate = lambda { |p| is_valid_string?(p) }
-        q.responses[:not_valid] = "Enter a valid gear profile name"
-      }.to_s
-      districts=@deployment.get_districts
-      if districts.empty?
-        say "\nAn OpenShift district defines a set of node hosts, and the gear profile they share in order to enable transparent migration of gears between hosts.  For more information about districts see #{get_url 'districts_url'}"
-      end
-      host_instance.district = ask("\nKnown Districts: #{districts.join(', ')}\nDistrict this host should belong to: ") { |q|
-        if host_instance.district.nil? or host_instance.district.empty?
-          q.default = "default-#{host_instance.node_profile}"
-        else
-          q.default = host_instance.district
-        end
-        q.validate = lambda do |p|
-          district_profile = @deployment.get_profile_for_district(p)
-          district_profile.nil? || district_profile == host_instance.node_profile
-        end
-        q.responses[:not_valid] = "Selected district is not valid for the selected node profile (#{host_instance.node_profile})."
-      }.to_s
-      @deployment.update_valid_gear_sizes!
-      @deployment.update_district_mappings!
-    end
-
     def manual_ip_info_for_host_instance(host_instance, ip_addrs)
       addr_question = "\nSpecify the IP address that Nodes will use to connect to this host"
       if host_instance.is_node?
@@ -1456,8 +1709,28 @@ module Installer
       else
         say "  * DNS Host IP: #{deployment.dns.dns_host_ip || '[unset]'}"
         say "  * DNSSEC key: #{deployment.dns.dnssec_key || '[unset]'}"
-
       end
+    end
+
+    def list_broker_global
+      say "\nGlobal Gear Settings\n"
+      table = Terminal::Table.new do |t|
+        t.add_row ['Valid Gear Sizes',deployment.broker_global.valid_gear_sizes.join(',')]
+        t.add_row ['User Default Gear Sizes',deployment.broker_global.user_default_gear_sizes.join(',')]
+        t.add_row ['Default Gear Size',deployment.broker_global.default_gear_size]
+      end
+      puts table
+    end
+
+    def list_districts(title="\nNode Districts\n")
+      say title
+      table = Terminal::Table.new do |t|
+        t.add_row ['Name','Gear Size','Nodes']
+        deployments.districts.each do |district|
+          t.add_row [district.name,district.gear_size,district.node_hosts.sort.join(',')]
+        end
+      end
+      puts table
     end
 
     def list_role_host_map

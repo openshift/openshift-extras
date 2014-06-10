@@ -52,13 +52,16 @@ module Installer
       end
       dns_config = deployment.has_key?('DNS') ? deployment['DNS'] : {}
       @dns = Installer::DNSConfig.new(dns_config)
-      broker_global_config = deployment.has_key?('Global') ? deployment['Global'] : {}
+      broker_global_config = deployment.has_key?('Global') ? deployment['Global'] :
+        { 'valid_gear_sizes' => 'small,medium,large', 'user_default_gear_sizes' => 'small,medium', 'default_gear_size' => 'small' }
       @broker_global = Installer::BrokerGlobalConfig.new(broker_global_config)
       @districts = []
       if deployment.has_key?('Districts') and not deployment['Districts'].nil? and deployment['Districts'].length > 0
         deployment['Districts'].each do |district|
           districts << Installer::District.new(district)
         end
+      else
+        districts << Installer::District.new({ 'name' => 'Default', 'gear_size' => 'small', 'node_hosts' => '' })
       end
     end
 
@@ -90,15 +93,32 @@ module Installer
       host_list[0]
     end
 
+    def get_district_by_node host_instance
+      return nil if not host_instance.is_node?
+      districts.each do |district|
+        next if not district.node_hosts.include?(host_instance.host)
+        return district
+      end
+      nil
+    end
+
     def add_host_instance! host_instance
       @hosts << host_instance
-      update_valid_gear_sizes!
-      update_district_mappings!
       save_to_disk!
     end
 
     def remove_host_instance! host_instance
       hosts.delete_if{ |h| h == host_instance }
+      save_to_disk!
+    end
+
+    def add_district! district
+      @districts << district
+      save_to_disk!
+    end
+
+    def remove_district! district
+      districts.delete_if{ |d| d == district }
       save_to_disk!
     end
 
