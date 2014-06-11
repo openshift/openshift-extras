@@ -222,13 +222,10 @@ local_dns_key = nil
 saw_deployment_error = false
 @puppet_templates = []
 @child_pids = []
-host_order.each do |ssh_host|
-  user = @hosts[ssh_host]['user']
-  host = @hosts[ssh_host]['host']
+host_installation_order.each do |host_instance|
+  puts "Deploying host '#{host_instance.host}'"
 
-  puts "Deploying host '#{host}'"
-
-  hostfile = "oo_install_configure_#{host}.pp"
+  hostfile = "oo_install_configure_#{host_instance.host}.pp"
   @puppet_map['roles'] = components_list(@hosts[ssh_host])
 
   logfile = "/tmp/openshift-deploy.log"

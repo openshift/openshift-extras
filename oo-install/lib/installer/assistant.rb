@@ -1,5 +1,7 @@
 require 'highline/import'
+require 'installer/broker_global_config'
 require 'installer/deployment'
+require 'installer/district'
 require 'installer/helpers'
 require 'installer/host_instance'
 require 'installer/subscription'
@@ -188,22 +190,40 @@ module Installer
 
       # Deployment check
       if workflow.check_deployment?
+        force_edit_deployment = false
         if deployment.hosts.length == 0
           ui_create_deployment
           if deployment.is_ha?
             ui_modify_ha
           end
-          ui_show_deployment
-          if concur("\nDo you want to change the deployment info?", translate(:help_basic_deployment))
-            ui_edit_deployment
-          end
         elsif not deployment.is_valid?
           ui_show_deployment(translate(:info_force_run_deployment_setup))
-          ui_edit_deployment
+          force_edit_deployment = true
         else
           ui_show_deployment
-          if concur("\nDo you want to change the deployment info?", translate(:help_basic_deployment))
-            ui_edit_deployment
+        end
+        if force_edit_deployment
+          ui_edit_deployment
+        else
+          show_host_details = false
+          saw_host_details  = false
+          loop do
+            if show_host_details
+              ui_show_full_host_details
+              show_host_details = false
+              saw_host_details  = true
+            end
+            choose do |menu|
+              menu.header = "\nChoose an action:"
+              menu.prompt = "#{translate(:menu_prompt)} "
+              menu.choice("Change the deployment configuration") { ui_show_deployment if saw_host_details; ui_edit_deployment }
+              menu.choice("View the full host configuration details") { show_host_details = true }
+              menu.choice("Proceed with deployment") {}
+              menu.hidden("q") { return_to_main_menu }
+            end
+            if not show_host_details
+              break
+            end
           end
         end
       end
@@ -296,7 +316,10 @@ module Installer
         say "It looks like you are running oo-install for the first time on a new system. The installer will guide you through the process of defining your OpenShift deployment."
       end
       # Now grab the DNS config
-      say "\nFirst off, we will configure some DNS information for this system."
+      puts "\n" + horizontal_rule
+      say "DNS Configuration"
+      puts horizontal_rule
+      say "\n\nFirst off, we will configure some DNS information for this system."
       ui_modify_dns
       say "\nThat's all of the DNS information that we need right now. Next, we need to gather information about the hosts in your OpenShift deployment."
       Installer::Deployment.display_order.each do |role|
@@ -384,7 +407,7 @@ module Installer
         end
       end
 
-      # In basic mode, the mqserver and dbserver host lists are cloned from the broker list
+      # In basic mode, the msgserver and dbserver host lists are cloned from the broker list
       if not advanced_mode?
         deployment.set_basic_hosts!
       else
@@ -485,20 +508,20 @@ module Installer
         if resolved_issues
           ui_show_deployment
         end
-        host_option = deployment.hosts.length > 1 ? "Add, modify or remove a host" : "Add or modify a host"
         choose do |menu|
           menu.header = "\nChoose from the following deployment configuration options"
           menu.prompt = "#{translate(:menu_prompt)} "
           menu.choice("Change the DNS configuration") { ui_modify_dns }
-          menu.choice(host_option) { ui_modify_host }
+          menu.choice("Manage Hosts") { ui_modify_host }
           if deployment.hosts.length > 1
-            menu.choice("Add, modify or remove an OpenShift role") { ui_modify_role }
+            menu.choice("Manage OpenShift Role Assignments") { ui_modify_role }
           end
-          menu.choice("Change the global gear size options") { ui_modify_broker_global }
-          menu.choice("Change the Node district configuration") { ui_modify_districts }
+          menu.choice("Change the Global Gear Settings") { ui_modify_broker_global }
+          menu.choice("Change the Node Districts") { ui_modify_districts }
           if deployment.brokers.length > 1 or deployment.dbservers.length > 1
-            menu.choice("Change the HA configuration settings") { ui_modify_ha }
+            menu.choice("Change the HA Configuration Settings") { ui_modify_ha }
           end
+          menu.choice("Display full Host details") { ui_show_full_host_details }
           menu.choice("Finish editing the deployment configuration") { exit_loop = true }
           menu.hidden("q") { return_to_main_menu }
         end
@@ -507,7 +530,7 @@ module Installer
         end
         resolved_issues = true
       end
-      # In basic mode, the mqserver and dbserver host lists are cloned from the broker list
+      # In basic mode, the msgserver and dbserver host lists are cloned from the broker list
       if not advanced_mode?
         deployment.set_basic_hosts!
       end
@@ -520,9 +543,16 @@ module Installer
         say "\n#{translate(:basic_mode_explanation)}"
       end
       list_dns
+      list_broker_global
+      list_districts
       say "\nRole Assignments"
       list_role_host_map
       say "\nHost Information"
+      list_summarized_host_instances
+    end
+
+    def ui_show_full_host_details
+      say "\nComplete Host Information"
       deployment.hosts.sort_by{ |h| h.host }.each do |host_instance|
         list_host_instance host_instance
       end
@@ -755,7 +785,7 @@ module Installer
           deployment.hosts.sort_by{ |h| h.summarize }.each do |host_instance|
             menu.choice(host_instance.summarize) {
               host_instance.add_role(role)
-              if target_role == :node
+              if role == :node
                 ui_add_node_host_to_district host_instance
               end
               edit_service_user_passwords(host_instance,role)
@@ -771,6 +801,19 @@ module Installer
     def ui_modify_host
       host_action = :modify
       removable_hosts = deployment.get_removable_hosts
+      unremovable_hosts = deployment.get_unremovable_hosts
+      if removable_hosts.length == 0 and deployment.hosts.length > 1
+        say "\nNote that none of the current hosts can be removed for the following reasons:\n\n"
+        deployment.get_unremovable_hosts(true).sort_by{ |g| g[0].host }.each do |group|
+          host_instance = group[0]
+          reasons       = group[1]
+          say "  * #{host_instance.host}"
+          reasons.each do |reason|
+            say "    - #{reason}"
+          end
+        end
+        say "\nTo remove any of these hosts, you must first define new hosts to take these roles."
+      end
       choose do |menu|
         menu.header = removable_hosts.length > 0 ? "\nDo you want to add, modify, or remove a host?" : "\nDo you want to add a host or modify the existing one?"
         menu.prompt = "#{translate(:menu_prompt)} "
@@ -800,19 +843,26 @@ module Installer
           ui_edit_host_instance deployment.hosts[0]
         end
       elsif host_action == :remove
-        unremovable_hosts = deployment.get_unremovable_hosts
-        say("\nThe following host(s) _cannot_ be removed because they contain one or more roles that are not assigned to any other hosts:")
-        unremovable_hosts.sort_by{ |h| h.summarize }.each do |host_instance|
-          puts "    * #{host_instance.summarize}"
+        if unremovable_hosts.length > 0
+          say "\nThe following hosts can not be removed for the reasons listed here:\n\n"
+          deployment.get_unremovable_hosts(true).sort_by{ |g| g[0].host }.each do |group|
+            host_instance = group[0]
+            reasons       = group[1]
+            say "  * #{host_instance.host}"
+            reasons.each do |reason|
+              say "    - #{reason}"
+            end
+          end
+          say "\nTo remove any of these hosts, you must first define new hosts to take these roles."
         end
-        say('To remove any of the above, you will need to assign their role(s) to other hosts, first.')
         choose do |menu|
           menu.header = "\nHere is the list of hosts that can be removed at this point. Please select one"
           menu.prompt = "#{translate(:menu_prompt)} "
           removable_hosts.sort_by{ |h| h.summarize }.each do |host_instance|
             menu.choice(host_instance.summarize) {
-              say "\nHost instance #{host_instance.host} has been removed."
-              deployment.remove_host_instance!(host_instance)
+              if remove_host(host_instance)
+                say "\nHost instance #{host_instance.host} has been removed."
+              end
             }
           end
           menu.hidden("q") { return }
@@ -912,7 +962,7 @@ module Installer
 
     def ui_modify_ha
       if deployment.brokers.length > 1
-        load_balancers         = deployment.hosts.select{ |h| h.is_load_balancer? }
+        load_balancers         = deployment.load_balancers
         new_load_balancer      = nil
         broker_virtual_ip_addr = nil
         if load_balancers.length == 1
@@ -923,12 +973,12 @@ module Installer
             menu.header = "Select a Broker to serve as the primary load-balancing Broker"
             menu.prompt = "#{translate(:menu_prompt)} "
             deployment.brokers.sort_by{ |h| h.summarize }.each do |host_instance|
-              menu.choice(host_instance.summarize) { new_load_balancer = host_instance.host }
+              menu.choice(host_instance.summarize) { new_load_balancer = host_instance }
             end
             menu.hidden("q") { return }
           end
         else
-          new_load_balancer = load_balancers[0].host
+          new_load_balancer = load_balancers[0]
         end
         broker_virtual_ip_addr = ask("\nWhat virtual IP addres should the Broker load balancer listen on?") { |q|
           if not broker_virtual_ip_addr.nil?
@@ -937,15 +987,7 @@ module Installer
           q.validate = lambda { |p| is_valid_ip_addr?(p) }
           q.responses[:not_valid] = "Enter a valid IP address"
         }.to_s
-        deployment.brokers.each do |host_instance|
-          if host_instance.host == new_load_balancer
-            host_instance.broker_cluster_load_balancer = true
-            host_instance.broker_cluster_virtual_ip_addr = broker_virtual_ip_addr
-          else
-            host_instance.broker_cluster_load_balancer = false
-            host_instance.broker_cluster_virtual_ip_addr = nil
-          end
-        end
+        deployment.set_load_balancer(new_load_balancer,broker_virtual_ip_addr)
         deployment.save_to_disk!
       end
       if deployment.dbservers.length > 1
@@ -960,12 +1002,12 @@ module Installer
             menu.header = "Select a host to serve as the Datastore replication primary"
             menu.prompt = "#{translate(:menu_prompt)} "
             deployment.dbservers.sort_by{ |h| h.summarize }.each do |host_instance|
-              menu.choice(host_instance.summarize) { new_db_primary = host_instance.host }
+              menu.choice(host_instance.summarize) { new_db_primary = host_instance }
             end
             menu.hidden("q") { return }
           end
         else
-          new_db_primary = db_primaries[0].host
+          new_db_primary = db_primaries[0]
         end
         db_replica_key = ask("\nWhat DB replica key value should the Datastores use?") { |q|
           if not db_replica_key.nil?
@@ -974,40 +1016,83 @@ module Installer
           q.validate = lambda { |p| is_valid_string?(p) }
           q.responses[:not_valid] = "Enter a valid replica key value"
         }.to_s
-        deployment.dbservers.each do |host_instance|
-          if host_instance.host == new_db_primary
-            host_instance.mongodb_replica_primary = true
-            host_instance.mongodb_replica_key = db_replica_key
-          else
-            host_instance.mongodb_replica_primary = false
-            host_instance.mongodb_replica_key = db_replica_key
-          end
-        end
+        deployment.set_db_replica_primary(new_db_primary,db_replica_key)
         deployment.save_to_disk!
       end
     end
 
     def ui_modify_broker_global
-      deployment.broker_global.valid_gear_sizes = ask("\nWhat is the complete list of valid gear size names for this deployment? Please provide a comma-delimited list") { |q|
+      say "\nNow you will be asked to define names for the various gear sizes that you want to use. These values are associated with user capabilities and Node districts."
+      # Note which gear sizes are in use by districts
+      if deployment.districts.length > 0
+        say "\nThe current Node district / gear size association is as follows:"
+        list_districts(nil,false)
+      end
+      # Now get the superset of validgear sizes.
+      deployment.broker_global.valid_gear_sizes = ask("\nWhat is the complete list of valid gear size names for this deployment? Please provide a comma-delimited list:") { |q|
         q.default = deployment.broker_global.valid_gear_sizes.join(',')
         # Make sure there's at least one value and no dupes.
         q.validate = lambda { |p| is_valid_string?(p) and p.split(',').length == p.split(',').map{ |g| g.strip }.uniq.length }
         q.responses[:not_valid] = "Enter a comma separated string of uniquely named valid gear sizes"
       }.to_s.split(',').map{ |g| g.strip }
-      deployment.broker_global.user_default_gear_sizes = ask("\nBased on the complete list of valid gears sizes, what is the default set of gear sizes available to users? Please provide a comma-delimited list") { |q|
-        if deployment.broker_global.user_default_gear_sizes.length > 0
-          q.default = deployment.broker_global.user_default_gear_sizes.join(',')
+      # Figure out if we have to deal with any districts whose gear size is now bogus.
+      affected_districts = []
+      deployment.districts.each do |district|
+        next if deployment.broker_global.valid_gear_sizes.include?(district.gear_size)
+        affected_districts << district
+      end
+      if affected_districts.length > 0
+        if affected_districts.length > 1
+          affected_list = affected_districts.sort_by{ |d| d.name }.join("\n  * ")
+          say "\nThe following districts are associated with gear sizes that are no longer valid:\n#{affected_list}"
         else
-          q.default = deployment.broker_global.valid_gear_sizes.join(',')
+          say "\nThe #{affected_districts[0].name} district is associated with a gear size that is no longer valid."
         end
-        # Confirm that all default gear sizes are unique and members of the valid gear sizes list.
-        q.validate = lambda { |p|
-          is_valid_string?(p) and
-          p.split(',').map{ |g| g.strip }.select{ |g| deployment.broker_global.valid_gear_sizes.include?(g) }.length == p.split(',') and
-          p.split(',').map{ |g| g.strip }.uniq.length == p.split(',').length
-        }
-        q.responses[:not_valid] = "Enter a comma separated string of unique members from the valid gear sizes list"
-      }.to_s.split(',').map{ |g| g.strip }
+        affected_districts.sort_by{ |d| d.name }.each do |district|
+          choose do |menu|
+            menu.header = "\nChoose a valid gear size for the #{district.name} district"
+            menu.prompt = "#{translate(:menu_prompt)} "
+            deployment.broker_global.valid_gear_sizes.each do |size|
+              menu.choice(size) { district.gear_size = size; say "District updated." }
+            end
+            menu.hidden("q") { return }
+          end
+        end
+      end
+      # Next the user default gear size options.
+      loop do
+        deployment.broker_global.user_default_gear_sizes = ask("\nBased on the complete list of valid gears sizes, what is the default set of gear sizes available to users? Please provide a comma-delimited list:") { |q|
+          if deployment.broker_global.user_default_gear_sizes.length > 0
+            q.default = deployment.broker_global.user_default_gear_sizes.join(',')
+          else
+            q.default = deployment.broker_global.valid_gear_sizes.join(',')
+          end
+          # Confirm that all default gear sizes are unique and members of the valid gear sizes list.
+          q.validate = lambda { |p|
+            is_valid_string?(p) and
+            p.split(',').map{ |g| g.strip }.select{ |g| deployment.broker_global.valid_gear_sizes.include?(g) }.length == p.split(',').length and
+            p.split(',').map{ |g| g.strip }.uniq.length == p.split(',').length
+          }
+          q.responses[:not_valid] = "Enter a comma separated string of unique members from the valid gear sizes list."
+        }.to_s.split(',').map{ |g| g.strip }
+        # Now check to make sure that at least one district is available for the user population
+        available_district = false
+        deployment.districts.each do |district|
+          next if not deployment.broker_global.user_default_gear_sizes.include?(district.gear_size)
+          available_district = true
+          break
+        end
+        if not available_district
+          if deployment.districts.length == 1
+            say "\nThe user-available gear size list does not include '#{deployment.districts[0].gear_size}', which is the gear size associated with the only defined Node district. Please go back and add the '#{deployment.districts[0].gear_size}' gear size to the user-available list."
+          else
+            say "\nNone of the Node districts has a gear size that is included in the user default list. Please go back and add one of these gear sizes to the list of user-available gear sizes: #{deployment.districts.map{ |d| d.gear_size }.uniq.sort.join(', ')}"
+          end
+        else
+          break
+        end
+      end
+      # Finally set a default gear size for users
       if deployment.broker_global.user_default_gear_sizes.length == 1
         deployment.broker_global.default_gear_size = deployment.broker_global.user_default_gear_sizes[0]
       else
@@ -1081,7 +1166,7 @@ module Installer
       end
       target_district = nil
       choose do |menu|
-        menu.header = "\nSelect a target district for the Node hosts. You can make further adjustments to the Node / District assignments later"
+        menu.header = "\nSelect a target district for the displaced Node hosts. You can make fine-grained adjustments to the Node / District assignments later"
         menu.prompt = "#{translate(:menu_prompt)} "
         deployment.districts.sort_by{ |d| d.name }.select{ |d| d.name != district.name }.each do |select_district|
           menu.choice("#{select_district.name} (#{select_district.node_hosts.length} Node hosts)") { target_district = select_district }
@@ -1261,24 +1346,14 @@ module Installer
       end
       if role == :broker and broker_count == 2
         if concur("\nWhen you remove this Broker role, only one Broker instance will remain in the deployment. Is it okay to proceed and remove all HA Broker deployment settings?")
-          deployment.hosts.select{ |h| h.is_load_balancer? }.each do |host_instance|
-            host_instance.broker_cluster_load_balancer = false
-          end
-          deployment.hosts.select{ |h| not h.broker_cluster_virtual_ip_addr.nil? }.each do |host_instance|
-            host_instance.broker_cluster_virtual_ip_addr = nil
-          end
+          deployment.unset_load_balancer
         else
           say cancel_text
           return false
         end
       elsif role == :dbserver and dbserver_count == 2
         if concur("\nWhen you remove this Datastore role, only one Datastore instance will remain in the deployment. Is it okay to proceed and remove all Datastore replication settings for the deployment?")
-          deployment.hosts.select{ |h| h.is_db_replica_primary? }.each do |host_instance|
-            host_instance.mongodb_replica_primary = false
-          end
-          deployment.hosts.select{ |h| not h.mongodb_replica_key.nil? }.each do |host_instance|
-            host_instance.mongodb_replica_key = nil
-          end
+          deployment.unset_db_replica_primary
         else
           say cancel_text
           return false
@@ -1307,6 +1382,53 @@ module Installer
       true
     end
 
+    def remove_host host_instance
+      broker_count      = deployment.brokers.length
+      dbserver_count    = deployment.dbservers.length
+      cancel_text       = "\nOkay; cancelling change."
+      clear_ha_broker   = false
+      clear_ha_dbserver = false
+      if broker_count == 2 and host_instance.is_broker?
+        if concur("\nWhen you remove this host, only one Broker instance will remain in the deployment. Is it okay to proceed and remove all HA Broker deployment settings?")
+          clear_ha_broker = true
+        else
+          say cancel_text
+          return false
+        end
+      end
+      if dbserver_count == 2 and host_instance.is_dbserver?
+        if concur("\nWhen you remove this host, only one Datastore instance will remain in the deployment. Is it okay to proceed and remove all Datastore replication settings for the deployment?")
+          clear_ha_dbserver = true
+        else
+          say cancel_text
+          return false
+        end
+      end
+      if host_instance.is_node?
+        current_district = deployment.get_district_by_node(source_host)
+        if not current_district.nil?
+          if current_district.node_hosts.length == 1
+            if concur("\nThis host is the only Node associated with the #{current_district.name} district. If you remove this host, this district will also be removed from the deployment. Is it okay to proceed?")
+              deployment.remove_district!(current_district)
+            else
+              say cancel_text
+              return false
+            end
+          else
+            current_district.remove_node_host(source_host)
+          end
+        end
+      end
+      if clear_ha_broker
+        deployment.unset_load_balancer
+      end
+      if clear_ha_dbserver
+        deployment.unset_db_replica_primary
+      end
+      deployment.remove_host_instance! host_instance
+      true
+    end
+
     def ui_edit_host_instance(host_instance=nil, role_focus=nil, instances_exist=false)
       puts "\n"
       new_host = host_instance.nil?
@@ -1316,16 +1438,31 @@ module Installer
         say "Modifying host #{host_instance.host}"
       end
       host_instance.install_status = instances_exist ? :completed : :new
-      first_role_host = (not role_focus.nil? and deployment.get_hosts_by_role(role_focus).length == 0)
-      edit_host_instance(host_instance, first_role_host)
+      edit_host_instance(host_instance)
       if new_host
+        ha_brokers_before   = deployment.brokers.length > 1
+        ha_dbservers_before = deployment.dbservers.length > 1
         deployment.add_host_instance! host_instance
+        ha_brokers_now      = deployment.brokers.length > 1
+        ha_dbservers_now    = deployment.dbservers.length > 1
+        if (not ha_brokers_before and ha_brokers_now) or (not ha_dbservers_before and ha_dbservers_now)
+          # Time to gather up the HA config info
+          ui_modify_ha
+        else
+          if ha_brokers_before and not ha_brokers_now
+            # Time to purge the HA config info for brokers
+            deployment.unset_load_balancer
+          end
+          if ha_dbservers_before and not ha_dbservers_now
+            depoyment.unset_db_replica_primary
+          end
+        end
       else
         deployment.save_to_disk!
       end
     end
 
-    def edit_host_instance(host_instance, first_role_host=false)
+    def edit_host_instance(host_instance)
       host_instance_is_valid = false
       while not host_instance_is_valid
         first_pass = true
@@ -1479,9 +1616,8 @@ module Installer
                   menu.header = "Choose a role to add to this host"
                   menu.prompt = "#{translate(:menu_prompt)} "
                   Installer::Deployment.role_map.sort_by{ |k,v| v }.each do |key, name|
-                    if host_instance.has_role?(key)
-                      next
-                    end
+                    next if host_instance.has_role?(key)
+                    next if not advanced_mode? and [:dbserver,:msgserver].include?(key)
                     menu.choice(name.chop) {
                       if key == :nameserver and deployment.nameservers.length > 0
                         dns_host = deployment.nameservers[0]
@@ -1557,14 +1693,14 @@ module Installer
       # set default username and password variables
       user_pass_combos = { :mcollective_user => {
                                :value => 'mcollective',
-                               :roles => [:broker, :node, :mqserver],
+                               :roles => [:broker, :node, :msgserver],
                                :description => 'This is the username shared between broker and node
                                                 for communicating over the mcollective topic
                                                 channels in ActiveMQ. Must be the same on all
                                                 broker and node hosts.'.gsub(/( |\t|\n)+/, " ") },
                            :mcollective_password => {
                                :value => SecureRandom.base64.delete('+/='),
-                               :roles => [:broker, :node, :mqserver],
+                               :roles => [:broker, :node, :msgserver],
                                :description => 'This is the password shared between broker and node
                                                 for communicating over the mcollective topic
                                                 channels in ActiveMQ. Must be the same on all
@@ -1715,19 +1851,26 @@ module Installer
     def list_broker_global
       say "\nGlobal Gear Settings\n"
       table = Terminal::Table.new do |t|
-        t.add_row ['Valid Gear Sizes',deployment.broker_global.valid_gear_sizes.join(',')]
-        t.add_row ['User Default Gear Sizes',deployment.broker_global.user_default_gear_sizes.join(',')]
+        t.add_row ['Valid Gear Sizes',deployment.broker_global.valid_gear_sizes.join(', ')]
+        t.add_row ['User Default Gear Sizes',deployment.broker_global.user_default_gear_sizes.join(', ')]
         t.add_row ['Default Gear Size',deployment.broker_global.default_gear_size]
       end
       puts table
     end
 
-    def list_districts(title="\nNode Districts\n")
-      say title
+    def list_districts(title="\nNode Districts\n", list_nodes=true)
+      if not title.nil?
+        say title
+      end
+      header_row = ['District','Gear Size']
+      header_row << 'Nodes' if list_nodes
       table = Terminal::Table.new do |t|
-        t.add_row ['Name','Gear Size','Nodes']
-        deployments.districts.each do |district|
-          t.add_row [district.name,district.gear_size,district.node_hosts.sort.join(',')]
+        t.add_row header_row
+        t.add_separator
+        deployment.districts.each do |district|
+          body_row = [district.name,district.gear_size]
+          body_row << district.node_hosts.sort.join(',') if list_nodes
+          t.add_row body_row
         end
       end
       puts table
@@ -1776,6 +1919,17 @@ module Installer
           else
             t.add_row [capitalize_attribute(attr), value]
           end
+        end
+      end
+      puts table
+    end
+
+    def list_summarized_host_instances
+      table = Terminal::Table.new do |t|
+        t.add_row ['Hostname','Roles']
+        t.add_separator
+        deployment.hosts.sort_by{ |h| h.host }.each do |host_instance|
+          t.add_row [host_instance.host,host_instance.summarize(true)]
         end
       end
       puts table

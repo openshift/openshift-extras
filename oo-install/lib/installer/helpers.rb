@@ -131,7 +131,7 @@ module Installer
           { 'host' => `hostname`.chomp.strip,
             'ssh_host' => 'localhost',
             'user' => 'root',
-            'roles' => ['mqserver','dbserver','broker','node'],
+            'roles' => ['msgserver','dbserver','broker','node','nameserver'],
             'status' => 'validated',
           }
         )

@@ -119,6 +119,6 @@ en:
     Node: This is where OpenShift applications are hosted. It needs to be accessible by app owners and app users.
   menu_prompt: "Type a selection and press <return>:"
   basic_mode_explanation: |-
-    Note: ActiveMQ, MongoDB and named will all be installed on the Broker.
+    Note: ActiveMQ and MongoDB will be installed on all Broker instances.
     For more flexibility, rerun the installer in advanced mode (-a).
   ip_config_help_text: This IP address information was found with a scan of the target system. If you would prefer to specify the necessary information manually, answer 'No'.

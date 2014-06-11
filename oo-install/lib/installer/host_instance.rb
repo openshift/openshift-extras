@@ -6,7 +6,7 @@ module Installer
     include Installer::Helpers
 
     attr_accessor :host, :ip_addr, :named_ip_addr, :ip_interface, :ssh_host,
-                  :user, :roles, :install_status, :node_profile, :district,
+                  :user, :roles, :install_status,
                   :mcollective_user, :mcollective_password,
                   :mongodb_broker_user, :mongodb_broker_password,
                   :mongodb_admin_user, :mongodb_admin_password,
@@ -18,9 +18,7 @@ module Installer
 
     def self.attrs
       %w{host roles ssh_host user ip_addr named_ip_addr ip_interface
-         install_status node_profile district valid_gear_sizes
-         default_gear_capabilities default_gear_size
-         mcollective_user mcollective_password mongodb_broker_user
+         install_status mcollective_user mcollective_password mongodb_broker_user
          mongodb_broker_password mongodb_admin_user mongodb_admin_password
          openshift_user openshift_password broker_cluster_load_balancer
          broker_cluster_virtual_ip_addr mongodb_replica_primary
@@ -38,7 +36,8 @@ module Installer
         value = attr == :roles ? [] : nil
         if item.has_key?(attr.to_s)
           if attr == :roles
-            value = item[attr.to_s].map{ |role| role == 'msgserver' ? :mqserver : role.to_sym }
+            # Quietly ccorrect older config files by remapping 'mqserver' to 'msgserver'
+            value = item[attr.to_s].map{ |role| role == 'mqserver' ? :msgserver : role.to_sym }
           else
             value = item[attr.to_s]
           end
@@ -107,7 +106,7 @@ module Installer
 
     def is_basic_broker?
       # Basic broker has three roles (and possibly also 'nameserver', but not 'node')
-      is_broker? and roles.include?(:mqserver) and roles.include?(:dbserver) and not is_node?
+      is_broker? and roles.include?(:msgserver) and roles.include?(:dbserver) and not is_node?
     end
 
     def is_broker?
@@ -116,15 +115,19 @@ module Installer
 
     def is_basic_node?
       # This specifically checks for node hosts with no other roles (except possibly 'nameserver') For general use, call 'is_node?' instead.
-      is_node? and not is_broker? and not roles.include?(:mqserver) and not roles.include?(:dbserver)
+      is_node? and not is_broker? and not roles.include?(:msgserver) and not roles.include?(:dbserver)
     end
 
     def is_all_in_one?
-      is_broker? and is_node? and roles.include?(:mqserver) and roles.include?(:dbserver)
+      is_broker? and is_node? and roles.include?(:msgserver) and roles.include?(:dbserver)
     end
 
     def is_node?
       roles.include?(:node)
+    end
+
+    def is_dbserver?
+      roles.include?(:dbserver)
     end
 
     def is_load_balancer?
@@ -198,11 +201,21 @@ module Installer
     end
 
     def add_role role
-      @roles = roles.concat([role]).uniq
+      new_roles = [role]
+      if role == :broker and not advanced_mode?
+        new_roles << :msgserver
+        new_roles << :dbserver
+      end
+      @roles = roles.concat(new_roles).uniq
     end
 
     def remove_role role
-      @roles.delete_if{ |r| r == role }
+      del_roles = [role]
+      if role == :broker and not advanced_mode?
+        del_roles << :msgserver
+        del_roles << :dbserver
+      end
+      @roles.delete_if{ |r| del_roles.include?(r) }
     end
 
     def host_type
@@ -232,13 +245,13 @@ module Installer
         elsif attr == :mongodb_replica_primary
           output['db_replica_primary'] = (is_db_replica_primary? ? 'Y' : 'N')
         else
-          output[attr.to_s] = attr == :roles ? self.send(attr).map{ |r| r == :mqserver ? 'msgserver' : r.to_s } : self.send(attr)
+          output[attr.to_s] = attr == :roles ? self.send(attr).map{ |r| r.to_s } : self.send(attr)
         end
       end
       output
     end
 
-    def summarize
+    def summarize(roles_only=false)
       display_roles = []
       Installer::Deployment.display_order.each do |role|
         next if not roles.include?(role)
@@ -250,7 +263,10 @@ module Installer
       if is_db_replica_primary?
         display_roles << 'DB Replica Primary'
       end
-      "#{host} (#{display_roles.join(', ')})"
+      if roles_only
+        return display_roles.sort.join("\n")
+      end
+      "#{host} (#{display_roles.sort.join(', ')})"
     end
 
     def ssh_target
