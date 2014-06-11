@@ -16,7 +16,7 @@ module Installer
         { :broker     => 'Brokers',
           :nameserver => 'NameServers',
           :node       => 'Nodes',
-          :mqserver   => 'MsgServers',
+          :msgserver  => 'MsgServers',
           :dbserver   => 'DBServers',
         }
       end
@@ -25,14 +25,14 @@ module Installer
         { :broker     => :brokers,
           :nameserver => :nameservers,
           :node       => :nodes,
-          :mqserver   => :mqservers,
+          :msgserver  => :msgservers,
           :dbserver   => :dbservers,
         }
       end
 
       def display_order
         if advanced_mode?
-          return [:broker,:nameserver,:mqserver,:dbserver,:node]
+          return [:broker,:nameserver,:msgserver,:dbserver,:node]
         end
         [:broker,:nameserver,:node]
       end
@@ -73,8 +73,8 @@ module Installer
       get_hosts_by_role :nameserver
     end
 
-    def mqservers
-      get_hosts_by_role :mqserver
+    def msgservers
+      get_hosts_by_role :msgserver
     end
 
     def dbservers
@@ -83,6 +83,48 @@ module Installer
 
     def nodes
       get_hosts_by_role :node
+    end
+
+    def load_balancers
+      hosts.select{ |h| h.is_load_balancer? }
+    end
+
+    def db_replica_primaries
+      hosts.select{ |h| h.is_db_replica_primary? }
+    end
+
+    def set_load_balancer(lb_host_instance=nil,broker_virtual_ip_addr=nil)
+      brokers.each do |host_instance|
+        if not lb_host_instance.nil? and host_instance == lb_host_instance
+          host_instance.broker_cluster_load_balancer = true
+          host_instance.broker_cluster_virtual_ip_addr = broker_virtual_ip_addr
+        else
+          host_instance.broker_cluster_load_balancer = false
+          host_instance.broker_cluster_virtual_ip_addr = nil
+        end
+      end
+    end
+
+    def unset_load_balancer
+      # Calling set_load_balancer without args purges the load balancer settings completely
+      set_load_balancer
+    end
+
+    def set_db_replica_primary(rp_host_instance=nil,db_replica_key=nil)
+      dbservers.each do |host_instance|
+        if not rp_host_instance.nil? and host_instance == rp_host_instance
+          host_instance.mongodb_replica_primary = true
+          host_instance.mongodb_replica_key = db_replica_key
+        else
+          host_instance.mongodb_replica_primary = false
+          host_instance.mongodb_replica_key = db_replica_key
+        end
+      end
+    end
+
+    def unset_db_replica_primary
+      # Calling set_db_replica_primary without args purges the DB replication settings completely
+      set_db_replica_primary
     end
 
     def get_host_instance_by_hostname hostname
@@ -128,14 +170,14 @@ module Installer
     end
 
     def set_basic_hosts!
-      # Zip through the hosts, clean up the list so that all brokers also have mqserver and dbserver roles
-      # Also remove standalone mqserver and dbserver hosts
+      # Zip through the hosts, clean up the list so that all brokers also have msgserver and dbserver roles
+      # Also remove standalone msgserver and dbserver hosts
       to_delete = []
       hosts.each do |host_instance|
         dns_host = host_instance.has_role?(:nameserver)
         if host_instance.roles.include?(:broker)
-          # Broker hosts (which may also contain a node) get mqserver and dbserver as well
-          host_instance.roles = [:mqserver,:dbserver].concat(host_instance.roles).uniq
+          # Broker hosts (which may also contain a node) get msgserver and dbserver as well
+          host_instance.roles = [:msgserver,:dbserver].concat(host_instance.roles).uniq
         elsif host_instance.roles.include?(:node)
           # Node hosts (which don't include brokers) get any other roles removed
           host_instance.roles = dns_host ? [:node,:nameserver] : [:node]
@@ -221,7 +263,7 @@ module Installer
         end
       end
       # Make sure every node is in a district.
-      orphaned_nodes = nodes.select{ |h| not district_nodes.has_key?(host_instance.host) }
+      orphaned_nodes = nodes.select{ |h| get_district_by_node(h).nil? }
       if orphaned_nodes.length > 0
         return false if check == :basic
         orphaned_nodes.each do |host_instance|
@@ -238,9 +280,8 @@ module Installer
         return true if check == :basic
         return errors
       end
-      load_balancers = hosts.select{ |h| h.is_load_balancer? }
       db_replica_primaries = hosts.select{ |h| h.is_db_replica_primary? }
-      if (brokers.length == 1 and load_balancer.length != 0) or (brokers.length > 1 and load_balancers.length != 1)
+      if (brokers.length == 1 and load_balancers.length != 0) or (brokers.length > 1 and load_balancers.length != 1)
         return false if check == :basic
         errors << Installer::DeploymentHAMisconfiguredException.new("There must be one and only one load balancer host for a multi-Broker deployment.")
       end
@@ -263,7 +304,7 @@ module Installer
     end
 
     def is_ha?
-      brokers.length > 0 or mqservers.length > 0 or dbservers.length > 0
+      brokers.length > 0 or msgservers.length > 0 or dbservers.length > 0
     end
 
     def to_hash
@@ -331,22 +372,37 @@ module Installer
 
     # An unremovable host is the only host in the deployment,
     # or a host with a role that no other host has.
-    def get_unremovable_hosts
-      return hosts if hosts.length == 1
+    def get_unremovable_hosts(with_explanation=false)
+      if hosts.length == 1
+        if not with_explanation
+          return hosts
+        else
+          return [hosts[0], ["is the only host in the deployment"]]
+        end
+      end
       unremovable_hosts = []
       hosts.each do |host_instance|
         unremovable = false
-        if host_instance.is_load_balancer? or host_instance.is_db_replica_primary?
+        reasons = []
+        if host_instance.is_load_balancer?
+          reasons << "is the load-balancing Broker for this multi-Broker deployment"
           unremovable = true
-        else
-          host_instance.roles.each do |role|
-            next if get_hosts_by_role(role).length > 1
-            unremovable = true
-            break
-          end
+        end
+        if host_instance.is_db_replica_primary?
+          reasons << "is the primary DB instance in this replicated DB deployment"
+          unremovable = true
+        end
+        host_instance.roles.each do |role|
+          next if get_hosts_by_role(role).length > 1
+          reasons << "is the only #{self.class.role_map[role].chop} in this deployment"
+          unremovable = true
         end
         if unremovable
-          unremovable_hosts << host_instance
+          if not with_explanation
+            unremovable_hosts << host_instance
+          else
+            unremovable_hosts << [host_instance, reasons]
+          end
         end
       end
       unremovable_hosts

@@ -47,8 +47,11 @@ module Installer
       # Make sure all user default gears exist in the valid gears list
       bogus_sizes = user_default_gear_sizes.select{ |s| not valid_gear_sizes.include?(s) }
       if bogus_sizes.length > 0
+        return false if check == :basic
         errors << Installer::BrokerGlobalSettingsException.new("One or more user default gear sizes is not included in the valid gear sizes")
       end
+      return true if check == :basic
+      errors
     end
 
     def to_hash

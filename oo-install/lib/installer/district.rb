@@ -26,7 +26,7 @@ module Installer
 
     def is_valid?(check=:basic,node_instances,broker_global)
       errors = []
-      if not is_valid_string?(profile_name)
+      if not is_valid_string?(name)
         return false if check == :basic
         errors << Installer::DistrictSettingsException.new("One of the districts has an invalid or unset name.")
       end
