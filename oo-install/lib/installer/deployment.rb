@@ -93,13 +93,13 @@ module Installer
       hosts.select{ |h| h.is_db_replica_primary? }
     end
 
-    def set_load_balancer(lb_host_instance=nil,broker_virtual_ip_addr=nil)
+    def set_load_balancer(lb_host_instance=nil,broker_cluster_virtual_ip_addr=nil)
       brokers.each do |host_instance|
         if not lb_host_instance.nil? and host_instance == lb_host_instance
-          host_instance.broker_cluster_load_balancer = true
-          host_instance.broker_cluster_virtual_ip_addr = broker_virtual_ip_addr
+          host_instance.broker_cluster_load_balancer   = true
+          host_instance.broker_cluster_virtual_ip_addr = broker_cluster_virtual_ip_addr
         else
-          host_instance.broker_cluster_load_balancer = false
+          host_instance.broker_cluster_load_balancer   = false
           host_instance.broker_cluster_virtual_ip_addr = nil
         end
       end
@@ -114,10 +114,10 @@ module Installer
       dbservers.each do |host_instance|
         if not rp_host_instance.nil? and host_instance == rp_host_instance
           host_instance.mongodb_replica_primary = true
-          host_instance.mongodb_replica_key = db_replica_key
+          host_instance.mongodb_replica_key     = db_replica_key
         else
           host_instance.mongodb_replica_primary = false
-          host_instance.mongodb_replica_key = db_replica_key
+          host_instance.mongodb_replica_key     = db_replica_key
         end
       end
     end
@@ -276,19 +276,64 @@ module Installer
 
     def is_ha_valid?(check=:basic)
       errors = []
-      if not is_ha?
-        return true if check == :basic
-        return errors
+      if (brokers.length == 1 and load_balancers.length != 0)
+        return false if check == :basic
+        errors << Installer::DeploymentHAMisconfiguredException.new("A Broker load balancer should not be provided for a single-Broker deployment.")
       end
-      db_replica_primaries = hosts.select{ |h| h.is_db_replica_primary? }
-      if (brokers.length == 1 and load_balancers.length != 0) or (brokers.length > 1 and load_balancers.length != 1)
+      if (brokers.length > 1 and load_balancers.length != 1)
         return false if check == :basic
         errors << Installer::DeploymentHAMisconfiguredException.new("There must be one and only one load balancer host for a multi-Broker deployment.")
       end
-      if (dbservers.length == 1 and db_replica_primaries.length != 0) or (dbservers.length > 1 and db_replica_primaries.length != 1)
+      if (dbservers.length == 1 and db_replica_primaries.length != 0)
         return false if check == :basic
-        errors << Installer::DeploymentHAMisconfiguredException.new("There must be one and only one datastore replica primary for a replicated datastore deployment.")
+        errors << Installer::DeploymentHAMisconfiguredException.new("A DB replica primary should not be provided for a single-DB server deployment.")
       end
+      if (dbservers.length > 1 and db_replica_primaries.length != 1)
+        return false if check == :basic
+        errors << Installer::DeploymentHAMisconfiguredException.new("There must be one and only one DB replica primary for a replicated DB deployment.")
+      end
+      db_replication = dbservers.length > 1
+      seen_db_keys   = {}
+      hosts.each do |host_instance|
+        if host_instance.is_load_balancer?
+          if not host_instance.is_broker?
+            return false if check == :basic
+            errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host_instance.host}' is configured as a load balancer for an HA broker deployment, but it is not configured as a Broker.")
+          end
+          if host_instance.broker_cluster_virtual_ip_addr.nil? or not is_valid_ip_addr?(host_instance.broker_cluster_virtual_ip_addr)
+            return false if check == :basic
+            errors << Installer::HostInstanceIPAddressException.new("Host instance '#{host_instance.host}' has a missing or invalid Broker cluster virtual ip address '#{host_instance.broker_cluster_virtual_ip_addr}'.")
+          end
+        elsif not host_instance.broker_cluster_virtual_ip_addr.nil?
+          return false if check == :basic
+          errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host_instance.host}' has a Broker load-balancer virtual IP address set, but it is not configured as a Broker load balancer.")
+        end
+        if host_instance.is_db_replica_primary? and not host_instance.is_dbserver?
+          return false if check == :basic
+          errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host_instance.host}' is configured as a DB replica primary for a replicated DB deployment, but it is not configured as a DB server.")
+        end
+        if host_instance.is_dbserver?
+          if db_replication
+            if host_instance.mongodb_replica_key.nil?
+              return false if check == :basic
+              errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host_instance.host}' is a DB server in a DB replicated deployment, but it has an unset DB replica key value.")
+            else
+              seen_db_keys[host_instance.mongodb_replica_key] = 1
+            end
+          elsif not db_replication and not host_instance.mongodb_replica_key.nil?
+            return false if check == :basic
+            errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host_instance.host}' is the only DB server in a non-replicated DB deployment, but it has a set DB replica key value.")
+          end
+        elsif not host_instance.mongodb_replica_key.nil?
+          return false if check == :basic
+          errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host_instance.host}' has a DB replica key set, but it is not configured as a DB server.")
+        end
+      end
+      if db_replication and seen_db_keys.keys.length > 1
+        return false if check == :basic
+        errors << Installer::DeploymentHAMisconfiguredException.new("The DB replication key values used on the DB server hosts do not all match. They must be identical.")
+      end
+      return true if check == :basic
       errors
     end
 
@@ -384,17 +429,25 @@ module Installer
       hosts.each do |host_instance|
         unremovable = false
         reasons = []
-        if host_instance.is_load_balancer?
+        # If this is the load balancer, but removing this host will leave the deployment
+        # with only one Broker, we're okay to remove this.
+        if host_instance.is_load_balancer? and brokers.length > 2
           reasons << "is the load-balancing Broker for this multi-Broker deployment"
           unremovable = true
         end
-        if host_instance.is_db_replica_primary?
+        # If this is the DB replica primary, but removing this host will leave the deployment
+        # with only one DBServer, we're okay to remove this.
+        if host_instance.is_db_replica_primary? and dbservers.length > 2
           reasons << "is the primary DB instance in this replicated DB deployment"
           unremovable = true
         end
         host_instance.roles.each do |role|
           next if get_hosts_by_role(role).length > 1
-          reasons << "is the only #{self.class.role_map[role].chop} in this deployment"
+          if role == :nameserver
+            reasons << "is the DNS server for this deployment"
+          else
+            reasons << "is the only #{self.class.role_map[role].chop} in this deployment"
+          end
           unremovable = true
         end
         if unremovable
@@ -406,6 +459,12 @@ module Installer
         end
       end
       unremovable_hosts
+    end
+
+    # A removable host whatever is left after you factor out the unremovable ones.
+    def get_removable_hosts
+      unremovable_hosts = get_unremovable_hosts
+      hosts.select{ |h| not unremovable_hosts.include?(h) }
     end
   end
 end

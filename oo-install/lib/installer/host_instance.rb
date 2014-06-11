@@ -45,7 +45,7 @@ module Installer
         self.send("#{attr}=", value)
       end
       if not init_role.nil?
-        @roles = @roles.concat([init_role.to_sym]).uniq
+        add_role init_role
       end
     end
 
@@ -142,6 +142,9 @@ module Installer
       roles.include?(role)
     end
 
+    # NOTE: HA-related validation is tested at the deployment level, not here at the
+    # host instance level. Therefore do not add broker cluster or DB replication related
+    # validation tests here.
     def is_valid?(check=:basic)
       errors = []
       if not is_valid_hostname?(host) or host == 'localhost'
@@ -175,26 +178,6 @@ module Installer
       if [:origin, :origin_vm].include?(get_context) and is_node? and not is_valid_string?(ip_interface)
         return false if check == :basic
         errors << Installer::HostInstanceIPInterfaceException.new("Host instance '#{host}' has a blank or missing ip interface setting.")
-      end
-      if is_load_balancer?
-        if not is_broker?
-          return false if check == :basic
-          errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host}' is configured as a load balancer for an HA broker deployment, but it is not configured as a broker.")
-        end
-        if broker_cluster_virtual_ip_addr.nil? or not is_valid_ip_addr?(broker_cluster_virtual_ip_addr)
-          return false if check == :basic
-          errors << Installer::HostInstanceIPAddressException.new("Host instance '#{host}' has a missing or invalid Broker cluster virtual ip address '#{ip_addr}'.")
-        end
-      end
-      if is_db_replica_primary?
-        if not roles.include?(:dbserver)
-          return false if check == :basic
-          errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host}' is configured as the primary for a datastore replica set, but it is not configured as a datastore.")
-        end
-        if not is_valid_string?(mongodb_replica_key)
-          return false if check == :basic
-          errors << Installer::HostInstanceSettingException.new("Host instance '#{host}' has a missing or invalid MongoDB replica key '#{mongodb_replica_key}'.")
-        end
       end
       return true if check == :basic
       errors

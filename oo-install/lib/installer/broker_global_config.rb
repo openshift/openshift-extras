@@ -7,9 +7,9 @@ module Installer
     attr_accessor :user_default_gear_sizes, :default_gear_size, :valid_gear_sizes
 
     def initialize broker_global_config
-      @user_default_gear_sizes = broker_global_config['user_default_gear_sizes'].split(',').map{ |s| s.strip }
+      @valid_gear_sizes = broker_global_config['valid_gear_sizes'].split(',').map{ |s| s.strip }.uniq
+      @user_default_gear_sizes = broker_global_config['user_default_gear_sizes'].split(',').map{ |s| s.strip }.uniq
       @default_gear_size = broker_global_config['default_gear_size']
-      @valid_gear_sizes = broker_global_config['valid_gear_sizes'].split(',').map{ |s| s.strip }
     end
 
     def add_valid_gear_size(size)
