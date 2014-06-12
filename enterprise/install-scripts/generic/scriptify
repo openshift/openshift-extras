@@ -1,8 +1,10 @@
 #!/bin/bash
 
+# Insert a shebang, delete the kickstart-specific portion,
+# and make sure that the last command returns true.
 sed -e '1i #!/bin/bash -x
 /^#Begin Kickstart Script/,/^set -x/ d
-/^%end/ d
+/^%end/ c:
 ' $1 > $2
 
 sed -i -e 's/^\s*environment=ks/environment=sh/' $2
