@@ -15,7 +15,8 @@ module Installer
                   :broker_cluster_virtual_host,
                   :broker_cluster_virtual_ip_addr,
                   :mongodb_replica_primary,
-                  :mongodb_replica_key
+                  :mongodb_replica_key,
+                  :msgserver_cluster_password
 
     def self.attrs
       %w{host roles ssh_host user ip_addr named_ip_addr ip_interface
@@ -23,7 +24,7 @@ module Installer
          mongodb_broker_password mongodb_admin_user mongodb_admin_password
          openshift_user openshift_password broker_cluster_load_balancer
          broker_cluster_virtual_host broker_cluster_virtual_ip_addr
-         mongodb_replica_primary mongodb_replica_key}.map{ |a| a.to_sym }
+         mongodb_replica_primary mongodb_replica_key msgserver_cluster_password}.map{ |a| a.to_sym }
     end
 
     def initialize(item={}, init_role=nil)
@@ -125,6 +126,10 @@ module Installer
 
     def is_node?
       roles.include?(:node)
+    end
+
+    def is_msgserver?
+      roles.include?(:msgserver)
     end
 
     def is_dbserver?

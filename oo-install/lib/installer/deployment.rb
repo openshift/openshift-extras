@@ -129,6 +129,20 @@ module Installer
       set_db_replica_primary
     end
 
+    def set_msgserver_cluster_password(password=nil)
+      hosts.each do |host_instance|
+        if host.is_msgserver?
+          host_instance.msgserver_cluster_password = password
+        else
+          host_instance.msgserver_cluster_password = nil
+        end
+      end
+    end
+
+    def unset_msgserver_cluster_password
+      set_msgserver_cluster_password
+    end
+
     def get_host_instance_by_hostname hostname
       host_list = @hosts.select{ |h| h.host == hostname }
       if host_list.nil? or host_list.length == 0
@@ -317,8 +331,10 @@ module Installer
         return false if check == :basic
         errors << Installer::DeploymentHAMisconfiguredException.new("There must be one and only one DB replica primary for a replicated DB deployment.")
       end
-      db_replication = dbservers.length > 1
-      seen_db_keys   = {}
+      db_replication    = dbservers.length > 1
+      seen_db_keys      = {}
+      msgserver_cluster = msgservers.length > 1
+      seen_msgserver_passwords = {}
       hosts.each do |host_instance|
         if host_instance.is_load_balancer?
           if not host_instance.is_broker?
@@ -363,10 +379,30 @@ module Installer
           return false if check == :basic
           errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host_instance.host}' has a DB replica key set, but it is not configured as a DB server.")
         end
+        if host_instance.is_msgserver?
+          if msgserver_cluster
+            if host_instance.msgserver_cluster_password.nil?
+              return false if check == :basic
+              errors << Installer::HostInstanceMismatchedSettingsException.new("MsgServer instance '#{host_instance.host}' is part of a clustered MsgServer deployment, but is missing the 'msgserver_cluster_password' setting.")
+            else
+              seen_msgserver_passwords[host_instance.msgserver_cluster_password] = 1
+            end
+          elsif not host_instance.msgserver_cluster_password.nil?
+            return false if check == :basic
+            errors << Installer::HostInstanceMismatchedSettingsException.new("MsgServer instance '#{host_instance.host}' has a MsgServer password set, but it is not necessary to set a MsgServer password in a non-clustered MsgServer deployment.")
+          end
+        elsif not host_instance.msgserver_cluster_password.nil?
+          return false if check == :basic
+          errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host_instance.host}' has a MsgServer password set, but it is not configured as a MsgServer.")
+        end
       end
       if db_replication and seen_db_keys.keys.length > 1
         return false if check == :basic
         errors << Installer::DeploymentHAMisconfiguredException.new("The DB replication key values used on the DB server hosts do not all match. They must be identical.")
+      end
+      if msgserver_cluster and seen_msgserver_passwords.length > 1
+        return false if check == :basic
+        errors << Installer::DeploymentHAMisconfiguredException.new("The MsgServer cluster password values used on the MsgServer hosts do not all match. They must be identical.")
       end
       return true if check == :basic
       errors

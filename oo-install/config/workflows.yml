@@ -43,6 +43,7 @@ Repositories:
 RequiredComponents:
   - channel:rhel:optional
   - pkg:all:puppet
+  - pkg:all:openssh-clients
   - pkg:broker:bind
 IncompatibleComponents:
   - pkg:all:firewalld
@@ -69,6 +70,7 @@ Repositories:
 RequiredComponents:
   - channel:rhel:optional
   - pkg:all:puppet
+  - pkg:all:openssh-clients
   - pkg:broker:bind
 IncompatibleComponents:
   - pkg:all:firewalld
@@ -99,7 +101,8 @@ Repositories:
   - puppet_repo_rpm
 RequiredComponents:
   - channel:rhel:optional
-  - util:all:puppet
+  - pkg:all:puppet
+  - pkg:all:openssh-clients
 IncompatibleComponents:
   - pkg:all:firewalld
 ---
