@@ -887,15 +887,16 @@ module Installer
       if not deployment.dns.deploy_dns?
         if remove_role(deployment.nameservers[0], :nameserver)
           deployment.dns.register_components = false
-          deployment.dns.component_domain = nil
+          deployment.dns.component_domain    = nil
           app_domain_q << "(Since you are using an existing DNS, make sure that this value corresponds with the dynamic zone configured on that DNS service.): "
         else
           deployment.dns.deploy_dns = true
         end
       end
       if deployment.dns.deploy_dns?
-        deployment.dns.dns_host_ip = nil
-        deployment.dns.dnssec_key = nil
+        deployment.dns.dns_host_name = nil
+        deployment.dns.dns_host_ip   = nil
+        deployment.dns.dnssec_key    = nil
       end
       deployment.dns.app_domain = ask(app_domain_q) { |q|
         if not deployment.dns.app_domain.nil?
@@ -925,6 +926,13 @@ module Installer
           deployment.dns.component_domain = nil
         end
       else
+        deployment.dns.dns_host_name = ask("\nWhat is the hostname of the existing DNS server? ") { |q|
+          if not deployment.dns.dns_host_name.nil?
+            q.default = deployment.dns.dns_host_name
+          end
+          q.validate = lambda { |p| is_valid_hostname?(p) and not p == 'localhost' }
+          q.responses[:not_valid] = "Enter a valid hostname for the existing DNS server."
+        }.to_s
         deployment.dns.dns_host_ip = ask("\nWhat is the IP address of the existing DNS server? ") { |q|
           if not deployment.dns.dns_host_ip.nil?
             q.default = deployment.dns.dns_host_ip
@@ -976,8 +984,10 @@ module Installer
         load_balancers                 = deployment.load_balancers
         new_load_balancer              = nil
         broker_cluster_virtual_ip_addr = nil
+        broker_cluster_virtual_host    = nil
         if load_balancers.length == 1
           broker_cluster_virtual_ip_addr = load_balancers[0].broker_cluster_virtual_ip_addr
+          broker_cluster_virtual_host    = load_balancers[0].broker_cluster_virtual_host
         end
         if load_balancers.length != 1 or concur("\nYou have currently selected #{load_balancers[0].host} as your load-balancing Broker. Do you want to change that?")
           choose do |menu|
@@ -991,14 +1001,15 @@ module Installer
         else
           new_load_balancer = load_balancers[0]
         end
-        broker_cluster_virtual_ip_addr = ask("\nWhat virtual IP addres should the Broker load balancer listen on? ") { |q|
+        broker_cluster_virtual_host = edit_host_fqdn(broker_cluster_virtual_host,true)
+        broker_cluster_virtual_ip_addr = ask("\nWhat virtual IP address should the Broker load balancer listen on? ") { |q|
           if not broker_cluster_virtual_ip_addr.nil?
             q.default = broker_cluster_virtual_ip_addr
           end
           q.validate = lambda { |p| is_valid_ip_addr?(p) }
           q.responses[:not_valid] = "Enter a valid IP address"
         }.to_s
-        deployment.set_load_balancer(new_load_balancer,broker_cluster_virtual_ip_addr)
+        deployment.set_load_balancer(new_load_balancer,broker_cluster_virtual_ip_addr,broker_cluster_virtual_host)
         deployment.save_to_disk!
       end
       if deployment.dbservers.length > 1
@@ -1008,9 +1019,9 @@ module Installer
         if db_primaries.length == 1
           db_replica_key = db_primaries[0].mongodb_replica_key
         end
-        if db_primaries.length != 1 or concur("\nYou have currently selected #{db_primaries[0].host} as your Datastore replication primary. Do you want to change that?")
+        if db_primaries.length != 1 or concur("\nYou have currently selected #{db_primaries[0].host} as your DB replication primary. Do you want to change that?")
           choose do |menu|
-            menu.header = "Select a host to serve as the Datastore replication primary"
+            menu.header = "Select a host to serve as the DB replication primary"
             menu.prompt = "#{translate(:menu_prompt)} "
             deployment.dbservers.sort_by{ |h| h.summarize }.each do |host_instance|
               menu.choice(host_instance.summarize) { new_db_primary = host_instance }
@@ -1020,10 +1031,13 @@ module Installer
         else
           new_db_primary = db_primaries[0]
         end
-        db_replica_key = ask("\nWhat DB replica key value should the Datastores use? ") { |q|
-          if not db_replica_key.nil?
-            q.default = db_replica_key
-          end
+        replica_key_q = "\nWhat replica key value should the DB servers use? "
+        if db_replica_key.nil?
+          replica_key_q << ' Press <enter> to accept the auto-generated key or type in a new one. '
+          db_replica_key = SecureRandom.base64.delete('+/=')
+        end
+        db_replica_key = ask(replica_key_q) { |q|
+          q.default = db_replica_key
           q.validate = lambda { |p| is_valid_string?(p) }
           q.responses[:not_valid] = "Enter a valid replica key value"
         }.to_s
@@ -1485,40 +1499,7 @@ module Installer
     def edit_host_instance(host_instance)
       host_instance_is_valid = false
       while not host_instance_is_valid
-        first_pass = true
-        good_hostname = true
-        loop do
-          # Get the FQDN
-          question_text = first_pass ? 'Hostname (the FQDN that other OpenShift hosts will use to connect to the host that you are describing):' : "\nPlease enter a valid hostname:"
-          first_pass = false
-          host_instance.host = ask("#{question_text} ") { |q|
-            if not host_instance.host.nil? and good_hostname
-              q.default = host_instance.host
-            end
-            q.validate = lambda { |p| is_valid_hostname?(p) and not p == 'localhost' }
-            q.responses[:not_valid] = "Enter a valid fully-qualified domain name. 'localhost' is not valid here."
-          }.to_s
-          if deployment.get_hosts_by_fqdn(host_instance.host).length > 0
-            say "\nYou have already defined a host with the name '#{host_instance.host}'. Please specify a different host."
-            good_hostname = false
-            next
-          end
-          good_hostname = true
-          if not deployment.dns.component_domain.nil?
-            if not host_instance.host.match(/\./)
-              say "Appending component domain '#{deployment.dns.component_domain}' to hostname."
-              host_instance.host = host_instance.host + "." + deployment.dns.component_domain
-              break
-            elsif not host_instance.host.match(/#{deployment.dns.component_domain}$/)
-              say "\nThe hostname #{host_instance.host} is not part of the domain that was specified for OpenShift hosts (#{deployment.dns.component_domain})."
-              host_instance.host = nil
-            else
-              break
-            end
-          else
-            break
-          end
-        end
+        host_instance.host = edit_host_fqdn host_instance.host
         # Get login info if necessary
         proceed_though_unreachable = false
         loop do
@@ -1696,6 +1677,50 @@ module Installer
         edit_service_user_passwords host_instance
         host_instance_is_valid = true
       end
+    end
+
+    def edit_host_fqdn(current_value,is_broker_cluster_virtual=false)
+      first_pass    = true
+      good_hostname = true
+      new_value     = current_value
+      loop do
+        # Get the FQDN
+        question_text = "\nPlease enter a valid hostname:"
+        if is_broker_cluster_virtual
+          question_text = "\nPlease enter a virtual hostname for the Broker cluster:"
+        elsif first_pass
+          question_text = 'Hostname (the FQDN that other OpenShift hosts will use to connect to the host that you are describing):'
+          first_pass = false
+        end
+        new_value = ask("#{question_text} ") { |q|
+          if not new_value.nil? and good_hostname
+            q.default = new_value
+          end
+          q.validate = lambda { |p| is_valid_hostname?(p) and not p == 'localhost' }
+          q.responses[:not_valid] = "Enter a valid fully-qualified domain name. 'localhost' is not valid here."
+        }.to_s
+        if deployment.get_hosts_by_fqdn(new_value).length > 0
+          say "\nYou have already defined a host with the name '#{new_value}'. Please specify a different host name."
+          good_hostname = false
+          next
+        end
+        good_hostname = true
+        if not deployment.dns.component_domain.nil?
+          if not new_value.match(/\./)
+            say "Appending component domain '#{deployment.dns.component_domain}' to hostname."
+            new_value = new_value + "." + deployment.dns.component_domain
+            break
+          elsif not new_value.match(/#{deployment.dns.component_domain}$/)
+            say "\nThe hostname #{new_value} is not part of the domain that was specified for OpenShift hosts (#{deployment.dns.component_domain})."
+            new_value = nil
+          else
+            break
+          end
+        else
+          break
+        end
+      end
+      return new_value
     end
 
     def edit_service_user_passwords host_instance, newrole=nil

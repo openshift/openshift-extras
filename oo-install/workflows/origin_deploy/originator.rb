@@ -51,8 +51,46 @@ if ARGV.length > 0
   end
 end
 
+#############################################
+# Stage 2: Load and check the configuration #
+#############################################
+
+# Because this is the Originator!
+set_context(:origin)
+
+openshift_config = Installer::Config.new(@config_file)
+if not openshift_config.is_valid?
+  puts "Could not process config file at '#{@config_file}'. Exiting."
+  exit 1
+end
+
+@deployment = openshift_config.get_deployment
+errors = @deployment.is_valid?(:full)
+if errors.length > 0
+  puts "The OpenShift deployment configuration has the following errors:"
+  errors.each do |error|
+    puts "  * #{error.message}"
+  end
+  puts "Rerun the installer to correct these errors."
+  exit 1
+end
+
+subscription = openshift_config.get_subscription
+errors = subscription.is_valid?(:full)
+if errors.length > 0
+  puts "The OpenShift subscription configuration has the following errors:"
+  errors.each do |error|
+    puts "  * #{error}"
+  end
+  puts "Rerun the installer to correct these errors."
+  exit 1
+end
+
+# Start cooking up the common settings for all target hosts
+@puppet_global_config = {}
+
 ###############################################
-# Stage 2: Define some locally useful methods #
+# Stage 3: Define some locally useful methods #
 ###############################################
 
 def env_backup
@@ -95,50 +133,69 @@ end
 
 def components_list host_instance
   values = []
-  host_instance['roles'].each do |role|
+  host_instance.roles.each do |role|
     # This addresses an error in older config files
-    if role == 'mqserver'
-      role = 'msgserver'
+    role_value = role == :dbserver ? 'datastore' : role.to_s
+    values << role_value
+  end
+  if host_instance.is_load_balancer?
+    values << 'load_balancer'
+  end
+  "[" + values.join(',') + "]"
+end
+
+# Sets up BIND on the nameserver host.
+# Also sets the nsupdate key values for all hosts.
+def deploy_dns host_instance
+  # Before we deploy puppet, we need to (possibly generate) and read out the nsupdate key(s)
+  domain_list = [@deployment.dns.app_domain]
+  if @deployment.dns.register_components?
+    domain_list << @deployment.dns.component_domain
+  end
+  domain_list.each do |dns_domain|
+    puts "\nChecking for #{dns_domain} DNS key on #{host_instance.host}..."
+    key_filepath = "/var/named/K#{dns_domain}*.key"
+    key_check    = host_instance.exec_on_host!("ls #{key_filepath}")
+    if key_check[:exit_code] == 0
+      puts "...found at #{key_filepath}\n"
+    else
+      # No key; build one.
+      puts "...none found; attempting to generate one.\n"
+      key_gen = host_instance.exec_on_host!("dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named #{dns_domain}")
+      if key_gen[:exit_status] == 0
+        puts "Key generation successful."
+      else
+        puts "Could not generate a DNS key. Exiting."
+        return false
+      end
     end
-    @role_map[role].each do |puppet_role|
-      values << puppet_role['component']
+
+    # Copy the public key info to the config file.
+    key_text = host_instance.exec_on_host!("cat #{key_filepath}")
+    if key_text[:exit_code] != 0 or key_text[:stdout].nil? or key_text[:stdout] == ''
+      puts "Could not read DNS key data from #{key_filepath}. Exiting."
+      return false
+    end
+
+    # Format the public key correctly.
+    key_vals     = key_text[:stdout].strip.split(' ')
+    nsupdate_key = "#{key_vals[6]}#{key_vals[7]}"
+    if dns_domain == @deployment.dns.app_domain
+      @puppet_global_config['bind_key'] = nsupdate_key
+    else
+      @puppet_global_config['dns_infrastructure_key'] = nsupdate_key
     end
   end
-  "[" + values.map{ |r| "'#{r}'" }.join(',') + "]"
-end
 
-#############################################
-# Stage 3: Load and check the configuration #
-#############################################
-
-set_context(:origin)
-
-openshift_config = Installer::Config.new(@config_file)
-if not openshift_config.is_valid?
-  puts "Could not process config file at '#{@config_file}'. Exiting."
-  exit 1
-end
-
-deployment = openshift_config.get_deployment
-errors = deployment.is_valid?(:full)
-if errors.length > 0
-  puts "The OpenShift deployment configuration has the following errors:"
-  errors.each do |error|
-    puts "  * #{error}"
+  # Make sure BIND is enabled.
+  dns_restart = host_instance.exec_on_host!('service named restart')
+  if dns_restart[:exit_code] == 0
+    puts 'BIND DNS enabled.'
+  else
+    puts "Could not enable BIND DNS on #{host_instance.host}. Exiting."
+    return false
   end
-  puts "Rerun the installer to correct these errors."
-  exit 1
-end
-
-subscription = openshift_config.get_subscription
-errors = subscription.is_valid?(:full)
-if errors.length > 0
-  puts "The OpenShift subscription configuration has the following errors:"
-  errors.each do |error|
-    puts "  * #{error}"
-  end
-  puts "Rerun the installer to correct these errors."
-  exit 1
+  return true
 end
 
 ############################################
@@ -148,7 +205,7 @@ end
 # See if the Node to add exists in the config
 host_installation_order = []
 if not @target_node_hostname.nil?
-  deployment.get_hosts_by_role(:node).select{ |h| h.roles.count == 1 and h.host == @target_node_hostname }.each do |host_instance|
+  @deployment.get_hosts_by_role(:node).select{ |h| h.roles.count == 1 and h.host == @target_node_hostname }.each do |host_instance|
     @target_node_ssh_host = host_instance.ssh_host
     host_installation_order << host_instance
     break
@@ -163,12 +220,6 @@ end
 # Stage 5: Map config to puppet for each host #
 ###############################################
 
-# Default and baked-in config values for the Puppet deployment
-@puppet_map = {
-  'roles' => ['broker','activemq','datastore','named'],
-  'jenkins_repo_base' => 'http://pkg.jenkins-ci.org/redhat',
-}
-
 # These values will be set in all Puppet config files
 @env_input_map = {
   'subscription_type' => 'install_method',
@@ -180,31 +231,70 @@ end
 }
 
 # Pull values that may have been passed on the command line into the launcher
+# (Typically, usernames & passwords associated with subscription methods)
 @env_input_map.each_pair do |env_var,puppet_var|
   env_key = "OO_INSTALL_#{env_var.upcase}"
   if ENV.has_key?(env_key)
-    @puppet_map[puppet_var] = ENV[env_key]
+    @puppet_global_config[puppet_var] = ENV[env_key]
   end
 end
-
-# Possible HA Broker Configuration
-if deployment.brokers.length > 1
-  cluster_members  = []
-  cluster_ip_addrs = []
-
-  @puppet_map['broker_cluster_members'] = "[#{deployment.brokers.
-end
-
-@utility_install_order = ['nameserver','datastore','msgserver','broker','node']
 
 # Set the installation order (if the Add a Node workflow didn't already set it)
+@utility_install_order = [:nameserver,:dbserver,:msgserver,:broker,:node]
 if host_installation_order.length == 0
-  @utility_install_order.map{ |r| r.to_sym }.each do |order_role|
-    deployment.get_hosts_by_role(order_role).each do |host_instance|
+  @utility_install_order.each do |order_role|
+    @deployment.get_hosts_by_role(order_role).each do |host_instance|
       next if host_order.include?(host_instance.host)
-      host_order << host_instance
+      host_installation_order << host_instance
+      # We're done as soon as all of the hosts are ordered
+      break if host_installation_order.length == @deployment.hosts.length
+    end
+    # We're done as soon as all of the hosts are ordered
+    break if host_installation_order.length == @deployment.hosts.length
+  end
+end
+
+# Set up the global puppet settings
+@puppet_global_config['domain'] = @deployment.dns.app_domain
+if @deployment.dns.deploy_dns?
+  @puppet_global_config['nameserver_hostname'] = @deployment.nameservers[0].host
+  @puppet_global_config['nameserver_ip_addr']  = @deployment.nameservers[0].ip_addr
+  if @deployment.dns.register_components?
+    if @deployment.dns.component_domain == @deployment.dns.app_domain
+      @puppet_global_config['register_host_with_nameserver'] = true
+    else
+      @puppet_global_config['dns_infrastructure_zone']  = @deployment.dns.component_domain
+      @puppet_global_config['dns_infrastructure_names'] = '[' + @deployment.hosts.map{ |h| "{ hostname => '#{h.host}', ipaddr => '#{h.ip_addr}' }" }.join(',') + ']'
     end
   end
+else
+  @puppet_global_config['nameserver_hostname'] = @deployment.dns.dns_host_name
+  @puppet_global_config['nameserver_ip_addr']  = @deployment.dns.dns_host_ip
+  @puppet_global_config['bind_key']            = @deployment.dns.dnssec_key
+end
+if @deployment.brokers.length == 1
+  @puppet_global_config['broker_hostname'] = @deployment.brokers[0].host
+  @puppet_global_config['broker_ip_addr']  = @deployment.brokers[0].ip_addr
+else
+  @puppet_global_config['broker_hostname'] = @deployment.load_balancers[0].broker_cluster_virtual_host
+  @puppet_global_config['broker_ip_addr']  = @deployment.load_balancers[0].broker_cluster_virtual_ip_addr
+end
+if @deployment.dbservers.length = 1
+  @puppet_global_config['dbserver_hostname'] = @deployment.dbservers[0].host
+  @puppet_global_config['dbserver_ip_addr']  = @deployment.dbservers[0].ip_addr
+end
+if @deployment.msgservers.length = 1
+  @puppet_global_config['msgserver_hostname'] = @deployment.msgservers[0].host
+  @puppet_global_config['msgserver_ip_addr']  = @deployment.msgservers[0].ip_addr
+end
+if @deployment.msgservers.length = 1
+  @puppet_global_config['msgserver_hostname'] = @deployment.msgservers[0].host
+  @puppet_global_config['msgserver_ip_addr']  = @deployment.msgservers[0].ip_addr
+end
+if @deployment.nodes.length = 1
+  @puppet_global_config['node_hostname']              = @deployment.node[0].host
+  @puppet_global_config['node_ip_addr']               = @deployment.node[0].ip_addr
+  @puppet_global_config['conf_node_external_eth_dev'] = @deployment.node[0].ip_interface
 end
 
 # Summarize the plan
@@ -218,136 +308,68 @@ host_installation_order.each do |host_instance|
 end
 
 # Make it so
-local_dns_key = nil
+@nsupdate_keys       = {}
 saw_deployment_error = false
-@puppet_templates = []
 @child_pids = []
 host_installation_order.each do |host_instance|
   puts "Deploying host '#{host_instance.host}'"
 
+  # If we are installing DNS, it will be on the first host out of the gate.
+  if @deployment.dns.deploy_dns? and host_instance.is_nameserver? and not deploy_dns(host_instance)
+    saw_deployment_error = true
+    break
+  end
+
+  break if saw_deployment_error
+
+  # Now we can start building the host-specific puppet config.
   hostfile = "oo_install_configure_#{host_instance.host}.pp"
-  @puppet_map['roles'] = components_list(@hosts[ssh_host])
+  host_puppet_config = @puppet_global_config.clone
+  host_puppet_config['roles'] = components_list(host_instance)
+
+  # Handle HA Brokers
+  if @deployment.brokers.length > 1
+    ordered_brokers = @deployment.brokers.sort_by{ |h| h.host }
+    # DNS is used to configure the load balancer
+    if host_instance.is_nameserver?
+      host_puppet_config['broker_virtual_hostname']   = @deployment.load_balancers[0].broker_cluster_virtual_host
+      host_puppet_config['broker_virtual_ip_address'] = @deployment.load_balancers[0].broker_cluster_virtual_ip_addr
+    end
+    # Brokers
+    if host_instance.is_broker?
+      host_puppet_config['broker_hostname']             = host_instance.host
+      host_puppet_config['broker_ip_addr']              = host_instance.ip_addr
+      host_puppet_config['broker_cluster_members']      = '[' + ordered_brokers.map{ |h| h.host }.join(',') + ']'
+      host_puppet_config['broker_cluster_ip_addresses'] = '[' + ordered_brokers.map{ |h| h.ip_addr }.join(',') + ']'
+      host_puppet_config['broker_virtual_ip_address']   = @deployment.load_balancers[0].broker_cluster_virtual_ip_addr
+      if host_instance.is_load_balancer?
+        host_puppet_config['load_balancer_master']    = true
+        host_puppet_config['broker_virtual_hostname'] = @deployment.load_balancers[0].broker_cluster_virtual_host
+      else
+        host_puppet_config['load_balancer_master'] = false
+      end
+    end
+  end
+  # Handle HA DBServers
+  if @deployment.dbservers.length > 1
+    if host_instance.is_dbserver?
+      #TODO
+    end
+  end
+  # Handle HA MsgServers
+  if @deployment.msgservers.length > 1
+  end
 
   logfile = "/tmp/openshift-deploy.log"
 
   # Set up the commands that we will be using.
   commands = {
-    :typecheck => "export LC_CTYPE=en_US.utf8 && cat /etc/redhat-release",
-    :keycheck => "ls /var/named/K#{@puppet_map['domain']}*.key",
-    :hosts_keycheck => "ls /var/named/K#{@puppet_map['hosts_domain']}*.key",
-    :keygen => "dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named #{@puppet_map['domain']}",
-    :hosts_keygen => "dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named #{@puppet_map['hosts_domain']}",
-    :keyget => "cat /var/named/K#{@puppet_map['domain']}*.key",
-    :hosts_keyget => "cat /var/named/K#{@puppet_map['hosts_domain']}*.key",
-    :enabledns => 'systemctl enable named.service',
-    :enabledns_rhel => 'service named restart',
     :uninstall => "puppet module uninstall -f #{@puppet_module_name}",
     :install => "puppet module install -v #{@puppet_module_ver} #{@puppet_module_name}",
     :yum_clean => 'yum clean all',
     :apply => "puppet apply --verbose /tmp/#{hostfile} |& tee -a #{logfile}",
     :clear => "rm /tmp/#{hostfile}",
   }
-  # We have to prep and run :typecheck first.
-  command_list = commands.keys
-  if not command_list[0] == :typecheck
-    command_list.delete_if{ |i| i == :typecheck }
-    command_list.unshift(:typecheck)
-  end
-  # Modify the commands with sudo & ssh as necessary for this target host
-  host_type = :fedora
-  command_list.each do |action|
-    if not ssh_host == 'localhost'
-      if not user == 'root'
-        commands[action] = "sudo sh -c '#{commands[action]}'"
-      end
-      commands[action] = "#{@ssh_cmd} #{user}@#{ssh_host} -C \"#{commands[action]}\""
-    else
-      commands[action] = "bash -l -c '#{commands[action]}'"
-      if not user == 'root'
-        commands[action] = "sudo #{commands[action]}"
-      end
-    end
-    if action == :typecheck
-      output = `#{commands[:typecheck]} 2>&1`
-      if not output.chomp.strip.downcase.start_with?('fedora')
-        host_type = :other
-      end
-    end
-  end
-
-  # Figure out the DNS key(s) before we write the puppet config file
-  if @hosts[ssh_host]['roles'].include?('broker')
-    dns_jobs = [
-      { :check => commands[:keycheck],
-        :domain => @puppet_map['domain'],
-        :generate => commands[:keygen],
-        :get => commands[:keyget],
-        :cfg_key => 'bind_key'
-      }
-    ]
-    if not @puppet_map['hosts_domain'].nil? and not @puppet_map['hosts_domain'].empty?
-      dns_jobs << {
-        :check => commands[:hosts_keycheck],
-        :domain => @puppet_map['hosts_domain'],
-        :generate => commands[:hosts_keygen],
-        :get => commands[:hosts_keyget],
-        :cfg_key => 'hosts_bind_key'
-      }
-    end
-
-    dns_jobs.each do |dns_job|
-      puts "\nChecking for #{dns_job[:domain]} DNS key(s) on #{ssh_host}..."
-      output = `#{dns_job[:check]} 2>&1`
-      chkstatus = $?.exitstatus
-      if chkstatus > 0
-        # No key; build one.
-        puts "...none found; attempting to generate one.\n"
-        output = `#{dns_job[:generate]} 2>&1`
-        genstatus = $?.exitstatus
-        if genstatus > 0
-          puts "Could not generate a DNS key. Exiting."
-          saw_deployment_error = true
-          break
-        end
-        puts "Key generation successful."
-      else
-        puts "...found at /var/named/K#{dns_job[:domain]}*.key\n"
-      end
-
-      # Copy the public key info to the config file.
-      key_text = `#{dns_job[:get]} 2>&1`
-      getstatus = $?.exitstatus
-      if getstatus > 0 or key_text.nil? or key_text == ''
-        puts "Could not read DNS key data from /var/named/K#{dns_job[:domain]}*.key. Exiting."
-        saw_deployment_error = true
-        break
-      end
-
-      # Format the public key correctly.
-      key_vals = key_text.strip.split(' ')
-      @puppet_map[dns_job[:cfg_key]] = "#{key_vals[6]}#{key_vals[7]}"
-    end
-
-    # Bail out if we hit problems with DNS key gen.
-    break if saw_deployment_error
-
-    # Finally, make sure the named service is enabled.
-    output = `#{commands[:enabledns]} 2>&1`
-    dnsstatus = $?.exitstatus
-    if dnsstatus > 0
-      # This may be RHEL (or at least, not systemd)
-      puts "Command 'systemctl' didn't work; trying older style..."
-      output = `#{commands[:enabledns_rhel]} 2>&1`
-      dnsstatus = $?.exitstatus
-      if dnsstatus > 0
-        puts "Could not enable named using command '#{commands[:enabledns]}'. Exiting."
-        saw_deployment_error = true
-        break
-      else
-        puts "Older style system command succeeded."
-      end
-    end
-  end
 
   # Cleanup host specific puppet parameters from any previous runs
   @hosts[ssh_host]['roles'].each do |role|

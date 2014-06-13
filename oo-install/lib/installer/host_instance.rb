@@ -12,6 +12,7 @@ module Installer
                   :mongodb_admin_user, :mongodb_admin_password,
                   :openshift_user, :openshift_password,
                   :broker_cluster_load_balancer,
+                  :broker_cluster_virtual_host,
                   :broker_cluster_virtual_ip_addr,
                   :mongodb_replica_primary,
                   :mongodb_replica_key
@@ -21,8 +22,8 @@ module Installer
          install_status mcollective_user mcollective_password mongodb_broker_user
          mongodb_broker_password mongodb_admin_user mongodb_admin_password
          openshift_user openshift_password broker_cluster_load_balancer
-         broker_cluster_virtual_ip_addr mongodb_replica_primary
-         mongodb_replica_key}.map{ |a| a.to_sym }
+         broker_cluster_virtual_host broker_cluster_virtual_ip_addr
+         mongodb_replica_primary mongodb_replica_key}.map{ |a| a.to_sym }
     end
 
     def initialize(item={}, init_role=nil)
@@ -128,6 +129,10 @@ module Installer
 
     def is_dbserver?
       roles.include?(:dbserver)
+    end
+
+    def is_nameserver?
+      roles.include?(:nameserver)
     end
 
     def is_load_balancer?
