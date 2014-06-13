@@ -93,14 +93,16 @@ module Installer
       hosts.select{ |h| h.is_db_replica_primary? }
     end
 
-    def set_load_balancer(lb_host_instance=nil,broker_cluster_virtual_ip_addr=nil)
+    def set_load_balancer(lb_host_instance=nil,broker_cluster_virtual_ip_addr=nil,broker_cluster_virtual_host=nil)
       brokers.each do |host_instance|
         if not lb_host_instance.nil? and host_instance == lb_host_instance
           host_instance.broker_cluster_load_balancer   = true
           host_instance.broker_cluster_virtual_ip_addr = broker_cluster_virtual_ip_addr
+          host_instance.broker_cluster_virtual_host    = broker_cluster_virtual_host
         else
           host_instance.broker_cluster_load_balancer   = false
           host_instance.broker_cluster_virtual_ip_addr = nil
+          host_instance.broker_cluster_virtual_host    = nil
         end
       end
     end
@@ -218,6 +220,29 @@ module Installer
           errors.concat(host_instance.is_valid?(check))
         end
       end
+      # Confirm that all hostnames and IP addresses are unique.
+      seen_hostnames = {}
+      seen_ip_addrs  = {}
+      hosts.each do |host_instance|
+        if seen_hostnames.has_key?(host_instance.host)
+          return false if check == :basic
+          if seen_hostnames[host_instance.host] == 1
+            errors << Installer::DeploymentCheckFailedException.new("Hostname '#{host_instance.host}' is used by multiple hosts in the deployment.")
+          end
+          seen_hostnames[host_instance.host] += 1
+        else
+          seen_hostnames[host_instance.host] = 1
+        end
+        if seen_ip_addrs.has_key?(host_instance.ip_addr)
+          return false if check == :basic
+          if seen_ip_addrs[host_instance.ip_addr] == 1
+            errors << Installer::DeploymentCheckFailedException.new("IP address '#{host_instance.ip_addr}' is used by multiple hosts in the deployment.")
+          end
+          seen_ip_addrs[host_instance.ip_addr] += 1
+        else
+          seen_ip_addrs[host_instance.ip_addr] = 1
+        end
+      end
       # Check the HA settings
       if check == :basic
         return false if not is_ha_valid?(check)
@@ -304,9 +329,19 @@ module Installer
             return false if check == :basic
             errors << Installer::HostInstanceIPAddressException.new("Host instance '#{host_instance.host}' has a missing or invalid Broker cluster virtual ip address '#{host_instance.broker_cluster_virtual_ip_addr}'.")
           end
-        elsif not host_instance.broker_cluster_virtual_ip_addr.nil?
-          return false if check == :basic
-          errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host_instance.host}' has a Broker load-balancer virtual IP address set, but it is not configured as a Broker load balancer.")
+          if host_instance.broker_cluster_virtual_host.nil? or not is_valid_hostname?(host_instance.broker_cluster_virtual_host) or host_instance.broker_cluster_virtual_host == 'localhost'
+            return false if check == :basic
+            errors << Installer::HostInstanceHostNameException.new("Broker cluster virtual hostname '#{host_instance.broker_cluster_virtual_host}' for Broker load-balancer host '#{ihost_instance.host}' is invalid. Note that 'localhost' is not a permitted value here.")
+          end
+        else
+          if not host_instance.broker_cluster_virtual_ip_addr.nil?
+            return false if check == :basic
+            errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host_instance.host}' has a Broker load-balancer virtual IP address set, but it is not configured as a Broker load balancer.")
+          end
+          if not host_instance.broker_cluster_virtual_host.nil?
+            return false if check == :basic
+            errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host_instance.host}' has a Broker load-balancer virtual hostname set, but it is not configured as a Broker load balancer.")
+          end
         end
         if host_instance.is_db_replica_primary? and not host_instance.is_dbserver?
           return false if check == :basic
