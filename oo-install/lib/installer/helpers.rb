@@ -2,6 +2,7 @@ require 'i18n'
 require 'pathname'
 require 'yaml'
 require 'installer/version'
+require 'securerandom'
 
 module Installer
   module Helpers
@@ -149,6 +150,85 @@ module Installer
 
     def sym_to_arg value
       value.to_s.gsub('_','-')
+    end
+
+    def get_user_pass_combos
+      { :mcollective_user => {
+          :value => 'mcollective',
+          :roles => [:broker, :node, :msgserver],
+          :description =>
+            'This is the username shared between broker and node
+             for communicating over the mcollective topic
+             channels in ActiveMQ. Must be the same on all
+             broker and node hosts.'.gsub(/( |\t|\n)+/, " ")
+        },
+        :mcollective_password => {
+          :value => SecureRandom.base64.delete('+/='),
+          :roles => [:broker, :node, :msgserver],
+          :description =>
+            'This is the password shared between broker and node
+             for communicating over the mcollective topic
+             channels in ActiveMQ. Must be the same on all
+             broker and node hosts.'.gsub(/( |\t|\n)+/, " ")
+        },
+        :mongodb_broker_user => {
+          :value => 'openshift',
+          :roles => [:broker, :dbserver],
+          :description =>
+            'This is the username that will be created for the
+             broker to connect to the MongoDB datastore. Must
+             be the same on all broker and datastore
+             hosts'.gsub(/( |\t|\n)+/, " ")
+        },
+        :mongodb_broker_password => {
+          :value => SecureRandom.base64.delete('+/='),
+          :roles => [:broker, :dbserver],
+          :description =>
+            'This is the password that will be created for the
+             broker to connect to the MongoDB datastore. Must
+             be the same on all broker and datastore
+             hosts'.gsub(/( |\t|\n)+/, " ")
+        },
+        :mongodb_admin_user => {
+          :value => 'admin',
+          :roles => [:dbserver],
+          :description =>
+            'This is the username of the administrative user
+             that will be created in the MongoDB datastore.
+             These credentials are not used by OpenShift, but
+             an administrative user must be added to MongoDB
+             in order for it to enforce
+             authentication.'.gsub(/( |\t|\n)+/, " ")
+        },
+        :mongodb_admin_password => {
+          :value => SecureRandom.base64.delete('+/='),
+          :roles => [:dbserver],
+          :description =>
+            'This is the password of the administrative user
+             that will be created in the MongoDB datastore.
+             These credentials are not used by OpenShift, but
+             an administrative user must be added to MongoDB
+             in order for it to enforce
+             authentication.'.gsub(/( |\t|\n)+/, " ")
+        },
+        :openshift_user => {
+          :value => 'demo',
+          :roles => [:broker],
+          :description =>
+            'This is the username created in
+             /etc/openshift/htpasswd and used by the
+             openshift-origin-auth-remote-user-basic
+             authentication plugin.'.gsub(/( |\t|\n)+/, " ")
+        },
+        :openshift_password => {
+          :value => SecureRandom.base64.delete('+/='),
+          :roles => [:broker],
+          :description =>
+            'This is the password created in
+             /etc/openshift/htpasswd and used by the
+             openshift-origin-auth-remote-user-basic
+             authentication plugin.'.gsub(/( |\t|\n)+/, " ") },
+      }
     end
 
     def is_valid_ip_addr? text

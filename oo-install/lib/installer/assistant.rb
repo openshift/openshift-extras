@@ -1044,6 +1044,17 @@ module Installer
         deployment.set_db_replica_primary(new_db_primary,db_replica_key)
         deployment.save_to_disk!
       end
+      if deployment.msgservers.length > 1
+        new_cluster_password = deployment.msgservers[0].msgserver_cluster_password.nil? ?
+          SecureRandom.base64.delete('+/=') : deployment.msgservers[0].msgserver_cluster_password
+        new_cluster_password = ask("\nWhat password should the MsgServer cluster use for inter-cluster communication? ") { |q|
+          q.defaut = new_cluster_password
+          q.validate = lambda { |p| is_valid_string?(p) }
+          q.responses[:not_valid] = "Enter a valid MsgServer cluster password value."
+        }.to_s
+        deployment.set_msgserver_cluster_password(new_cluster_password)
+        deployment.save_to_disk!
+      end
     end
 
     def ui_modify_broker_global
@@ -1363,10 +1374,11 @@ module Installer
     end
 
     def remove_role source_host, role
-      broker_count   = deployment.brokers.length
-      dbserver_count = deployment.dbservers.length
-      delete_host    = false
-      cancel_text    = "\nOkay; cancelling change."
+      broker_count    = deployment.brokers.length
+      dbserver_count  = deployment.dbservers.length
+      msgserver_count = deployment.msgservers.length
+      delete_host     = false
+      cancel_text     = "\nOkay; cancelling change."
       if source_host.roles.length == 1
         if concur("\nThe #{role.to_s} role was the only one assigned to host #{source_host.host}. If you move the role, this host will be removed from the deployment. Is it okay to proceed?")
           delete_host = true
@@ -1385,6 +1397,13 @@ module Installer
       elsif role == :dbserver and dbserver_count == 2
         if concur("\nWhen you remove this Datastore role, only one Datastore instance will remain in the deployment. Is it okay to proceed and remove all Datastore replication settings for the deployment?")
           deployment.unset_db_replica_primary
+        else
+          say cancel_text
+          return false
+        end
+      elsif role == :msgserver and msgserver_count == 2
+        if concur("\nWhen you remove this MsgServer role, only one MsgServer instance will remain in the deployment. Is it okay to proceed and remove the MsgServer replication settings for the deployment?")
+          deployment.unset_msgserver_cluster_password
         else
           say cancel_text
           return false
@@ -1414,11 +1433,13 @@ module Installer
     end
 
     def remove_host host_instance
-      broker_count      = deployment.brokers.length
-      dbserver_count    = deployment.dbservers.length
-      cancel_text       = "\nOkay; cancelling change."
-      clear_ha_broker   = false
-      clear_ha_dbserver = false
+      broker_count       = deployment.brokers.length
+      dbserver_count     = deployment.dbservers.length
+      msgserver_count    = deployment.msgservers.length
+      cancel_text        = "\nOkay; cancelling change."
+      clear_ha_broker    = false
+      clear_ha_dbserver  = false
+      clear_ha_msgserver = false
       if broker_count == 2 and host_instance.is_broker?
         if concur("\nWhen you remove this host, only one Broker instance will remain in the deployment. Is it okay to proceed and remove all HA Broker deployment settings?")
           clear_ha_broker = true
@@ -1430,6 +1451,14 @@ module Installer
       if dbserver_count == 2 and host_instance.is_dbserver?
         if concur("\nWhen you remove this host, only one Datastore instance will remain in the deployment. Is it okay to proceed and remove all Datastore replication settings for the deployment?")
           clear_ha_dbserver = true
+        else
+          say cancel_text
+          return false
+        end
+      end
+      if msgserver_count == 2 and host_instance.is_msgserver?
+        if concur("\nWhen you remove this host, only one MsgServer instance will remain in the deployment. Is it okay to proceed and remove all MsgServer replication settings for the deployment?")
+          clear_ha_msgserver = true
         else
           say cancel_text
           return false
@@ -1456,6 +1485,9 @@ module Installer
       if clear_ha_dbserver
         deployment.unset_db_replica_primary
       end
+      if clear_ha_msgserver
+        deployment.unset_msgserver_cluster_password
+      end
       deployment.remove_host_instance! host_instance
       true
     end
@@ -1471,12 +1503,16 @@ module Installer
       host_instance.install_status = instances_exist ? :completed : :new
       edit_host_instance(host_instance)
       if new_host
-        ha_brokers_before   = deployment.brokers.length > 1
-        ha_dbservers_before = deployment.dbservers.length > 1
+        ha_brokers_before    = deployment.brokers.length > 1
+        ha_dbservers_before  = deployment.dbservers.length > 1
+        ha_msgservers_before = deployment.msgservers.length > 1
         deployment.add_host_instance! host_instance
-        ha_brokers_now      = deployment.brokers.length > 1
-        ha_dbservers_now    = deployment.dbservers.length > 1
-        if (not ha_brokers_before and ha_brokers_now) or (not ha_dbservers_before and ha_dbservers_now)
+        ha_brokers_now    = deployment.brokers.length > 1
+        ha_dbservers_now  = deployment.dbservers.length > 1
+        ha_msgservers_now = deployment.msgservers.length > 1
+        if (not ha_brokers_before and ha_brokers_now) or
+           (not ha_dbservers_before and ha_dbservers_now) or
+           (not ha_msgservers_before and ha_msgservers_now)
           # If we are in ui_create_deployment, we'll ask about HA config after all hosts / roles are set up.
           if not create_mode
             # Time to gather up the HA config info
@@ -1488,7 +1524,10 @@ module Installer
             deployment.unset_load_balancer
           end
           if ha_dbservers_before and not ha_dbservers_now
-            depoyment.unset_db_replica_primary
+            deployment.unset_db_replica_primary
+          end
+          if ha_msgservers_before and not ha_msgservers_now
+            deployment.unset_msgserver_cluster_password
           end
         end
       else
@@ -1736,69 +1775,10 @@ module Installer
       end
 
       # set default username and password variables
-      user_pass_combos = { :mcollective_user => {
-                               :value => 'mcollective',
-                               :roles => [:broker, :node, :msgserver],
-                               :description => 'This is the username shared between broker and node
-                                                for communicating over the mcollective topic
-                                                channels in ActiveMQ. Must be the same on all
-                                                broker and node hosts.'.gsub(/( |\t|\n)+/, " ") },
-                           :mcollective_password => {
-                               :value => SecureRandom.base64.delete('+/='),
-                               :roles => [:broker, :node, :msgserver],
-                               :description => 'This is the password shared between broker and node
-                                                for communicating over the mcollective topic
-                                                channels in ActiveMQ. Must be the same on all
-                                                broker and node hosts.'.gsub(/( |\t|\n)+/, " ") },
-                           :mongodb_broker_user => {
-                               :value => 'openshift',
-                               :roles => [:broker, :dbserver],
-                               :description => 'This is the username that will be created for the
-                                                broker to connect to the MongoDB datastore. Must
-                                                be the same on all broker and datastore
-                                                hosts'.gsub(/( |\t|\n)+/, " ") },
-                           :mongodb_broker_password => {
-                               :value => SecureRandom.base64.delete('+/='),
-                               :roles => [:broker, :dbserver],
-                               :description => 'This is the password that will be created for the
-                                                broker to connect to the MongoDB datastore. Must
-                                                be the same on all broker and datastore
-                                                hosts'.gsub(/( |\t|\n)+/, " ") },
-                           :mongodb_admin_user => {
-                               :value => 'admin',
-                               :roles => [:dbserver],
-                               :description => 'This is the username of the administrative user
-                                                that will be created in the MongoDB datastore.
-                                                These credentials are not used by OpenShift, but
-                                                an administrative user must be added to MongoDB
-                                                in order for it to enforce
-                                                authentication.'.gsub(/( |\t|\n)+/, " ") },
-                           :mongodb_admin_password => {
-                               :value => SecureRandom.base64.delete('+/='),
-                               :roles => [:dbserver],
-                               :description => 'This is the password of the administrative user
-                                                that will be created in the MongoDB datastore.
-                                                These credentials are not used by OpenShift, but
-                                                an administrative user must be added to MongoDB
-                                                in order for it to enforce
-                                                authentication.'.gsub(/( |\t|\n)+/, " ") },
-                           :openshift_user => {
-                               :value => 'demo',
-                               :roles => [:broker],
-                               :description => 'This is the username created in
-                                                /etc/openshift/htpasswd and used by the
-                                                openshift-origin-auth-remote-user-basic
-                                                authentication plugin.'.gsub(/( |\t|\n)+/, " ") },
-                           :openshift_password => {
-                               :value => SecureRandom.base64.delete('+/='),
-                               :roles => [:broker],
-                               :description => 'This is the password created in
-                                                /etc/openshift/htpasswd and used by the
-                                                openshift-origin-auth-remote-user-basic
-                                                authentication plugin.'.gsub(/( |\t|\n)+/, " ") }}
-      sorted=user_pass_combos.sort do |a,b|
-        partsa=a[0].to_s.rpartition('_')
-        partsb=b[0].to_s.rpartition('_')
+      user_pass_combos = get_user_pass_combos
+      sorted = user_pass_combos.sort do |a,b|
+        partsa = a[0].to_s.rpartition('_')
+        partsb = b[0].to_s.rpartition('_')
         r = partsa[0] <=> partsb[0]
         r != 0 ? r : -(partsa[2] <=> partsb[2])
       end
