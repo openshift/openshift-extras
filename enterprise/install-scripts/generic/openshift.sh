@@ -3408,4 +3408,5 @@ $RESTART_NEEDED && restart_services
 
 $PASSWORDS_TO_DISPLAY && display_passwords
 
+:
 
