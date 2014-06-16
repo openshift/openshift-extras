@@ -211,6 +211,75 @@ def close_all_ssh_sessions
   end
 end
 
+def display_error_info host_instance, exec_info, message
+ puts [
+   "#{host_instance.host}: #{message}",
+   "Output: #{exec_info[:stdout]}",
+   "Error:  #{exec_info[:stderr]}",
+   "Exiting installation on this host.",
+ ].join("\n#{host_instance.host}: ")
+end
+
+def utility_install_order
+  @utility_install_order ||= [:nameserver,:dbserver,:msgserver,:broker,:node]
+end
+
+def restart_services host_instance
+  services = []
+  utility_install_order.each do |role|
+    next if not host_instance.has_role?(role)
+    case role
+    when :nameserver
+      services << 'named'
+    when :dbserver
+      services << 'mongod'
+    when :msgserver
+      services << 'activemq'
+    when :broker
+      services.concat(['openshift-broker','openshift-console'])
+    when :node
+      services.concat(['cgconfig','cgred','openshift-node-web-proxy','openshift-watchman'])
+    else
+      puts "Unrecognized role for restart: #{role}"
+    end
+  end
+
+  if host_instance.is_broker? or host_instance.is_node?
+    services << 'httpd'
+  end
+
+  if host_instance.is_msgserver? or host_instance.is_broker? or host_instance.is_node?
+    services << 'ruby193-mcollective'
+  end
+
+  cmd = []
+  cmd += services.map do |service|
+    "/sbin/service #{service} stop;"
+  end
+  cmd << "rm -f /var/www/openshift/broker/httpd/run/httpd.pid;"
+  cmd << "rm -f /var/www/openshift/console/httpd/run/httpd.pid;"
+  cmd += services.map do |service|
+    "/sbin/service #{service} start;"
+  end
+  cmd << "rm -rf /var/www/openshift/broker/tmp/cache/*;"
+  cmd << "/etc/cron.minutely/openshift-facts;"
+  cmd << "/sbin/service openshift-tc start || /sbin/service openshift-tc reload;"
+  cmd << "/sbin/service network reload;"
+  cmd << "/sbin/service network restart;"
+  cmd << "/sbin/service messagebus restart;"
+  cmd << "/sbin/service oddjobd restart;"
+
+  restart_cmds = host_instance.exec_on_host!(cmd)
+  if restart_cmds[:exit_code] == 0
+  else
+  end
+
+  tc_status = host_instance.exec_on_host!('service openshift-tc status 2>/dev/null 1>/dev/null')
+  if not tc_status[:exit_code] == 0
+    host_instance.exec_on_host!('service openshift-tc reload')
+  end
+end
+
 ############################################
 # Stage 4: Workflow-specific configuration #
 ############################################
@@ -253,9 +322,8 @@ end
 end
 
 # Set the installation order (if the Add a Node workflow didn't already set it)
-@utility_install_order = [:nameserver,:dbserver,:msgserver,:broker,:node]
 if host_installation_order.length == 0
-  @utility_install_order.each do |order_role|
+  utility_install_order.each do |order_role|
     @deployment.get_hosts_by_role(order_role).each do |host_instance|
       next if host_order.include?(host_instance.host)
       host_installation_order << host_instance
@@ -461,11 +529,14 @@ if @puppet_template_only
   exit
 end
 
-# Still here? Rock and roll time.
-@child_pids = []
+############################################
+# Stage 6: Run the Deployments in Parallel #
+############################################
+
+@child_pids = {}
 host_installation_order.each do |host_instance|
   # Good to go; step through the puppet setup now.
-  @child_pids << Process.fork do
+  @child_pids[host_instance.host] = Process.fork do
     puts "#{host_instance.host}: Running Puppet deployment for host"
 
     if @keep_puppet
@@ -480,26 +551,36 @@ host_installation_order.each do |host_instance|
       end
       add_module = execute_command(host_instance,"puppet module install -v #{@puppet_module_ver} #{@puppet_module_name}")
       if not add_module[:exit_code] == 0
-        puts "#{host_instance.host}: Puppet module installation failed:\n#{host_instance.host}: Output: #{add_module[:stdout]}\n#{host_instance.host}: Error Info: #{add_module[:stderr]}"
+        display_error_info(host_instance, add_module, 'Puppet module installation failed')
+        exit 1
       end
     end
 
     # Reset the yum repos
     yum_clean = execute_command(host_instance,'yum clean all')
     if not yum_clean[:exit_code] == 0
+      display_error_info(host_instance, yum_clean, 'Failed to clean yum repo database')
+      exit 1
     end
 
     # Make the magic
     run_apply = execute_command(host_instance,"puppet apply --verbose /tmp/#{hostfile} |& tee -a /tmp/openshift-deploy.log")
     if not run_apply[:exit_code] == 0
+      display_error_info(host_instance, run_apply, 'Puppet deployment exited with errors')
+      exit 1
     end
 
     if not @keep_assets
       clean_up = execute_command(host_instance,"rm /tmp/#{hostfile}")
       if not clean_up[:exit_code] == 0
+        puts "#{host_instance.host}: Clean up of /tmp/#hostfile} failed; please remove this file manually."
       end
     else
       puts "#{host_instance.host}: Keeping /tmp/#{hostfile}"
+    end
+
+    if not host_instance.localhost?
+      host_instance.close_ssh_session
     end
 
     # Bail out of the fork
@@ -507,20 +588,89 @@ host_installation_order.each do |host_instance|
   end
 end
 
-# Wait for the parallel installs to finish
-procs = Process.waitall
-
-#TODO: Post install reboots, checking and configuration
-
-puts "OpenShift Origin deployment completed."
-if host_order.length == 1
-    puts "You should manually reboot #{@hosts[host_order[0]]['host']} to complete the process."
-  else
-    puts "You chould manually reboot these hosts in the indicated order to complete the process:"
-    host_order.each_with_index do |ssh_host,idx|
-      puts "#{idx + 1}. #{@hosts[ssh_host]['host']}"
+# Wait for the parallel installs to finish, inspect results.
+procs  = Process.waitall
+host_failures = []
+host_installation_order.each do |host_instance|
+  host_pid  = @child_pids[host_instance.host]
+  host_proc = procs.select{ |process| process[0] == host_pid }[0]
+  if not host_proc.nil?
+    if not host_proc[1].exitstatus == 0
+      host_failures << host_instance.host + ' (' + host_proc[1].exitstatus + ')'
     end
+  else
+    puts "Could not determine deployment status for host #{host_instance.host}"
   end
 end
+
+if host_failures.length == 0
+  puts "\nHost deployments completed succesfully."
+else
+  if host_failures.length == host_installation_order.length
+    puts "None of the host deployments succeeded:"
+  else
+    puts "The following host deployments failed:"
+  end
+  host_failures.each do |hostname|
+    puts "  * #{hostname}"
+  end
+  puts "Please investigate these failures by starting with the /tmp/openshift-deploy.log file on each host.\nExiting installation with errors."
+  exit 1
+end
+
+#########################################
+# Stage 7: (Re)Start OpenShift Services #
+#########################################
+
+puts "\nRestarting services in dependency order."
+
+host_installation_order.each do |host_instance|
+  print "\nPerforming service restarts on #{host_instance.host}"
+  if restart_services(host_instance)
+    puts "...restarts successful."
+  else
+    puts "...restarts failed."
+  end
+end
+
+###############################
+# Stage 8: Post-Install Tasks #
+###############################
+
+puts "\nNow performing post-installation tasks.\n\nConfiguring districts."
+
+# The post-install work can all be run from any broker.
+broker = @deployment.brokers[0]
+@deployment.districts.each do |district|
+  district_cmd = "oo-admin-ctl-district -c create -n #{district.name} -p #{district.gear_size}"
+  create_district = broker.exec_on_host!(district_cmd)
+  if create_district[:exit_code] == 0
+    puts "Successfully created district '#{district.name}'"
+    district.node_hosts.each do |hostname|
+      node_cmd = "oo-admin-ctl-district -c add-node -n #{district.name} -i #{hostname}"
+      add_node = broker.exec_on_host!(node_cmd)
+      if add_node[:exit_status] == 0
+        puts "Added #{hostname} to district #{district.name}"
+      else
+        puts "Failed to add #{hostname} to district #{district.name}.\nYou will need to run the following manually from any Broker to add this node:\n\n\t#{node_cmd}"
+      end
+    end
+  else
+    puts "Failed to create district '#{district_name}'.\nYou will need to run the following manually on a Broker to create the district:\n\n\t#{district_cmd}\n\nThen you will need to run the add-node command for each associated node:\n\n\too-admin-ctl-district -c add-node -n #{district.name} -i <node_hostname>"
+  end
+end
+
+puts "\nAttempting to register available cartridge types with Broker(s)."
+carts_cmd = 'oo-admin-ctl-cartridge -c import-node --activate'
+set_carts = broker.exec_on_host!(carts_cmd)
+if not set_carts[:exit_code] == 0
+  puts "Could not register cartridge types with Broker(s).\nLog into any Broker and attempt to register the carts with this command:\n\n\t#{carts_cmd}"
+else
+  puts "Cartridge registrations succeeded."
+end
+
+close_all_ssh_sessions
+
+puts "Deployment successful. Exiting installer."
 
 exit
