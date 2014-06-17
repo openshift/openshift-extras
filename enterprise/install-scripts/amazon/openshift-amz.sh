@@ -725,7 +725,7 @@ configure_selinux_policy_on_node()
 
 
   restorecon -rv /var/run
-  restorecon -rv /var/lib/openshift /etc/openshift/node.conf /etc/httpd/conf.d/openshift
+  restorecon -rv /var/lib/openshift /etc/httpd/conf.d/openshift
 }
 
 configure_pam_on_node()
@@ -2623,6 +2623,7 @@ configure_openshift()
   node && install_rsync_pub_key
 
   sysctl -p
+  restorecon -rv /etc/openshift
 
   PASSWORDS_TO_DISPLAY=true
   RESTART_NEEDED=true
