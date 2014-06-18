@@ -212,7 +212,7 @@ module Installer
               saw_host_details  = true
             end
             choose do |menu|
-              menu.header = "\nChoose an action:"
+              menu.header = "\nChoose an action"
               menu.prompt = "#{translate(:menu_prompt)} "
               menu.choice("Change the deployment configuration") { ui_show_deployment if saw_host_details; ui_edit_deployment }
               menu.choice("View the full host configuration details") { show_host_details = true }
@@ -681,40 +681,52 @@ module Installer
         menu.hidden("q") { return }
       end
 
+      # It feels more natural in the move & remove cases to have the user select a host first.
+      source_host = nil
+      if [:move,:remove].include?(role_action)
+        choose do |menu|
+          menu.header = "\nFrom which host would you like to #{role_action.to_s} a role?"
+          menu.prompt = "#{translate(:menu_prompt)} "
+          deployment.hosts.sort_by{ |h| h.summarize }.each do |host_instance|
+            menu.choice(host_instance.summarize) {
+              source_host = host_instance
+            }
+          end
+          menu.hidden("q") { return }
+        end
+      end
+
       # Pick a role
       choose do |menu|
         menu.header = "\nWhich role do you want to #{role_action.to_s}?"
         menu.prompt = "#{translate(:menu_prompt)} "
         Installer::Deployment.role_map.sort_by{ |k,v| v }.each do |key,value|
+          if not advanced_mode? and [:msgserver,:dbserver].include?(key)
+            next
+          end
+          if [:move,:remove].include?(role_action) and not source_host.has_role?(key)
+            next
+          end
           menu.choice(value.chop) { target_name = value.chop; target_role = key }
         end
         menu.hidden("q") { return }
       end
 
-      source_hosts = deployment.get_hosts_by_role(target_role).sort_by{ |h| h.summarize }
       hosts_without_role = deployment.get_hosts_without_role(target_role).sort_by{ |h| h.summarize }
 
-      # On the Move & Remove cases
-      # Change actions or bail out if the selected role isn't currently assigned to any hosts, or if the user
+      # On the Remove case, change actions or bail out if the user
       # is attempting a Remove when the role is only assigned to one host.
-      if [:move,:remove].include?(role_action)
-        if source_hosts.length == 0
-          if concur("\nThe #{target_name} role is not assigned to any currently defined hosts. Do you want to add this role to a host instead?")
-            role_action = :add
-          else
-            return
-          end
-        elsif role_action == :remove and source_hosts.length == 1
-          if concur("\nThe #{target_name} role is only assigned to one host, so it cannot be removed. Do you want to move the role to a different host instead?")
-            role_action = :move
-          else
-            return
-          end
+      if role_action == :remove and deployment.get_hosts_by_role(target_role).length == 1
+        if concur("\nThe #{target_name} role is only assigned to one host, so it cannot be removed. Do you want to move the role to a different host instead?")
+          role_action = :move
+        else
+          return
         end
       end
 
       # Handle the Add case
       if role_action == :add
+        source_hosts = deployment.get_hosts_by_role(target_role).sort_by{ |h| h.summarize }
         if source_hosts.length > 0
           say "\nThe following hosts currently have the #{target_role} role:"
           source_hosts.each do |host_instance|
@@ -741,22 +753,10 @@ module Installer
         return
       end
 
-      # Select the source host for the Move / Remove
-      source_host = nil
-      target_host = nil
-      choose_text = role_action == :move ? "\nChoose the source host from which you would like to move the #{target_name} role" : "\nChoose the host from which you would like to remove the #{target_name} role"
-      choose do |menu|
-        menu.header = choose_text
-        menu.prompt = "#{translate(:menu_prompt)} "
-        source_hosts.each do |host_instance|
-          menu.choice(host_instance.summarize) { source_host = host_instance }
-        end
-        menu.hidden("q") { return }
-      end
-
       # Handle the Move action
       if role_action == :move
-        create_new = false
+        create_new  = false
+        target_host = nil
         choose do |menu|
           menu.header = "\nChoose the destination host to which you would like to move the #{target_name} role"
           menu.prompt = "#{translate(:menu_prompt)} "
@@ -956,15 +956,17 @@ module Installer
           select_host = concur("\nThe DNS service is currently set to deploy on #{deployment.nameservers[0].host}. Do you want to change that?")
         end
         if select_host
+          source_host = deployment.nameservers[0]
           if deployment.hosts.length > 0
             choose do |menu|
               menu.header = "Please choose a host to use as the nameserver"
               menu.prompt = "#{translate(:menu_prompt)} "
               deployment.hosts.sort_by{ |h| h.summarize }.each do |host_instance|
                 menu.choice(host_instance.summarize) {
-                  host_instance.add_role(:nameserver)
-                  edit_node_profile_and_district host_instance if host_instance.is_node?
-                  edit_service_user_passwords(host_instance,role)
+                  if remove_role(source_host,:nameserver)
+                    host_instance.add_role(:nameserver)
+                    edit_service_user_passwords(host_instance,:nameserver)
+                  end
                 }
               end
               menu.choice('Add a new host') { ui_edit_host_instance(nil, :nameserver) }
@@ -1048,7 +1050,7 @@ module Installer
         new_cluster_password = deployment.msgservers[0].msgserver_cluster_password.nil? ?
           SecureRandom.base64.delete('+/=') : deployment.msgservers[0].msgserver_cluster_password
         new_cluster_password = ask("\nWhat password should the MsgServer cluster use for inter-cluster communication? ") { |q|
-          q.defaut = new_cluster_password
+          q.default  = new_cluster_password
           q.validate = lambda { |p| is_valid_string?(p) }
           q.responses[:not_valid] = "Enter a valid MsgServer cluster password value."
         }.to_s
@@ -2267,7 +2269,7 @@ module Installer
                 say "not available.\nAttempting to install the puppet repo RPM... "
                 repo_install = host_instance.exec_on_host!("rpm -ivh #{merged_subscription.puppet_repo_rpm}")
                 if repo_install[:exit_code] == 0
-                  say "repo added.\nAttemtmping to install puppet... "
+                  say "repo added.\nAttempting to install puppet... "
                   install_attempt = host_instance.exec_on_host!("yum install #{rpm} -y")
                   if install_attempt[:exit_code] == 0
                     say "success!"

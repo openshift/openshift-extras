@@ -1,7 +1,8 @@
+require 'installer/broker_global_config'
+require 'installer/district'
+require 'installer/dns_config'
 require 'installer/helpers'
 require 'installer/host_instance'
-require 'installer/dns_config'
-require 'installer/broker_global_config'
 require 'set'
 
 module Installer
@@ -131,7 +132,7 @@ module Installer
 
     def set_msgserver_cluster_password(password=nil)
       hosts.each do |host_instance|
-        if host.is_msgserver?
+        if host_instance.is_msgserver?
           host_instance.msgserver_cluster_password = password
         else
           host_instance.msgserver_cluster_password = nil
@@ -226,6 +227,19 @@ module Installer
           return false if check == :basic
           errors << Installer::DeploymentRoleMissingException.new("There must be at least one #{role.to_s} in the deployment configuration.")
         end
+      end
+      # Make sure there is only one nameserver
+      if dns.deploy_dns?
+        if nameservers.length == 0
+          return false if check == :basic
+          errors << Installer::DeploymentCheckFailedException.new("The installer is configured to deploy DNS, but no host has been selected as the DNS host.")
+        elsif nameservers.length > 1
+          return false if check == :basic
+          errors << Installer::DeploymentCheckFailedException.new("Only one host can be selected as the DNS host, but the role has been assigned to: #{nameservers.sort_by{ |h| h.host }.map{ |h| h.host }.join(', ')}")
+        end
+      elsif nameservers.length > 0
+        return false if check == :basic
+        errors << Installer::DeploymentCheckFailedException.new("The installer is configured -not- to deploy DNS, but a host has been designated as the DNS host.")
       end
       # Check the host entries
       if hosts.select{ |h| not h.is_valid?(:basic) }.length > 0
