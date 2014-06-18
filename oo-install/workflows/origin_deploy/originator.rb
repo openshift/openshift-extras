@@ -53,8 +53,9 @@ end
 # Stage 2: Load and check the configuration #
 #############################################
 
-# Because this is the Originator!
+# Set some globals
 set_context(:origin)
+set_mode(true)
 
 openshift_config = Installer::Config.new(@config_file)
 if not openshift_config.is_valid?
@@ -150,6 +151,15 @@ def components_list host_instance
   "[" + values.join(',') + "]"
 end
 
+def display_error_info host_instance, exec_info, message
+ puts [
+   "#{host_instance.host}: #{message}",
+   "Output: #{exec_info[:stdout]}",
+   "Error:  #{exec_info[:stderr]}",
+   "Exiting installation on this host.",
+ ].join("\n#{host_instance.host}: ")
+end
+
 # Sets up BIND on the nameserver host.
 # Also sets the nsupdate key values for all hosts.
 def deploy_dns host_instance
@@ -159,19 +169,19 @@ def deploy_dns host_instance
     domain_list << @deployment.dns.component_domain
   end
   domain_list.each do |dns_domain|
-    puts "\nChecking for #{dns_domain} DNS key on #{host_instance.host}..."
+    print "* Checking for #{dns_domain} DNS key... "
     key_filepath = "/var/named/K#{dns_domain}*.key"
     key_check    = host_instance.exec_on_host!("ls #{key_filepath}")
     if key_check[:exit_code] == 0
-      puts "...found at #{key_filepath}\n"
+      puts 'found.'
     else
       # No key; build one.
-      puts "...none found; attempting to generate one.\n"
+      puts 'not found; attempting to generate.'
       key_gen = host_instance.exec_on_host!("dnssec-keygen -a HMAC-MD5 -b 512 -n USER -r /dev/urandom -K /var/named #{dns_domain}")
-      if key_gen[:exit_status] == 0
-        puts "Key generation successful."
+      if key_gen[:exit_code] == 0
+        puts '* Key generation successful.'
       else
-        puts "Could not generate a DNS key. Exiting."
+        display_error_info(host_instance, key_gen, 'Could not generate a DNS key.')
         return false
       end
     end
@@ -179,7 +189,7 @@ def deploy_dns host_instance
     # Copy the public key info to the config file.
     key_text = host_instance.exec_on_host!("cat #{key_filepath}")
     if key_text[:exit_code] != 0 or key_text[:stdout].nil? or key_text[:stdout] == ''
-      puts "Could not read DNS key data from #{key_filepath}. Exiting."
+      display_error_info(host_instance, key_text, "Could not read DNS key data from #{key_filepath}.")
       return false
     end
 
@@ -196,9 +206,9 @@ def deploy_dns host_instance
   # Make sure BIND is enabled.
   dns_restart = host_instance.exec_on_host!('service named restart')
   if dns_restart[:exit_code] == 0
-    puts 'BIND DNS enabled.'
+    puts '* BIND DNS enabled.'
   else
-    puts "Could not enable BIND DNS on #{host_instance.host}. Exiting."
+    display_error_info(host_instance, dns_restart, "Could not enable BIND DNS on #{host_instance.host}.")
     return false
   end
   return true
@@ -209,15 +219,6 @@ def close_all_ssh_sessions
     next if host_instance.localhost?
     host_instance.close_ssh_session
   end
-end
-
-def display_error_info host_instance, exec_info, message
- puts [
-   "#{host_instance.host}: #{message}",
-   "Output: #{exec_info[:stdout]}",
-   "Error:  #{exec_info[:stderr]}",
-   "Exiting installation on this host.",
- ].join("\n#{host_instance.host}: ")
 end
 
 def utility_install_order
@@ -271,7 +272,10 @@ def restart_services host_instance
 
   restart_cmds = host_instance.exec_on_host!(cmd)
   if restart_cmds[:exit_code] == 0
+    puts ""
   else
+    #TODO
+    display_error_info(host_instance, restart_cmds, '')
   end
 
   tc_status = host_instance.exec_on_host!('service openshift-tc status 2>/dev/null 1>/dev/null')
@@ -325,7 +329,7 @@ end
 if host_installation_order.length == 0
   utility_install_order.each do |order_role|
     @deployment.get_hosts_by_role(order_role).each do |host_instance|
-      next if host_order.include?(host_instance.host)
+      next if host_installation_order.include?(host_instance)
       host_installation_order << host_instance
       # We're done as soon as all of the hosts are ordered
       break if host_installation_order.length == @deployment.hosts.length
@@ -360,18 +364,18 @@ else
   @puppet_global_config['broker_hostname'] = @deployment.load_balancers[0].broker_cluster_virtual_host
   @puppet_global_config['broker_ip_addr']  = @deployment.load_balancers[0].broker_cluster_virtual_ip_addr
 end
-if @deployment.dbservers.length = 1
+if @deployment.dbservers.length == 1
   @puppet_global_config['mongodb_replicasets'] = false
   @puppet_global_config['datastore_hostname']  = @deployment.dbservers[0].host
 end
-if @deployment.msgservers.length = 1
+if @deployment.msgservers.length == 1
   @puppet_global_config['msgserver_cluster']  = false
   @puppet_global_config['msgserver_hostname'] = @deployment.msgservers[0].host
 end
-if @deployment.nodes.length = 1
-  @puppet_global_config['node_hostname']              = @deployment.node[0].host
-  @puppet_global_config['node_ip_addr']               = @deployment.node[0].ip_addr
-  @puppet_global_config['conf_node_external_eth_dev'] = @deployment.node[0].ip_interface
+if @deployment.nodes.length == 1
+  @puppet_global_config['node_hostname']              = @deployment.nodes[0].host
+  @puppet_global_config['node_ip_addr']               = @deployment.nodes[0].ip_addr
+  @puppet_global_config['conf_node_external_eth_dev'] = @deployment.nodes[0].ip_interface
 end
 
 # These are ensured to be identical on all hosts.
@@ -383,9 +387,15 @@ end
   @puppet_global_config[setting.to_s] = @deployment.hosts[0].send(setting)
 end
 
+# And finally, gear sizes.
+@puppet_global_config['conf_valid_gear_sizes']          = @deployment.broker_global.valid_gear_sizes.join(',')
+@puppet_global_config['conf_default_gear_capabilities'] = @deployment.broker_global.user_default_gear_sizes.join(',')
+@puppet_global_config['conf_default_gear_size']         = @deployment.broker_global.default_gear_size
 
 # Summarize the plan
-if @target_node_ssh_host.nil?
+if @puppet_template_only
+  puts "\nPreparing puppet configuration files for the follwoing deployment:\n"
+elsif @target_node_ssh_host.nil?
   puts "\nPreparing to install OpenShift Origin on the following hosts:\n"
 else
   puts "\nPreparing to add this node to an OpenShift Origin system:\n"
@@ -400,7 +410,7 @@ ordered_dbservers  = @deployment.dbservers.sort_by{ |h| h.host }
 ordered_msgservers = @deployment.msgservers.sort_by{ |h| h.host }
 @puppet_templates  = []
 host_installation_order.each do |host_instance|
-  puts "Deploying host '#{host_instance.host}'"
+  puts "\nGenerating template for '#{host_instance.host}'"
 
   # If we are installing DNS, it will be on the first host out of the gate.
   if @deployment.dns.deploy_dns? and host_instance.is_nameserver? and not deploy_dns(host_instance)
@@ -491,20 +501,25 @@ host_installation_order.each do |host_instance|
   fh.close
 
   @puppet_templates << hostfilepath
-  puts "Created template #{hostfilepath}"
+  puts "* Created template #{hostfilepath}"
 
   next if @puppet_template_only
 
   # Copy the file over.
   if not host_instance.localhost?
-    puts "Copying Puppet configuration script to target #{host_instance.host}.\n"
-    scp_output = `#{@scp_cmd} #{hostfilepath} #{host_instance.user}@#{host_instance.ssh_host}:#{hostfilepath} 2>&1`
+    print "* Copying Puppet script to host... "
+    `#{@scp_cmd} #{hostfilepath} #{host_instance.user}@#{host_instance.ssh_host}:#{hostfilepath} 2>&1`
     if not $?.exitstatus == 0
-      puts "Could not copy Puppet config file to remote host. Exiting.\n"
+      puts "copy attempt failed.\nExiting.\n"
       close_all_ssh_sessions
       exit 1
-    elsif not @keep_assets and File.exists?(hostfilepath)
-      File.unlink(hostfilepath)
+    else
+      if not @keep_assets and File.exists?(hostfilepath)
+        puts 'success. Removing local copy.'
+        File.unlink(hostfilepath)
+      else
+        puts 'success. Keeping local copy.'
+      end
     end
   end
 end

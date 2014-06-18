@@ -44,7 +44,7 @@ RequiredComponents:
   - channel:rhel:optional
   - pkg:all:puppet
   - pkg:all:openssh-clients
-  - pkg:broker:bind
+  - pkg:nameserver:bind
 IncompatibleComponents:
   - pkg:all:firewalld
 ---
@@ -71,7 +71,7 @@ RequiredComponents:
   - channel:rhel:optional
   - pkg:all:puppet
   - pkg:all:openssh-clients
-  - pkg:broker:bind
+  - pkg:nameserver:bind
 IncompatibleComponents:
   - pkg:all:firewalld
 ---
@@ -127,7 +127,7 @@ Repositories:
   - os_repo
   - os_optional_repo
 RequiredComponents:
-  - pkg:broker:bind
+  - pkg:nameserver:bind
 ---
 Name: OE Deployment
 Contexts:

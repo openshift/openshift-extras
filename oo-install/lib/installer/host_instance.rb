@@ -274,7 +274,7 @@ module Installer
     end
 
     def close_ssh_session
-      @ssh_session.close
+      @ssh_session.close if not @ssh_session.nil?
     end
 
     def exec_on_host!(command, display_output=false)
