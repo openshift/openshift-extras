@@ -271,17 +271,25 @@ def restart_services host_instance
   cmd << "/sbin/service oddjobd restart;"
 
   restart_cmds = host_instance.exec_on_host!(cmd)
-  if restart_cmds[:exit_code] == 0
-    puts ""
-  else
-    #TODO
-    display_error_info(host_instance, restart_cmds, '')
+  if not restart_cmds[:exit_code] == 0
+    display_error_info(host_instance, restart_cmds, 'Attempted service restarts failed')
+    return false
   end
 
   tc_status = host_instance.exec_on_host!('service openshift-tc status 2>/dev/null 1>/dev/null')
   if not tc_status[:exit_code] == 0
     host_instance.exec_on_host!('service openshift-tc reload')
   end
+
+  return true
+end
+
+def format_puppet_value value
+  if value.is_a?(String)
+    return value if value.match(/^\[.*\]$/)
+    return "'#{value}'"
+  end
+  value.to_s
 end
 
 ############################################
@@ -454,7 +462,7 @@ host_installation_order.each do |host_instance|
   if @deployment.dbservers.length > 1
     if host_instance.is_dbserver? or host_instance.is_broker?
       host_puppet_config['mongodb_replicasets']             = true
-      host_puppet_config['mongodb_replicasets_members']     = '[' + ordered_dbservers.map{ |h| "'#{h.host}:#{h.ip_addr}'" }.join(',') + ']'
+      host_puppet_config['mongodb_replicasets_members']     = '[' + ordered_dbservers.map{ |h| "\"#{h.ip_addr}:${mongodb_port}\"" }.join(',') + ']'
     end
     if host_instance.is_dbserver?
       host_puppet_config['datastore_hostname']              = host_instance.host
@@ -476,7 +484,7 @@ host_installation_order.each do |host_instance|
       host_puppet_config['msgserver_cluster_members'] = '[' + ordered_msgservers.map{ |h| "'#{h.host}'" }.join(',') + ']'
     end
     if host_instance.is_msgserver?
-      host_puppet_config['msgserver_hostname'] = @deployment.msgservers[0].host
+      host_puppet_config['msgserver_hostname'] = host_instance.host
       host_puppet_config['msgserver_password'] = host_instance.msgserver_cluster_password
     end
   end
@@ -484,7 +492,7 @@ host_installation_order.each do |host_instance|
   # Make a puppet config file for this host.
   filetext = "class { 'openshift_origin' :\n"
   host_puppet_config.each_pair do |key,val|
-    filetext << "  #{key} => #{val},\n"
+    filetext << "  #{key} => #{format_puppet_value(val)},\n"
   end
   filetext << "}\n"
 
