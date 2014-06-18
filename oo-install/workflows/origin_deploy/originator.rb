@@ -13,7 +13,7 @@ include Installer::Helpers
 ######################################
 
 @puppet_module_name = 'openshift/openshift_origin'
-@puppet_module_ver = '4.0.0'
+@puppet_module_ver = '4.0.1'
 
 # Check ENV for an alternate config file location.
 if ENV.has_key?('OO_INSTALL_CONFIG_FILE')
@@ -110,7 +110,7 @@ end
 # This function quietly handles ENV for locally run commands
 def execute_command host_instance, command
   clear_env if host_instance.localhost?
-  output = host_instance.execute_on_host!(command)
+  output = host_instance.exec_on_host!(command)
   restore_env if host_instance.localhost?
   return output
 end
@@ -270,7 +270,7 @@ def restart_services host_instance
   cmd << "/sbin/service messagebus restart;"
   cmd << "/sbin/service oddjobd restart;"
 
-  restart_cmds = host_instance.exec_on_host!(cmd)
+  restart_cmds = host_instance.exec_on_host!(cmd.join())
   if not restart_cmds[:exit_code] == 0
     display_error_info(host_instance, restart_cmds, 'Attempted service restarts failed')
     return false
@@ -392,7 +392,11 @@ end
  :mongodb_admin_user,  :mongodb_admin_password,
  :openshift_user,      :openshift_password,
 ].each do |setting|
-  @puppet_global_config[setting.to_s] = @deployment.hosts[0].send(setting)
+  key = setting.to_s
+  if [:openshift_user,:openshift_password].include?(setting)
+    key = key + '1'
+  end
+  @puppet_global_config[key] = @deployment.hosts[0].send(setting)
 end
 
 # And finally, gear sizes.
@@ -442,8 +446,8 @@ host_installation_order.each do |host_instance|
     if host_instance.is_broker?
       host_puppet_config['broker_hostname']             = host_instance.host
       host_puppet_config['broker_ip_addr']              = host_instance.ip_addr
-      host_puppet_config['broker_cluster_members']      = '[' + ordered_brokers.map{ |h| h.host }.join(',') + ']'
-      host_puppet_config['broker_cluster_ip_addresses'] = '[' + ordered_brokers.map{ |h| h.ip_addr }.join(',') + ']'
+      host_puppet_config['broker_cluster_members']      = '[' + ordered_brokers.map{ |h| "'#{h.host}'" }.join(',') + ']'
+      host_puppet_config['broker_cluster_ip_addresses'] = '[' + ordered_brokers.map{ |h| "'#{h.ip_addr}'" }.join(',') + ']'
       host_puppet_config['broker_virtual_ip_address']   = @deployment.load_balancers[0].broker_cluster_virtual_ip_addr
       if host_instance.is_load_balancer?
         host_puppet_config['load_balancer_master']    = true
@@ -561,6 +565,7 @@ host_installation_order.each do |host_instance|
   # Good to go; step through the puppet setup now.
   @child_pids[host_instance.host] = Process.fork do
     puts "#{host_instance.host}: Running Puppet deployment for host"
+    hostfile = "oo_install_configure_#{host_instance.host}.pp"
 
     if @keep_puppet
       puts "User specified that the openshift/openshift_origin module is already installed."
@@ -679,7 +684,7 @@ broker = @deployment.brokers[0]
       end
     end
   else
-    puts "Failed to create district '#{district_name}'.\nYou will need to run the following manually on a Broker to create the district:\n\n\t#{district_cmd}\n\nThen you will need to run the add-node command for each associated node:\n\n\too-admin-ctl-district -c add-node -n #{district.name} -i <node_hostname>"
+    puts "Failed to create district '#{district.name}'.\nYou will need to run the following manually on a Broker to create the district:\n\n\t#{district_cmd}\n\nThen you will need to run the add-node command for each associated node:\n\n\too-admin-ctl-district -c add-node -n #{district.name} -i <node_hostname>"
   end
 end
 
