@@ -97,6 +97,12 @@ module Installer
     end
   end
 
+  class DeploymentAccountInfoMismatchException < Exception
+    def initialize(message="The username/password combo for a particular service does not match across host instances.", code=1)
+      super(message, code)
+    end
+  end
+
   class DNSConfigDomainInvalidException < Exception
     def initialize(message="One of the domains specified in the DNS configuration is invalid.", code=1)
       super(message, code)
