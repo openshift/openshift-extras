@@ -359,13 +359,13 @@ module Installer
             hosts_choice_help = "You have the option of installing more than one OpenShift role on a given host. If you would prefer to install the #{role_item} on a host that you haven't described yet, answer 'n' and you will be asked to provide details for that host instance."
             if deployment.hosts.length == 1
               if concur("\nDo you want to assign the #{role_item} role to #{deployment.hosts[0].host}?", hosts_choice_help)
-               say "\nOkay. Adding the #{role_item} role to #{deployment.hosts[0].host}."
+                say "\nOkay. Adding the #{role_item} role to #{deployment.hosts[0].host}."
                 deployment.hosts[0].add_role(role)
                 create_host_instance = false
                 if role == :node
                   ui_add_node_host_to_district deployment.hosts[0]
                 end
-                edit_service_user_passwords(deployment.hosts[0],role)
+                ui_modify_account_info
               end
             else
               if concur("\nDo you want to assign the #{role_item} role to one of the hosts that you've already described?", hosts_choice_help)
@@ -379,7 +379,7 @@ module Installer
                       if role == :node
                         ui_add_node_host_to_district host_instance
                       end
-                      edit_service_user_passwords(host_instance,role)
+                      ui_modify_account_info
                     end
                   end
                 end
@@ -497,6 +497,12 @@ module Installer
         deployment.save_to_disk!
         resolved_issues = true
       end
+      if not deployment.are_accounts_valid?
+        say "\nThe services accounts information needs to be corrected."
+        ui_modify_account_info
+        deployment.save_to_disk!
+        resolved_issues = true
+      end
       # Check the HA configuration
       if not deployment.is_ha_valid?
         say "\nThe configuration file is incorrectly configured to support a high-availability deployment.\n\n"
@@ -521,12 +527,13 @@ module Installer
           menu.choice("Change the DNS configuration") { ui_modify_dns }
           menu.choice("Manage Hosts") { ui_modify_host }
           if deployment.hosts.length > 1
-            menu.choice("Manage OpenShift Role Assignments") { ui_modify_role }
+            menu.choice("Manage Roles") { ui_modify_role }
           end
-          menu.choice("Change the Global Gear Settings") { ui_modify_broker_global }
-          menu.choice("Change the Node Districts") { ui_modify_districts }
+          menu.choice("Services Accounts Settings") { ui_modify_account_info }
+          menu.choice("Global Gear Settings") { ui_modify_broker_global }
+          menu.choice("Node Districts") { ui_modify_districts }
           if deployment.brokers.length > 1 or deployment.dbservers.length > 1
-            menu.choice("Change the HA Configuration Settings") { ui_modify_ha }
+            menu.choice("HA Configuration Settings") { ui_modify_ha }
           end
           menu.choice("Display full Host details") { ui_show_full_host_details }
           menu.choice("Finish editing the deployment configuration") { exit_loop = true }
@@ -742,7 +749,7 @@ module Installer
               if target_role == :node
                 ui_add_node_host_to_district host_instance
               end
-              edit_service_user_passwords(host_instance,target_role)
+              ui_modify_account_info
               deployment.save_to_disk!
               say "\nRole #{target_name} has been added to #{host_instance.host}."
             }
@@ -774,7 +781,7 @@ module Installer
             if target_role == :node
               ui_add_node_host_to_district target_host
             end
-            edit_service_user_passwords(target_host,target_role)
+            ui_modify_account_info
           end
           deployment.save_to_disk!
         end
@@ -798,7 +805,7 @@ module Installer
               if role == :node
                 ui_add_node_host_to_district host_instance
               end
-              edit_service_user_passwords(host_instance,role)
+              ui_modify_account_info
             }
           end
           menu.choice("Add a new host") { ui_edit_host_instance(nil, role) }
@@ -880,8 +887,8 @@ module Installer
       end
     end
 
-    def ui_modify_dns(verbose=false)
-      deploy_dns_question = verbose ? "\nDo you want me to install a new DNS server for OpenShift-hosted applications, or do you want this system to use an existing DNS server? (Answer 'yes' to have me install a DNS server.)" : "Use OpenShift to manage DNS for hosted applications?"
+    def ui_modify_dns(create_mode=false)
+      deploy_dns_question = create_mode ? "\nDo you want me to install a new DNS server for OpenShift-hosted applications, or do you want this system to use an existing DNS server? (Answer 'yes' to have me install a DNS server.)" : "Use OpenShift to manage DNS for hosted applications?"
       deployment.dns.deploy_dns = concur(deploy_dns_question, translate(:help_dns_deployment))
       app_domain_q = "\nAll of your hosted applications will have a DNS name of the form:\n\n<app_name>-<owner_namespace>.<all_applications_domain>\n\nWhat domain name should be used for all of the hosted apps in your OpenShift system? "
       if not deployment.dns.deploy_dns?
@@ -965,7 +972,7 @@ module Installer
                 menu.choice(host_instance.summarize) {
                   if remove_role(source_host,:nameserver)
                     host_instance.add_role(:nameserver)
-                    edit_service_user_passwords(host_instance,:nameserver)
+                    ui_modify_account_info
                   end
                 }
               end
@@ -974,7 +981,7 @@ module Installer
             end
           else
             say "Please configure a host to use as the nameserver."
-            ui_edit_host_instance(nil, :nameserver)
+            ui_edit_host_instance(nil, :nameserver, false, create_mode)
           end
         end
       end
@@ -1503,7 +1510,7 @@ module Installer
         say "Modifying host #{host_instance.host}"
       end
       host_instance.install_status = instances_exist ? :completed : :new
-      edit_host_instance(host_instance)
+      edit_host_instance(host_instance, create_mode)
       if new_host
         ha_brokers_before    = deployment.brokers.length > 1
         ha_dbservers_before  = deployment.dbservers.length > 1
@@ -1537,7 +1544,7 @@ module Installer
       end
     end
 
-    def edit_host_instance(host_instance)
+    def edit_host_instance(host_instance, create_mode=false)
       host_instance_is_valid = false
       while not host_instance_is_valid
         host_instance.host = edit_host_fqdn host_instance.host
@@ -1715,7 +1722,7 @@ module Installer
             end
           end
         end
-        edit_service_user_passwords host_instance
+        ui_modify_account_info if not create_mode
         host_instance_is_valid = true
       end
     end
@@ -1764,56 +1771,39 @@ module Installer
       return new_value
     end
 
-    def edit_service_user_passwords host_instance, newrole=nil
-      prompt_user_pass = false
-
-      if newrole.nil?
-        qtext = "\nDo you want to specify usernames and passwords for services configured on this host? Otherwise default usernames and randomized passwords will be configured."
-      else
-        qtext = "\nDo you want to specify any new usernames and passwords needed for this role?"
-      end
-      if concur(qtext)
-        prompt_user_pass = true
+    def ui_modify_account_info
+      if deployment.are_accounts_valid? and not concur("\nDo you want to modify the account info settings for the various role services?","Role services include MongoDB, ActiveMQ and the Broker. You can manually set the account info for OpenShift to use, or alternately it can be generated for you.")
+        return
       end
 
-      # set default username and password variables
-      user_pass_combos = get_user_pass_combos
-      sorted = user_pass_combos.sort do |a,b|
-        partsa = a[0].to_s.rpartition('_')
-        partsb = b[0].to_s.rpartition('_')
-        r = partsa[0] <=> partsb[0]
-        r != 0 ? r : -(partsa[2] <=> partsb[2])
-      end
+      user_guided = concur("\nDo you want to manually specify the account info values? Answer 'N' to have the values generated for you")
 
-      sorted.each do |attr,entry|
-        if (newrole.nil? and not (host_instance.roles & entry[:roles]).empty?) or
-           (not newrole.nil? and entry[:roles].include? newrole and ((host_instance.roles - [newrole]) & entry[:roles]).empty?)
-          syncd_attr = @deployment.get_synchronized_attr attr
-          attr_already_set = false
-          if not syncd_attr.nil?
-            attr_already_set = true
-            entry[:value] = syncd_attr
+      user_pass_info = get_user_pass_info
+      handled_params = []
+      Installer::Deployment.list_map.each do |role,list|
+        params_for_role = user_pass_info.keys.select{ |p| user_pass_info[p][:roles].include?(role) }.sort.reverse
+        next if params_for_role.length == 0
+        params_for_role.each do |param|
+          next if handled_params.include?(param)
+          current_value = deployment.get_synchronized_attr(param)
+          # If this is not user-guided and we have a current value, roll with it.
+          if not user_guided and not current_value.nil?
+            deployment.set_synchronized_attr!(role, param, current_value)
+            next
           end
-
-          attrname = capitalize_attribute(attr)
-          ask_for_pass = (prompt_user_pass and (not (host_instance.roles & entry[:roles]).empty?))
-          if ask_for_pass and attr_already_set
-            ask_for_pass = concur("#{attrname} has already been set, do you wish to change #{attrname} for all hosts in this deployment?")
-          end
-
-          if ask_for_pass
-            entry[:value] = ask("\nEnter the value for the #{attrname}. #{entry[:description]} ") { |q|
-              q.default = entry[:value]
+          new_value = user_pass_info[param][:value]
+          if user_guided
+            attr_name = param.to_s.gsub('_',' ')
+            new_value = ask("\nEnter a value for the #{attr_name}. #{user_pass_info[param][:description]} ") { |q|
+              q.default = current_value.nil? ? new_value : current_value
               q.validate = lambda { |p| is_valid_string?(p) }
-              q.responses[:not_valid] = "#{attrname} must be a non-empty string."
+              q.responses[:not_valid] = "#{attr_name} must be a non-empty string."
             }.to_s
           end
-
-          host_instance.send "#{attr.to_s}=", entry[:value]
-          @deployment.set_synchronized_attr!(attr, entry[:value])
+          deployment.set_synchronized_attr!(role, param, new_value)
+          handled_params << param
         end
       end
-      @deployment.save_to_disk!
     end
 
     def manual_ip_info_for_host_instance(host_instance, ip_addrs)

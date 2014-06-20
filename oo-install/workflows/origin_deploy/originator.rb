@@ -13,7 +13,7 @@ include Installer::Helpers
 ######################################
 
 @puppet_module_name = 'openshift/openshift_origin'
-@puppet_module_ver = '4.0.1'
+@puppet_module_ver = '4.0.3'
 
 # Check ENV for an alternate config file location.
 if ENV.has_key?('OO_INSTALL_CONFIG_FILE')
@@ -148,7 +148,7 @@ def components_list host_instance
   if host_instance.is_load_balancer?
     values << 'load_balancer'
   end
-  "[" + values.join(',') + "]"
+  "[" + values.map{ |r| "'#{r}'" }.join(',') + "]"
 end
 
 def display_error_info host_instance, exec_info, message
@@ -349,6 +349,7 @@ end
 
 # Set up the global puppet settings
 @puppet_global_config['domain'] = @deployment.dns.app_domain
+@puppet_global_config['parallel_deployment'] = host_installation_order.length > 1
 if @deployment.dns.deploy_dns?
   @puppet_global_config['nameserver_hostname'] = @deployment.nameservers[0].host
   @puppet_global_config['nameserver_ip_addr']  = @deployment.nameservers[0].ip_addr
@@ -577,7 +578,19 @@ host_installation_order.each do |host_instance|
       else
         puts "#{host_instance.host}: Puppet module removal failed. This is expected if the module was not installed."
       end
-      add_module = execute_command(host_instance,"puppet module install -v #{@puppet_module_ver} #{@puppet_module_name}")
+      # PuppetForge seems to have som traffic issues.
+      tries      = 0
+      add_module = nil
+      while tries < 3 do
+        puts "#{host_instance.host}: Attempting Puppet module installation (try ##{tries + 1})"
+        add_module = execute_command(host_instance,"puppet module install -v #{@puppet_module_ver} #{@puppet_module_name}")
+        if not add_module[:exit_code] == 0
+          tries += 1
+          sleep 5
+        else
+          break
+        end
+      end
       if not add_module[:exit_code] == 0
         display_error_info(host_instance, add_module, 'Puppet module installation failed')
         exit 1
@@ -624,7 +637,7 @@ host_installation_order.each do |host_instance|
   host_proc = procs.select{ |process| process[0] == host_pid }[0]
   if not host_proc.nil?
     if not host_proc[1].exitstatus == 0
-      host_failures << host_instance.host + ' (' + host_proc[1].exitstatus + ')'
+      host_failures << host_instance.host + ' (' + host_proc[1].exitstatus.to_s + ')'
     end
   else
     puts "Could not determine deployment status for host #{host_instance.host}"
@@ -666,6 +679,27 @@ end
 ###############################
 
 puts "\nNow performing post-installation tasks.\n\nConfiguring districts."
+
+if @deployment.dbservers.length > 1
+  puts "\nRegistering MongoDB replica set"
+  db_primary = @deployment.db_replica_primaries[0]
+  @deployment.dbservers.each do |host_instance|
+    check_cmd = "mongo admin --host #{db_primary.ip_addr} -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.status())\" | grep '\"name\" : \"#{host_instance.ip_addr}:27017\"'"
+    check_result = execute_command db_primary, check_cmd
+    if check_result[:exit_code] == 0
+      puts "MongoDB replica member #{host_instance.host} already registered."
+    else
+      add_cmd = "mongo admin --host #{db_primary.ip_addr} -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.add(\'#{host_instance.ip_addr}:27017\'))\""
+      add_result = execute_command db_primary, add_cmd
+      if add_result[:exit_code] == 0
+        puts "MongoDB replica member #{host_instance.host} registered."
+      else
+        display_error_info host_instance, add_result, 'This host could not be registered as a MongoDB replica member'
+        exit 1
+      end
+    end
+  end
+end
 
 # The post-install work can all be run from any broker.
 broker = @deployment.brokers[0]

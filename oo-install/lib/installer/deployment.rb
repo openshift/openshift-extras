@@ -289,7 +289,39 @@ module Installer
       else
         errors.concat(are_districts_valid?(check))
       end
+      # Check the account info settings
+      if check == :basic
+        return false if not are_accounts_valid?
+      else
+        errors.concat(are_accounts_valid?(check))
+      end
       # Still here? Good to go.
+      return true if check == :basic
+      errors
+    end
+
+    def are_accounts_valid?(check=:basic)
+      errors = []
+      account_info = get_user_pass_info
+      self.class.list_map.each do |role,list|
+        params_for_role = account_info.keys.select{ |p| account_info[p][:roles].include?(role) }
+        next if params_for_role.length == 0
+        role_hosts = self.send(list)
+        params_for_role.each do |param|
+          unset_hosts = role_hosts.select{ |h| h.send(param).nil? }
+          if unset_hosts.length > 0
+            return false if check == :basic
+            unset_hosts.each do |host_instance|
+              errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host_instance.host}' is missing a value for '#{param.to_s}'")
+            end
+          end
+          seen_values = role_hosts.map{ |h| h.send(param) }.uniq
+          if seen_values.length > 1
+            return false if check == :basic
+            errors << Installer::DeploymentAccountInfoMismatchException.new("The value of the '#{param.to_s}' parameter is not consistent across #{self.class.role_map[role]}.")
+          end
+        end
+      end
       return true if check == :basic
       errors
     end
@@ -459,11 +491,10 @@ module Installer
       return nil
     end
 
-    def set_synchronized_attr! attr, value
-      hosts.each do |h|
-        unless h.send(attr).nil?
-          h.send("#{attr.to_s}=".to_sym, value)
-        end
+    def set_synchronized_attr! role, attr, value
+      hosts.each do |host_instance|
+        host_value = host_instance.roles.include?(role) ? value : nil
+        host_instance.send("#{attr.to_s}=".to_sym, host_value)
       end
       save_to_disk!
     end
