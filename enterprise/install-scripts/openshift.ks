@@ -3388,7 +3388,10 @@ post_deploy()
   if broker; then
     if isset_valid_gear_sizes || isset_default_gear_capabilities || isset_default_gear_size; then
       update_controller_gear_size_configs
+      RESTART_NEEDED=true
     fi
+
+    $RESTART_NEEDED && restart_services && RESTART_COMPLETED=true
 
     # import cartridges
     oo-admin-ctl-cartridge -c import-node --activate --obsolete
@@ -3442,6 +3445,7 @@ esac
 declare -A passwords
 PASSWORDS_TO_DISPLAY=false
 RESTART_NEEDED=false
+RESTART_COMPLETED=false
 
 set_defaults
 
@@ -3451,7 +3455,7 @@ do
   "$action"
 done
 
-$RESTART_NEEDED && restart_services
+$RESTART_NEEDED && ! $RESTART_COMPLETED && restart_services
 
 $PASSWORDS_TO_DISPLAY && display_passwords
 
