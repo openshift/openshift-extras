@@ -365,7 +365,6 @@ module Installer
                 if role == :node
                   ui_add_node_host_to_district deployment.hosts[0]
                 end
-                ui_modify_account_info
               end
             else
               if concur("\nDo you want to assign the #{role_item} role to one of the hosts that you've already described?", hosts_choice_help)
@@ -379,7 +378,6 @@ module Installer
                       if role == :node
                         ui_add_node_host_to_district host_instance
                       end
-                      ui_modify_account_info
                     end
                   end
                 end
@@ -408,6 +406,8 @@ module Installer
           say "\nMoving on to the next role."
         end
       end
+
+      ui_modify_account_info
 
       if deployment.is_ha?
         say "\nIt looks like you're setting up a High Availability OpenShift deployment. We're going to need to set some HA-related settings."
@@ -1776,34 +1776,26 @@ module Installer
         return
       end
 
-      user_guided = concur("\nDo you want to manually specify the account info values? Answer 'N' to have the values generated for you")
+      user_guided = concur("\nDo you want to manually specify usernames and passwords for the various supporting service accounts? Answer 'N' to have the values generated for you")
 
-      user_pass_info = get_user_pass_info
-      handled_params = []
-      Installer::Deployment.list_map.each do |role,list|
-        params_for_role = user_pass_info.keys.select{ |p| user_pass_info[p][:roles].include?(role) }.sort.reverse
-        next if params_for_role.length == 0
-        params_for_role.each do |param|
-          next if handled_params.include?(param)
-          current_value = deployment.get_synchronized_attr(param)
-          # If this is not user-guided and we have a current value, roll with it.
-          if not user_guided and not current_value.nil?
-            deployment.set_synchronized_attr!(role, param, current_value)
-            next
-          end
-          new_value = user_pass_info[param][:value]
-          if user_guided
-            attr_name = param.to_s.gsub('_',' ')
-            new_value = ask("\nEnter a value for the #{attr_name}. #{user_pass_info[param][:description]} ") { |q|
-              q.default = current_value.nil? ? new_value : current_value
-              q.validate = lambda { |p| is_valid_string?(p) }
-              q.responses[:not_valid] = "#{attr_name} must be a non-empty string."
-            }.to_s
-          end
-          deployment.set_synchronized_attr!(role, param, new_value)
-          handled_params << param
+      service_accounts_info.keys.sort.each do |service_param|
+        param_info  = service_accounts_info[service_param]
+        param_name  = service_param.to_s.gsub('_',' ')
+        current_val = deployment.get_synchronized_attr(service_param)
+        default_val = param_info[:value]
+        new_val     = nil
+        if user_guided
+          new_val = ask("\nEnter a value for the #{param_name}. #{param_info[:description]} ") { |q|
+            q.default = current_val.nil? ? default_val : current_val
+            q.validate = lambda { |p| is_valid_string?(p) }
+            q.responses[:not_valid] = "#{attr_name} must be a non-empty string."
+          }.to_s
+        else
+          new_val = current_val.nil? ? default_val : current_val
         end
+        deployment.set_synchronized_attr(service_param, new_val)
       end
+      deployment.save_to_disk!
     end
 
     def manual_ip_info_for_host_instance(host_instance, ip_addrs)

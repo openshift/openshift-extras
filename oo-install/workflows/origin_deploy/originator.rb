@@ -595,9 +595,11 @@ host_installation_order.each do |host_instance|
         display_error_info(host_instance, add_module, 'Puppet module installation failed')
         exit 1
       end
+      puts "#{host_instance.host}: Puppet module installation succeeded."
     end
 
     # Reset the yum repos
+    puts "#{host_instance.host}: Cleaning yum repos."
     yum_clean = execute_command(host_instance,'yum clean all')
     if not yum_clean[:exit_code] == 0
       display_error_info(host_instance, yum_clean, 'Failed to clean yum repo database')
@@ -605,13 +607,16 @@ host_installation_order.each do |host_instance|
     end
 
     # Make the magic
+    puts "#{host_instance.host}: Running the Puppet deployment. This step may take up to an hour."
     run_apply = execute_command(host_instance,"puppet apply --verbose /tmp/#{hostfile} |& tee -a /tmp/openshift-deploy.log")
     if not run_apply[:exit_code] == 0
       display_error_info(host_instance, run_apply, 'Puppet deployment exited with errors')
       exit 1
     end
+    puts "#{host_instance.host}: Puppet deployment completed."
 
     if not @keep_assets
+      puts "#{host_instance.host}: Cleaning up temporary files."
       clean_up = execute_command(host_instance,"rm /tmp/#{hostfile}")
       if not clean_up[:exit_code] == 0
         puts "#{host_instance.host}: Clean up of /tmp/#hostfile} failed; please remove this file manually."
@@ -678,7 +683,7 @@ end
 # Stage 8: Post-Install Tasks #
 ###############################
 
-puts "\nNow performing post-installation tasks.\n\nConfiguring districts."
+puts "\nNow performing post-installation tasks."
 
 if @deployment.dbservers.length > 1
   puts "\nRegistering MongoDB replica set"

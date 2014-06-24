@@ -152,7 +152,7 @@ module Installer
       value.to_s.gsub('_','-')
     end
 
-    def get_user_pass_info
+    def service_accounts_info
       { :mcollective_user => {
           :value => 'mcollective',
           :roles => [:broker, :node, :msgserver],
