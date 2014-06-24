@@ -998,7 +998,7 @@ configure_datastore()
     echo 'The data store needs to be accessible externally.'
 
     echo 'Configuring the firewall to allow connections to mongod...'
-    $lokkit --port=27017:tcp
+    firewall_allow[mongodb]=tcp:27017
 
     echo 'Configuring mongod to listen on all interfaces...'
     set_mongodb bind_ip 0.0.0.0
@@ -1021,6 +1021,8 @@ configure_datastore()
 
 
 # Open up services required on the node for apps and developers.
+#
+# Note: This function must only be run after configure_firewall.
 configure_port_proxy()
 {
   chkconfig openshift-iptables-port-proxy on
@@ -1044,12 +1046,12 @@ enable_services_on_node()
   # will produce errors.  Anyway, we only need the configuration
   # activated after Anaconda reboots, so --nostart makes sense in any case.
 
-  $lokkit --service=https
-  $lokkit --service=http
+  firewall_allow[https]=tcp:443
+  firewall_allow[http]=tcp:80
 
   # Allow connections to openshift-node-web-proxy
-  $lokkit --port=8000:tcp
-  $lokkit --port=8443:tcp
+  firewall_allow[ws]=tcp:8000
+  firewall_allow[wss]=tcp:8443
 
   chkconfig httpd on
   chkconfig network on
@@ -1068,8 +1070,8 @@ enable_services_on_broker()
   # will produce errors.  Anyway, we only need the configuration
   # activated after Anaconda reboots, so --nostart makes sense.
 
-  $lokkit --service=https
-  $lokkit --service=http
+  firewall_allow[https]=tcp:443
+  firewall_allow[http]=tcp:80
 
   chkconfig httpd on
   chkconfig network on
@@ -1407,8 +1409,8 @@ $networkConnectors
 EOF
 
   # Allow connections to ActiveMQ.
-  $lokkit --port=61613:tcp
-  allow_openwire && $lokkit --port=61616:tcp
+  firewall_allow[stomp]=tcp:61613
+  allow_openwire && firewall_allow[openwire]=tcp:61616
 
   # Configure ActiveMQ to start on boot.
   chkconfig activemq on
@@ -1504,7 +1506,7 @@ EOF
   configure_hosts_dns
 
   # Configure named to start on boot.
-  $lokkit --service=dns
+  firewall_allow[dns]=tcp:53,udp:53
   chkconfig named on
 
   # Start named so we can perform some updates immediately.
@@ -2546,7 +2548,7 @@ install_rpms()
   yum $disable_plugin update -y || abort_install
   # Install a few packages missing from a minimal RHEL install required by the
   # installer script itself.
-  yum_install_or_exit ntp ntpdate lokkit wget
+  yum_install_or_exit ntp ntpdate wget
 
   # install what we need for various components
   named && install_named_pkgs
@@ -2577,10 +2579,59 @@ configure_host()
   # Remove VirtualHost from the default httpd ssl.conf to prevent a warning
   sed -i '/VirtualHost/,/VirtualHost/ d' /etc/httpd/conf.d/ssl.conf
 
+  # Reset the firewall to disable lokkit and initialise iptables configuration.
+  configure_firewall
+
   # all hosts should enable ssh access
-  $lokkit --service=ssh
+  firewall_allow[ssh]=tcp:22
 
   echo "OpenShift: Completed configuring host."
+}
+
+configure_firewall()
+{
+  # Disable lokkit.
+  conf='/etc/sysconfig/system-config-firewall'
+  [[ "$(< "$conf")" != --disabled ]] &&
+    mv "$conf" "${conf}.bak"
+  echo '--disabled' > "$conf"
+
+  # Configure iptables.
+cat > /etc/sysconfig/iptables <<'EOF'
+*filter
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -p icmp -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -j REJECT --reject-with icmp-host-prohibited
+-A FORWARD -j REJECT --reject-with icmp-host-prohibited
+COMMIT
+EOF
+
+  # Load the configuration on reboot.
+  chkconfig iptables on
+}
+
+# Note: This function must be run after configure_firewall.
+configure_firewall_add_rules()
+{
+  rules="$(
+    for svc in ${firewall_allow[@]}
+    do
+      for rule in ${svc//,/ }
+      do
+        prot="${rule%%:*}"
+        port="${rule##*:}"
+        printf ' \\\n-A INPUT -m state --state NEW -m %s -p %s --dport %s -j ACCEPT' "$prot" "$prot" "$port"
+      done
+    done
+  )"
+
+  # Insert the rules specified by ${firewall_allow[@]} before the first
+  # REJECT rule in the INPUT chain.
+  sed -i -e $'/-A INPUT -j REJECT/i \\\n'"${rules:3}" /etc/sysconfig/iptables
 }
 
 configure_openshift()
@@ -2622,6 +2673,8 @@ configure_openshift()
   node && broker && fix_broker_routing
   node && install_rsync_pub_key
 
+  configure_firewall_add_rules
+
   sysctl -p
   restorecon -rv /etc/openshift
 
@@ -2633,6 +2686,9 @@ configure_openshift()
 restart_services()
 {
   echo "OpenShift: Begin restarting services."
+
+  service iptables restart
+
   # named is already started in configure_named.
   named && service named restart
 
@@ -2754,19 +2810,14 @@ ks)
   # parse_kernel_cmdline is only needed for kickstart and not if this %post
   # section is extracted and executed on a running system.
   parse_kernel_cmdline
-  # during a kickstart a live lokkit fails
-  lokkit="lokkit --nostart"
   ;;
 vm)
   # no args to parse; they are directly inserted by make.
-  # during a kickstart a live lokkit fails
-  lokkit="lokkit --nostart"
   ;;
 *)
   # parse_cmdline is only needed for shell scripts generated by extracting
   # this %post section.
   parse_cmdline "$@"
-  lokkit="lokkit" # normally...
   ;;
 esac
 
@@ -2774,6 +2825,10 @@ declare -A passwords
 PASSWORDS_TO_DISPLAY=false
 RESTART_NEEDED=false
 RESTART_COMPLETED=false
+
+# Initialize associative array to which firewall rules can be added (see
+# configure_firewall_add_rules).  This must be declared here for scoping.
+declare -A firewall_allow
 
 set_defaults
 
