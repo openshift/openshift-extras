@@ -302,25 +302,26 @@ module Installer
 
     def are_accounts_valid?(check=:basic)
       errors = []
-      account_info = get_user_pass_info
-      self.class.list_map.each do |role,list|
-        params_for_role = account_info.keys.select{ |p| account_info[p][:roles].include?(role) }
-        next if params_for_role.length == 0
-        role_hosts = self.send(list)
-        params_for_role.each do |param|
-          unset_hosts = role_hosts.select{ |h| h.send(param).nil? }
-          if unset_hosts.length > 0
+      service_accounts_info.keys.each do |service_param|
+        param_roles = service_accounts_info[service_param][:roles]
+        seen_values = []
+        hosts.each do |host_instance|
+          host_value = host_instance.send(service_param)
+          if (host_instance.roles & param_roles).length == 0
+            # In this case, the host should not have this setting.
+            next if host_value.nil?
             return false if check == :basic
-            unset_hosts.each do |host_instance|
-              errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host_instance.host}' is missing a value for '#{param.to_s}'")
-            end
-          end
-          seen_values = role_hosts.map{ |h| h.send(param) }.uniq
-          if seen_values.length > 1
+            errors << Installer::HostInstanceSettingException.new("Host instance '#{host}' should not have a value for the '#{service_param.to_s}' parameter.")
+          elsif not is_valid_string?(host_value)
             return false if check == :basic
-            errors << Installer::DeploymentAccountInfoMismatchException.new("The value of the '#{param.to_s}' parameter is not consistent across #{self.class.role_map[role]}.")
+            errors << Installer::HostInstanceSettingException.new("Host instance '#{host}' has an invalid value for the '#{service_param.to_s}' parameter.")
+          else
+            seen_values << host_value
           end
         end
+        next if seen_values.uniq.length == 1
+        return false if check == :basic
+        errors << Installer::DeploymentAccountInfoMismatchException.new("The value of the '#{service_param.to_s}' parameter is not consistent across the deployment.")
       end
       return true if check == :basic
       errors
@@ -491,12 +492,12 @@ module Installer
       return nil
     end
 
-    def set_synchronized_attr! role, attr, value
+    def set_synchronized_attr service_param, value
       hosts.each do |host_instance|
-        host_value = host_instance.roles.include?(role) ? value : nil
-        host_instance.send("#{attr.to_s}=".to_sym, host_value)
+        common_roles = service_accounts_info[service_param][:roles] & host_instance.roles
+        host_value   = common_roles.length == 0 ? nil : value
+        host_instance.send("#{service_param.to_s}=".to_sym, host_value)
       end
-      save_to_disk!
     end
 
     def get_hosts_by_role role
