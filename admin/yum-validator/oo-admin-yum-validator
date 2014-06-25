@@ -675,7 +675,7 @@ class OpenShiftYumValidator(object):
                                           for pkg in present_pkgs])
                 # Peek ahead to see if we're possibly running an OSE install
                 for repo in pkg_repos:
-                    if not self.opts.product or repo.product == ose:
+                    if not self.opts.product or repo.product == 'ose':
                         self.opts.product = repo.product
         if not self.opts.role:
             self.logger.error('No roles could be detected.')
