@@ -228,14 +228,25 @@ module Installer
           errors << Installer::DeploymentRoleMissingException.new("There must be at least one #{role.to_s} in the deployment configuration.")
         end
       end
-      # Make sure there is only one nameserver
       if dns.deploy_dns?
+        # Make sure there is one nameserver
         if nameservers.length == 0
           return false if check == :basic
           errors << Installer::DeploymentCheckFailedException.new("The installer is configured to deploy DNS, but no host has been selected as the DNS host.")
         elsif nameservers.length > 1
           return false if check == :basic
           errors << Installer::DeploymentCheckFailedException.new("Only one host can be selected as the DNS host, but the role has been assigned to: #{nameservers.sort_by{ |h| h.host }.map{ |h| h.host }.join(', ')}")
+        end
+        # If we are deploying DNS for the component hosts, confirm domain
+        if dns.register_components? and not dns.component_domain.nil?
+          seen_domains = hosts.map{ |h| get_domain_from_fqdn(h.host) }.uniq
+          if seen_domains.length == 1 and not seen_domains[0] == dns.component_domain
+            return false if check == :basic
+            errors << Installer::DeploymentCheckFailedException.new("The implied host domain '#{seen_domains[0]}' does not match the specified host domain of '#{dns.component_domain}' for DNS")
+          elsif seen_domains.length > 1
+            return false if check == :basic
+            errors << Installer::DeploymentCheckFailedException.new("The OpenShift hosts are spread across multiple domains (#{seen_domains.join(', ')}), however the deployment is configured to act as DNS server for all hosts under the '#{dns.component_domain}' domain.")
+          end
         end
       elsif nameservers.length > 0
         return false if check == :basic

@@ -524,7 +524,7 @@ module Installer
         choose do |menu|
           menu.header = "\nChoose from the following deployment configuration options"
           menu.prompt = "#{translate(:menu_prompt)} "
-          menu.choice("Change the DNS configuration") { ui_modify_dns }
+          menu.choice("Change the DNS configuration") { say "\n#{horizontal_rule}\nDNS Configuration\n#{horizontal_rule}\n\n"; ui_modify_dns }
           menu.choice("Manage Hosts") { ui_modify_host }
           if deployment.hosts.length > 1
             menu.choice("Manage Roles") { ui_modify_role }
@@ -916,13 +916,37 @@ module Installer
         deployment.dns.register_components = concur("\nDo you want to register DNS entries for your OpenShift hosts with the same OpenShift DNS service that will be managing DNS records for the hosted applications?")
         if deployment.dns.register_components?
           loop do
+            # Bug 1105734 - handle host domain config when some hosts have already been defined.
+            # If this yields more than one domain, don't panic yet.
+            seen_domains = deployment.hosts.map{ |h| get_domain_from_fqdn(h.host) }.uniq
+
+            # Now collect the desired domain name.
             deployment.dns.component_domain = ask("\nWhat domain do you want to use for the OpenShift hosts? ") { |q|
               if not deployment.dns.component_domain.nil?
                 q.default = deployment.dns.component_domain
+              elsif seen_domains.length > 0
+                q.default = seen_domains[0]
               end
               q.validate = lambda { |p| is_valid_domain?(p) }
               q.responses[:not_valid] = "Enter a valid domain"
             }.to_s
+
+            if seen_domains.length > 1 or (seen_domains.length == 1 and not seen_domains[0] == deployment.dns.component_domain)
+              update_q = "\nThe already-specified host domain names do not match the desired domain setting of '#{deployment.dns.component_domain}'. Do you want me to update all hostnames with the new desired domain?"
+              if deployment.hosts.length == 1
+                update_q = "\nHost '#{deployment.hosts[0].host}' doesn't match the desired domain setting of '#{deployment.dns.component_domain}'. Do you want me to update it?"
+              end
+              if concur(update_q)
+                deployment.hosts.each do |host_instance|
+                  hostname = host_instance.host.split('.')[0]
+                  host_instance.host = "#{hostname}.#{deployment.dns.component_domain}"
+                end
+                say "\nHost names updated."
+              else
+                say "\nOkay. The hostname(s) will not be updated, but this deployment will not validate correctly until the hostnames match the '#{deployment.dns.component_domain}' domain."
+              end
+            end
+
             if deployment.dns.app_domain == deployment.dns.component_domain
               break if concur("\nYou have specified the same domain for your applications and your OpenShift components. Do you wish to keep these settings?")
             else
