@@ -6,33 +6,40 @@ module Installer
     include Installer::Helpers
 
     attr_accessor :host, :ip_addr, :named_ip_addr, :ip_interface, :ssh_host,
-                  :user, :roles, :install_status, :node_profile, :district,
-                  :valid_gear_sizes, :default_gear_capabilities,
-                  :default_gear_size, :district_mappings,
+                  :user, :roles, :install_status,
                   :mcollective_user, :mcollective_password,
                   :mongodb_broker_user, :mongodb_broker_password,
                   :mongodb_admin_user, :mongodb_admin_password,
-                  :openshift_user, :openshift_password
+                  :openshift_user, :openshift_password,
+                  :broker_cluster_load_balancer,
+                  :broker_cluster_virtual_host,
+                  :broker_cluster_virtual_ip_addr,
+                  :mongodb_replica_primary,
+                  :mongodb_replica_key,
+                  :msgserver_cluster_password
 
     def self.attrs
       %w{host roles ssh_host user ip_addr named_ip_addr ip_interface
-         install_status node_profile district valid_gear_sizes
-         default_gear_capabilities default_gear_size district_mappings
-         mcollective_user mcollective_password mongodb_broker_user
+         install_status mcollective_user mcollective_password mongodb_broker_user
          mongodb_broker_password mongodb_admin_user mongodb_admin_password
-         openshift_user openshift_password}.map{ |a| a.to_sym }
+         openshift_user openshift_password broker_cluster_load_balancer
+         broker_cluster_virtual_host broker_cluster_virtual_ip_addr
+         mongodb_replica_primary mongodb_replica_key msgserver_cluster_password}.map{ |a| a.to_sym }
     end
 
     def initialize(item={}, init_role=nil)
-      @roles = []
-      @install_status = item.has_key?('state') ? item['state'].to_sym : :new
+      @roles                        = []
+      @install_status               = item.has_key?('state') ? item['state'].to_sym : :new
+      @broker_cluster_load_balancer = item.has_key?('load_balancer') && item['load_balancer'].downcase == 'y'
+      @mongodb_replica_primary      = item.has_key?('db_replica_primary') && item['db_replica_primary'].downcase == 'y'
       self.class.attrs.each do |attr|
-        # Skip install_status here or the value will be nilled out
-        next if attr == :install_status
+        # Skip booleans here or their values will be nilled out
+        next if [:install_status,:broker_cluster_load_balancer,:mongodb_replica_primary].include?(attr)
         value = attr == :roles ? [] : nil
         if item.has_key?(attr.to_s)
           if attr == :roles
-            value = item[attr.to_s].map{ |role| role == 'msgserver' ? :mqserver : role.to_sym }
+            # Quietly ccorrect older config files by remapping 'mqserver' to 'msgserver'
+            value = item[attr.to_s].map{ |role| role == 'mqserver' ? :msgserver : role.to_sym }
           else
             value = item[attr.to_s]
           end
@@ -40,7 +47,7 @@ module Installer
         self.send("#{attr}=", value)
       end
       if not init_role.nil?
-        @roles = @roles.concat([init_role.to_sym]).uniq
+        add_role init_role
       end
     end
 
@@ -100,8 +107,8 @@ module Installer
     end
 
     def is_basic_broker?
-      # Basic broker has three roles
-      roles.length == 3 and roles.include?(:broker) and roles.include?(:mqserver) and roles.include?(:dbserver)
+      # Basic broker has three roles (and possibly also 'nameserver', but not 'node')
+      is_broker? and roles.include?(:msgserver) and roles.include?(:dbserver) and not is_node?
     end
 
     def is_broker?
@@ -109,18 +116,45 @@ module Installer
     end
 
     def is_basic_node?
-      # This specifically checks for node hosts with no other roles. For general use, call 'is_node?' instead.
-      roles.length == 1 and roles[0] == :node
+      # This specifically checks for node hosts with no other roles (except possibly 'nameserver') For general use, call 'is_node?' instead.
+      is_node? and not is_broker? and not roles.include?(:msgserver) and not roles.include?(:dbserver)
     end
 
     def is_all_in_one?
-      roles.length == 4 and roles.include?(:broker) and roles.include?(:mqserver) and roles.include?(:dbserver) and roles.include?(:node)
+      is_broker? and is_node? and roles.include?(:msgserver) and roles.include?(:dbserver)
     end
 
     def is_node?
       roles.include?(:node)
     end
 
+    def is_msgserver?
+      roles.include?(:msgserver)
+    end
+
+    def is_dbserver?
+      roles.include?(:dbserver)
+    end
+
+    def is_nameserver?
+      roles.include?(:nameserver)
+    end
+
+    def is_load_balancer?
+      broker_cluster_load_balancer
+    end
+
+    def is_db_replica_primary?
+      mongodb_replica_primary
+    end
+
+    def has_role?(role)
+      roles.include?(role)
+    end
+
+    # NOTE: HA-related validation is tested at the deployment level, not here at the
+    # host instance level. Therefore do not add broker cluster or DB replication related
+    # validation tests here.
     def is_valid?(check=:basic)
       errors = []
       if not is_valid_hostname?(host) or host == 'localhost'
@@ -160,11 +194,21 @@ module Installer
     end
 
     def add_role role
-      @roles = roles.concat([role]).uniq
+      new_roles = [role]
+      if role == :broker and not advanced_mode?
+        new_roles << :msgserver
+        new_roles << :dbserver
+      end
+      @roles = roles.concat(new_roles).uniq
     end
 
     def remove_role role
-      @roles.delete_if{ |r| r == role }
+      del_roles = [role]
+      if role == :broker and not advanced_mode?
+        del_roles << :msgserver
+        del_roles << :dbserver
+      end
+      @roles.delete_if{ |r| del_roles.include?(r) }
     end
 
     def host_type
@@ -173,8 +217,8 @@ module Installer
           type_output = exec_on_host!('export LC_CTYPE=en_US.utf8 && cat /etc/redhat-release')
           type_result = :other
           if type_output[:exit_code] == 0
-            if type_output[:stdout].match(/^Fedora/)
-              type_result = :fedora
+            if type_output[:stdout].match(/^CentOS/)
+              type_result = :centos
             elsif type_output[:stdout].match(/^Red Hat Enterprise Linux/)
               type_result = :rhel
             end
@@ -189,20 +233,33 @@ module Installer
         next if self.send(attr).nil?
         if attr == :install_status
           output['state'] = self.send(attr).to_s
+        elsif attr == :broker_cluster_load_balancer
+          output['load_balancer'] = (is_load_balancer? ? 'Y' : 'N')
+        elsif attr == :mongodb_replica_primary
+          output['db_replica_primary'] = (is_db_replica_primary? ? 'Y' : 'N')
         else
-          output[attr.to_s] = attr == :roles ? self.send(attr).map{ |r| r == :mqserver ? 'msgserver' : r.to_s } : self.send(attr)
+          output[attr.to_s] = attr == :roles ? self.send(attr).map{ |r| r.to_s } : self.send(attr)
         end
       end
       output
     end
 
-    def summarize
+    def summarize(roles_only=false)
       display_roles = []
       Installer::Deployment.display_order.each do |role|
         next if not roles.include?(role)
         display_roles << Installer::Deployment.role_map[role].chop
       end
-      "#{host} (#{display_roles.join(', ')})"
+      if is_load_balancer?
+        display_roles << 'Broker Load Balancer'
+      end
+      if is_db_replica_primary?
+        display_roles << 'DB Replica Primary'
+      end
+      if roles_only
+        return display_roles.sort.join("\n")
+      end
+      "#{host} (#{display_roles.sort.join(', ')})"
     end
 
     def ssh_target
@@ -217,7 +274,7 @@ module Installer
     end
 
     def close_ssh_session
-      @ssh_session.close
+      @ssh_session.close if not @ssh_session.nil?
     end
 
     def exec_on_host!(command, display_output=false)

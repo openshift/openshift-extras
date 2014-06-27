@@ -9,5 +9,7 @@ Deployment:
     app_domain: example.com
 Subscription:
   type: yum
-  repos_base: https://mirror.openshift.com/pub/origin-server/release/3/fedora-19
+  repos_base: https://mirror.openshift.com/pub/origin-server/nightly/rhel-6
   jenkins_repo_base: http://pkg.jenkins-ci.org/redhat
+  os_optional_repo: http://download.fedoraproject.org/pub/epel/6/$basearch
+  puppet_repo_rpm: http://yum.puppetlabs.com/puppetlabs-release-el-6.noarch.rpm
