@@ -329,6 +329,10 @@ module Installer
       return false
     end
 
+    def get_domain_from_fqdn(fqdn)
+      fqdn.split('.').drop(1).join('.')
+    end
+
     def capitalize_attribute(attr)
       attr.to_s.split('_').map{ |word|
         case word
