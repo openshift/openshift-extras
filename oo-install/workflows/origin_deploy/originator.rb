@@ -13,7 +13,8 @@ include Installer::Helpers
 ######################################
 
 @puppet_module_name = 'openshift/openshift_origin'
-@puppet_module_ver = '4.0.3'
+@puppet_module_ver  = '4.0.4'
+@mongodb_port       = 27017
 
 # Check ENV for an alternate config file location.
 if ENV.has_key?('OO_INSTALL_CONFIG_FILE')
@@ -467,7 +468,7 @@ host_installation_order.each do |host_instance|
   if @deployment.dbservers.length > 1
     if host_instance.is_dbserver? or host_instance.is_broker?
       host_puppet_config['mongodb_replicasets']             = true
-      host_puppet_config['mongodb_replicasets_members']     = '[' + ordered_dbservers.map{ |h| "\"#{h.ip_addr}:${mongodb_port}\"" }.join(',') + ']'
+      host_puppet_config['mongodb_replicasets_members']     = '[' + ordered_dbservers.map{ |h| "'#{h.ip_addr}:#{@mongodb_port}'" }.join(',') + ']'
     end
     if host_instance.is_dbserver?
       host_puppet_config['datastore_hostname']              = host_instance.host
@@ -689,12 +690,12 @@ if @deployment.dbservers.length > 1
   puts "\nRegistering MongoDB replica set"
   db_primary = @deployment.db_replica_primaries[0]
   @deployment.dbservers.each do |host_instance|
-    check_cmd = "mongo admin --host #{db_primary.ip_addr} -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.status())\" | grep '\"name\" : \"#{host_instance.ip_addr}:27017\"'"
+    check_cmd = "mongo admin --host #{db_primary.ip_addr} -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.status())\" | grep '\"name\" : \"#{host_instance.ip_addr}:#{@mongodb_port}\"'"
     check_result = execute_command db_primary, check_cmd
     if check_result[:exit_code] == 0
       puts "MongoDB replica member #{host_instance.host} already registered."
     else
-      add_cmd = "mongo admin --host #{db_primary.ip_addr} -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.add(\'#{host_instance.ip_addr}:27017\'))\""
+      add_cmd = "mongo admin --host #{db_primary.ip_addr} -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.add(\'#{host_instance.ip_addr}:#{@mongodb_port}\'))\""
       add_result = execute_command db_primary, add_cmd
       if add_result[:exit_code] == 0
         puts "MongoDB replica member #{host_instance.host} registered."
