@@ -13,7 +13,7 @@ include Installer::Helpers
 ######################################
 
 @puppet_module_name = 'openshift/openshift_origin'
-@puppet_module_ver  = '4.0.4'
+@puppet_module_ver  = '4.0.5'
 @mongodb_port       = 27017
 
 # Check ENV for an alternate config file location.
@@ -240,13 +240,23 @@ end
 def configure_mongodb_replica_set
   puts "\nRegistering MongoDB replica set"
   db_primary = @deployment.db_replica_primaries[0]
+
+  init_cmd    = "mongo admin -u #{db_primary.mongodb_admin_user} -p #{db_primary.mongodb_admin_password} --quiet --eval \"printjson(rs.initiate())\""
+  init_result = execute_command db_primary, init_cmd
+  if init_result[:exit_code] == 0
+    puts "MongoDB replicaset initialized."
+    sleep 10
+  else
+    display_error_info db_primary, init_result, 'The MongoDB replicaset could not be initialized'
+    exit 1
+  end
   @deployment.dbservers.each do |host_instance|
-    check_cmd = "mongo admin --host #{db_primary.ip_addr} -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.status())\" | grep '\"name\" : \"#{host_instance.ip_addr}:#{@mongodb_port}\"'"
+    check_cmd    = "mongo admin -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.status())\" | grep '\"name\" : \"#{host_instance.ip_addr}:#{@mongodb_port}\"'"
     check_result = execute_command db_primary, check_cmd
     if check_result[:exit_code] == 0
       puts "MongoDB replica member #{host_instance.host} already registered."
     else
-      add_cmd = "mongo admin --host #{db_primary.ip_addr} -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.add(\'#{host_instance.ip_addr}:#{@mongodb_port}\'))\""
+      add_cmd    = "mongo admin -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.add(\'#{host_instance.ip_addr}:#{@mongodb_port}\'))\""
       add_result = execute_command db_primary, add_cmd
       if add_result[:exit_code] == 0
         puts "MongoDB replica member #{host_instance.host} registered."
@@ -324,6 +334,7 @@ end
 # Set up the global puppet settings
 @puppet_global_config['domain'] = @deployment.dns.app_domain
 @puppet_global_config['parallel_deployment'] = host_installation_order.length > 1
+@puppet_global_config['mongodb_port'] = @mongodb_port
 if @deployment.dns.deploy_dns?
   @puppet_global_config['nameserver_hostname'] = @deployment.nameservers[0].host
   @puppet_global_config['nameserver_ip_addr']  = @deployment.nameservers[0].ip_addr
@@ -536,6 +547,7 @@ end
 ############################################
 
 @child_pids = {}
+puts "\n"
 host_installation_order.each do |host_instance|
   # Good to go; step through the puppet setup now.
   @child_pids[host_instance.host] = Process.fork do
@@ -646,23 +658,26 @@ puts "\nRestarting services in dependency order."
 
 manage_service :named,                          @deployment.nameservers
 manage_service :mongod,                         @deployment.dbservers
-configure_mongodb_replica_set if @deployment.dbservers.length > 1
-manage_service :cgconfig,                       @deployment.nodes
-manage_service :cgred,                          @deployment.nodes
-manage_service :network,                        @deployment.hosts
-manage_service :sshd,                           @deployment.hosts.select{ |h| h.is_broker? or h.is_node? }
-manage_service :ntpd,                           @deployment.hosts
-manage_service :messagebus,                     @deployment.nodes
-manage_service 'ruby193-mcollective',           @deployment.nodes, :stop
-manage_service :activemq,                       @deployment.msgservers
-manage_service 'ruby193-mcollective',           @deployment.nodes, :start
-manage_service :httpd,                          @deployment.hosts.select{ |h| h.is_broker? or h.is_node? }
+if @deployment.dbservers.length > 1
+  configure_mongodb_replica_set
+  puts "\n"
+end
+#manage_service :cgconfig,                       @deployment.nodes
+#manage_service :cgred,                          @deployment.nodes
+#manage_service :network,                        @deployment.hosts
+#manage_service :sshd,                           @deployment.hosts.select{ |h| h.is_broker? or h.is_node? }
+#manage_service :ntpd,                           @deployment.hosts
+#manage_service :messagebus,                     @deployment.nodes
+manage_service 'ruby193-mcollective',           @deployment.nodes
+#manage_service :activemq,                       @deployment.msgservers
+#manage_service 'ruby193-mcollective',           @deployment.nodes, :start
+#manage_service :httpd,                          @deployment.hosts.select{ |h| h.is_broker? or h.is_node? }
 manage_service 'openshift-broker',              @deployment.brokers
 manage_service 'openshift-console',             @deployment.brokers
-manage_service 'openshift-iptables-port-proxy', @deployment.nodes
-manage_service :oddjobd,                        @deployment.nodes
-manage_service 'openshift-node-web-proxy',      @deployment.nodes
-manage_service 'openshift-watchman',            @deployment.nodes
+#manage_service 'openshift-iptables-port-proxy', @deployment.nodes
+#manage_service :oddjobd,                        @deployment.nodes
+#manage_service 'openshift-node-web-proxy',      @deployment.nodes
+#manage_service 'openshift-watchman',            @deployment.nodes
 @deployment.nodes.each { |h| h.exec_on_host!('/etc/cron.minutely/openshift-facts') }
 
 ###############################

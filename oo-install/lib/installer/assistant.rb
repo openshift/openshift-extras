@@ -217,7 +217,7 @@ module Installer
               menu.choice("Change the deployment configuration") { ui_show_deployment if saw_host_details; ui_edit_deployment }
               menu.choice("View the full host configuration details") { show_host_details = true }
               menu.choice("Proceed with deployment") {}
-              menu.hidden("q") { return_to_main_menu }
+              menu.hidden("q") { return }
             end
             if not show_host_details
               break
@@ -2285,7 +2285,7 @@ module Installer
                   end
                 else
                   say "not successful. You will need to manually add puppet to this host and then retry the installation."
-                  failed_pks << rpm
+                  failed_pkgs << rpm
                 end
               else
                 say "not available."
