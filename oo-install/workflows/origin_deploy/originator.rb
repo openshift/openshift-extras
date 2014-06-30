@@ -226,63 +226,36 @@ def utility_install_order
   @utility_install_order ||= [:nameserver,:dbserver,:msgserver,:broker,:node]
 end
 
-def restart_services host_instance
-  services = []
-  utility_install_order.each do |role|
-    next if not host_instance.has_role?(role)
-    case role
-    when :nameserver
-      services << 'named'
-    when :dbserver
-      services << 'mongod'
-    when :msgserver
-      services << 'activemq'
-    when :broker
-      services.concat(['openshift-broker','openshift-console'])
-    when :node
-      services.concat(['cgconfig','cgred','openshift-node-web-proxy','openshift-watchman'])
+def manage_service service, hosts, action=:restart
+  hosts.each do |host_instance|
+    result = host_instance.exec_on_host!("/sbin/service #{service.to_s} #{action.to_s}")
+    if result[:exit_code] == 0
+      puts "#{host_instance.host}: service #{service.to_s} #{action.to_s} succeeded."
     else
-      puts "Unrecognized role for restart: #{role}"
+      puts "#{host_instance.host}: service #{service.to_s} #{action.to_s} failed: #{result[:stderr]}"
     end
   end
+end
 
-  if host_instance.is_broker? or host_instance.is_node?
-    services << 'httpd'
+def configure_mongodb_replica_set
+  puts "\nRegistering MongoDB replica set"
+  db_primary = @deployment.db_replica_primaries[0]
+  @deployment.dbservers.each do |host_instance|
+    check_cmd = "mongo admin --host #{db_primary.ip_addr} -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.status())\" | grep '\"name\" : \"#{host_instance.ip_addr}:#{@mongodb_port}\"'"
+    check_result = execute_command db_primary, check_cmd
+    if check_result[:exit_code] == 0
+      puts "MongoDB replica member #{host_instance.host} already registered."
+    else
+      add_cmd = "mongo admin --host #{db_primary.ip_addr} -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.add(\'#{host_instance.ip_addr}:#{@mongodb_port}\'))\""
+      add_result = execute_command db_primary, add_cmd
+      if add_result[:exit_code] == 0
+        puts "MongoDB replica member #{host_instance.host} registered."
+      else
+        display_error_info host_instance, add_result, 'This host could not be registered as a MongoDB replica member'
+        exit 1
+      end
+    end
   end
-
-  if host_instance.is_msgserver? or host_instance.is_broker? or host_instance.is_node?
-    services << 'ruby193-mcollective'
-  end
-
-  cmd = []
-  cmd += services.map do |service|
-    "/sbin/service #{service} stop;"
-  end
-  cmd << "rm -f /var/www/openshift/broker/httpd/run/httpd.pid;"
-  cmd << "rm -f /var/www/openshift/console/httpd/run/httpd.pid;"
-  cmd += services.map do |service|
-    "/sbin/service #{service} start;"
-  end
-  cmd << "rm -rf /var/www/openshift/broker/tmp/cache/*;"
-  cmd << "/etc/cron.minutely/openshift-facts;"
-  cmd << "/sbin/service openshift-tc start || /sbin/service openshift-tc reload;"
-  cmd << "/sbin/service network reload;"
-  cmd << "/sbin/service network restart;"
-  cmd << "/sbin/service messagebus restart;"
-  cmd << "/sbin/service oddjobd restart;"
-
-  restart_cmds = host_instance.exec_on_host!(cmd.join())
-  if not restart_cmds[:exit_code] == 0
-    display_error_info(host_instance, restart_cmds, 'Attempted service restarts failed')
-    return false
-  end
-
-  tc_status = host_instance.exec_on_host!('service openshift-tc status 2>/dev/null 1>/dev/null')
-  if not tc_status[:exit_code] == 0
-    host_instance.exec_on_host!('service openshift-tc reload')
-  end
-
-  return true
 end
 
 def format_puppet_value value
@@ -671,41 +644,32 @@ end
 
 puts "\nRestarting services in dependency order."
 
-host_installation_order.each do |host_instance|
-  print "\nPerforming service restarts on #{host_instance.host}"
-  if restart_services(host_instance)
-    puts "...restarts successful."
-  else
-    puts "...restarts failed."
-  end
-end
+manage_service :named,                          @deployment.nameservers
+manage_service :mongod,                         @deployment.dbservers
+configure_mongodb_replica_set if @deployment.dbservers.length > 1
+manage_service :cgconfig,                       @deployment.nodes
+manage_service :cgred,                          @deployment.nodes
+manage_service :network,                        @deployment.hosts
+manage_service :sshd,                           @deployment.hosts.select{ |h| h.is_broker? or h.is_node? }
+manage_service :ntpd,                           @deployment.hosts
+manage_service :messagebus,                     @deployment.nodes
+manage_service 'ruby193-mcollective',           @deployment.nodes, :stop
+manage_service :activemq,                       @deployment.msgservers
+manage_service 'ruby193-mcollective',           @deployment.nodes, :start
+manage_service :httpd,                          @deployment.hosts.select{ |h| h.is_broker? or h.is_node? }
+manage_service 'openshift-broker',              @deployment.brokers
+manage_service 'openshift-console',             @deployment.brokers
+manage_service 'openshift-iptables-port-proxy', @deployment.nodes
+manage_service :oddjobd,                        @deployment.nodes
+manage_service 'openshift-node-web-proxy',      @deployment.nodes
+manage_service 'openshift-watchman',            @deployment.nodes
+@deployment.nodes.each { |h| h.exec_on_host!('/etc/cron.minutely/openshift-facts') }
 
 ###############################
 # Stage 8: Post-Install Tasks #
 ###############################
 
 puts "\nNow performing post-installation tasks."
-
-if @deployment.dbservers.length > 1
-  puts "\nRegistering MongoDB replica set"
-  db_primary = @deployment.db_replica_primaries[0]
-  @deployment.dbservers.each do |host_instance|
-    check_cmd = "mongo admin --host #{db_primary.ip_addr} -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.status())\" | grep '\"name\" : \"#{host_instance.ip_addr}:#{@mongodb_port}\"'"
-    check_result = execute_command db_primary, check_cmd
-    if check_result[:exit_code] == 0
-      puts "MongoDB replica member #{host_instance.host} already registered."
-    else
-      add_cmd = "mongo admin --host #{db_primary.ip_addr} -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.add(\'#{host_instance.ip_addr}:#{@mongodb_port}\'))\""
-      add_result = execute_command db_primary, add_cmd
-      if add_result[:exit_code] == 0
-        puts "MongoDB replica member #{host_instance.host} registered."
-      else
-        display_error_info host_instance, add_result, 'This host could not be registered as a MongoDB replica member'
-        exit 1
-      end
-    end
-  end
-end
 
 # The post-install work can all be run from any broker.
 broker = @deployment.brokers[0]
