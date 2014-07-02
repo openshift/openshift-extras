@@ -283,12 +283,12 @@ end
 # See if the Node to add exists in the config
 host_installation_order = []
 if not @target_node_hostname.nil?
-  @deployment.get_hosts_by_role(:node).select{ |h| h.roles.count == 1 and h.host == @target_node_hostname }.each do |host_instance|
-    @target_node_ssh_host = host_instance.ssh_host
+  @deployment.nodes.select{ |h| h.roles.count == 1 and h.host == @target_node_hostname }.each do |host_instance|
+    @target_node = host_instance
     host_installation_order << host_instance
     break
   end
-  if @target_node_ssh_host.nil?
+  if @target_node.nil?
     puts "The list of nodes in the config file at #{@config_file} does not contain an entry for #{@target_node_hostname}. Exiting."
     exit 1
   end
@@ -393,7 +393,7 @@ end
 # Summarize the plan
 if @puppet_template_only
   puts "\nPreparing puppet configuration files for the follwoing deployment:\n"
-elsif @target_node_ssh_host.nil?
+elsif @target_node.nil?
   puts "\nPreparing to install OpenShift Origin on the following hosts:\n"
 else
   puts "\nPreparing to add this node to an OpenShift Origin system:\n"
@@ -654,66 +654,60 @@ end
 # Stage 7: (Re)Start OpenShift Services #
 #########################################
 
-puts "\nRestarting services in dependency order."
-
-manage_service :named,                          @deployment.nameservers
-manage_service :mongod,                         @deployment.dbservers
-if @deployment.dbservers.length > 1
-  configure_mongodb_replica_set
-  puts "\n"
+if @target_node.nil?
+  puts "\nRestarting services in dependency order."
+  manage_service :named,                          @deployment.nameservers
+  manage_service :mongod,                         @deployment.dbservers
+  if @deployment.dbservers.length > 1
+    configure_mongodb_replica_set
+    puts "\n"
+  end
+  manage_service 'ruby193-mcollective',           @deployment.nodes, :stop
+  manage_service :activemq,                       @deployment.msgservers
+  manage_service 'ruby193-mcollective',           @deployment.nodes, :start
+  manage_service 'openshift-broker',              @deployment.brokers
+  manage_service 'openshift-console',             @deployment.brokers
+  @deployment.nodes.each { |h| h.exec_on_host!('/etc/cron.minutely/openshift-facts') }
+else
+  @target_node.exec_on_host!('/etc/cron.minutely/openshift-facts')
 end
-#manage_service :cgconfig,                       @deployment.nodes
-#manage_service :cgred,                          @deployment.nodes
-#manage_service :network,                        @deployment.hosts
-#manage_service :sshd,                           @deployment.hosts.select{ |h| h.is_broker? or h.is_node? }
-#manage_service :ntpd,                           @deployment.hosts
-#manage_service :messagebus,                     @deployment.nodes
-manage_service 'ruby193-mcollective',           @deployment.nodes
-#manage_service :activemq,                       @deployment.msgservers
-#manage_service 'ruby193-mcollective',           @deployment.nodes, :start
-#manage_service :httpd,                          @deployment.hosts.select{ |h| h.is_broker? or h.is_node? }
-manage_service 'openshift-broker',              @deployment.brokers
-manage_service 'openshift-console',             @deployment.brokers
-#manage_service 'openshift-iptables-port-proxy', @deployment.nodes
-#manage_service :oddjobd,                        @deployment.nodes
-#manage_service 'openshift-node-web-proxy',      @deployment.nodes
-#manage_service 'openshift-watchman',            @deployment.nodes
-@deployment.nodes.each { |h| h.exec_on_host!('/etc/cron.minutely/openshift-facts') }
 
 ###############################
 # Stage 8: Post-Install Tasks #
 ###############################
 
-puts "\nNow performing post-installation tasks."
+if @target_node.nil?
+  puts "\nNow performing post-installation tasks."
 
-# The post-install work can all be run from any broker.
-broker = @deployment.brokers[0]
-@deployment.districts.each do |district|
-  district_cmd = "oo-admin-ctl-district -c create -n #{district.name} -p #{district.gear_size}"
-  create_district = broker.exec_on_host!(district_cmd)
-  if create_district[:exit_code] == 0
-    puts "Successfully created district '#{district.name}'"
-    district.node_hosts.each do |hostname|
-      node_cmd = "oo-admin-ctl-district -c add-node -n #{district.name} -i #{hostname}"
-      add_node = broker.exec_on_host!(node_cmd)
-      if add_node[:exit_status] == 0
-        puts "Added #{hostname} to district #{district.name}"
-      else
-        puts "Failed to add #{hostname} to district #{district.name}.\nYou will need to run the following manually from any Broker to add this node:\n\n\t#{node_cmd}"
+  # The post-install work can all be run from any broker.
+  broker = @deployment.brokers[0]
+  @deployment.districts.each do |district|
+    district_cmd = "oo-admin-ctl-district -c create -n #{district.name} -p #{district.gear_size}"
+    create_district = broker.exec_on_host!(district_cmd)
+    if create_district[:exit_code] == 0
+      puts "Successfully created district '#{district.name}'"
+      district.node_hosts.each do |hostname|
+        node_cmd = "oo-admin-ctl-district -c add-node -n #{district.name} -i #{hostname}"
+        add_node = broker.exec_on_host!(node_cmd)
+        if add_node[:exit_status] == 0
+          puts "Added #{hostname} to district #{district.name}"
+        else
+          puts "Failed to add #{hostname} to district #{district.name}.\nYou will need to run the following manually from any Broker to add this node:\n\n\t#{node_cmd}"
+        end
       end
+    else
+      puts "Failed to create district '#{district.name}'.\nYou will need to run the following manually on a Broker to create the district:\n\n\t#{district_cmd}\n\nThen you will need to run the add-node command for each associated node:\n\n\too-admin-ctl-district -c add-node -n #{district.name} -i <node_hostname>"
     end
-  else
-    puts "Failed to create district '#{district.name}'.\nYou will need to run the following manually on a Broker to create the district:\n\n\t#{district_cmd}\n\nThen you will need to run the add-node command for each associated node:\n\n\too-admin-ctl-district -c add-node -n #{district.name} -i <node_hostname>"
   end
-end
 
-puts "\nAttempting to register available cartridge types with Broker(s)."
-carts_cmd = 'oo-admin-ctl-cartridge -c import-node --activate'
-set_carts = broker.exec_on_host!(carts_cmd)
-if not set_carts[:exit_code] == 0
-  puts "Could not register cartridge types with Broker(s).\nLog into any Broker and attempt to register the carts with this command:\n\n\t#{carts_cmd}"
-else
-  puts "Cartridge registrations succeeded."
+  puts "\nAttempting to register available cartridge types with Broker(s)."
+  carts_cmd = 'oo-admin-ctl-cartridge -c import-node --activate'
+  set_carts = broker.exec_on_host!(carts_cmd)
+  if not set_carts[:exit_code] == 0
+    puts "Could not register cartridge types with Broker(s).\nLog into any Broker and attempt to register the carts with this command:\n\n\t#{carts_cmd}"
+  else
+    puts "Cartridge registrations succeeded."
+  end
 end
 
 close_all_ssh_sessions
