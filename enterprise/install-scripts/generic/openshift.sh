@@ -1069,13 +1069,18 @@ abort_install()
 yum_install_or_exit()
 {
   echo "OpenShift: yum install $*"
-  yum install -y $* $disable_plugin
-  if [ $? -ne 0 ]
-  then
-    echo "OpenShift: Command failed: yum install $*"
-    echo "OpenShift: Please ensure relevant repos/subscriptions are configured."
-    abort_install
-  fi
+  COUNT=0
+  while true; do
+    yum install -y $* $disable_plugin
+    if [ $? -eq 0 ]; then
+      return
+    elif [ $COUNT -gt 3 ]; then
+      echo "OpenShift: Command failed: yum install $*"
+      echo "OpenShift: Please ensure relevant repos/subscriptions are configured."
+      abort_install
+    fi
+    let COUNT+=1
+  done
 }
 
 # Install the client tools.
