@@ -13,7 +13,7 @@ include Installer::Helpers
 ######################################
 
 @puppet_module_name = 'openshift/openshift_origin'
-@puppet_module_ver  = '4.0.4'
+@puppet_module_ver  = '4.0.5'
 @mongodb_port       = 27017
 
 # Check ENV for an alternate config file location.
@@ -226,63 +226,46 @@ def utility_install_order
   @utility_install_order ||= [:nameserver,:dbserver,:msgserver,:broker,:node]
 end
 
-def restart_services host_instance
-  services = []
-  utility_install_order.each do |role|
-    next if not host_instance.has_role?(role)
-    case role
-    when :nameserver
-      services << 'named'
-    when :dbserver
-      services << 'mongod'
-    when :msgserver
-      services << 'activemq'
-    when :broker
-      services.concat(['openshift-broker','openshift-console'])
-    when :node
-      services.concat(['cgconfig','cgred','openshift-node-web-proxy','openshift-watchman'])
+def manage_service service, hosts, action=:restart
+  hosts.each do |host_instance|
+    result = host_instance.exec_on_host!("/sbin/service #{service.to_s} #{action.to_s}")
+    if result[:exit_code] == 0
+      puts "#{host_instance.host}: service #{service.to_s} #{action.to_s} succeeded."
     else
-      puts "Unrecognized role for restart: #{role}"
+      puts "#{host_instance.host}: service #{service.to_s} #{action.to_s} failed: #{result[:stderr]}"
     end
   end
+end
 
-  if host_instance.is_broker? or host_instance.is_node?
-    services << 'httpd'
-  end
+def configure_mongodb_replica_set
+  puts "\nRegistering MongoDB replica set"
+  db_primary = @deployment.db_replica_primaries[0]
 
-  if host_instance.is_msgserver? or host_instance.is_broker? or host_instance.is_node?
-    services << 'ruby193-mcollective'
+  init_cmd    = "mongo admin -u #{db_primary.mongodb_admin_user} -p #{db_primary.mongodb_admin_password} --quiet --eval \"printjson(rs.initiate())\""
+  init_result = execute_command db_primary, init_cmd
+  if init_result[:exit_code] == 0
+    puts "MongoDB replicaset initialized."
+    sleep 10
+  else
+    display_error_info db_primary, init_result, 'The MongoDB replicaset could not be initialized'
+    exit 1
   end
-
-  cmd = []
-  cmd += services.map do |service|
-    "/sbin/service #{service} stop;"
+  @deployment.dbservers.each do |host_instance|
+    check_cmd    = "mongo admin -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.status())\" | grep '\"name\" : \"#{host_instance.ip_addr}:#{@mongodb_port}\"'"
+    check_result = execute_command db_primary, check_cmd
+    if check_result[:exit_code] == 0
+      puts "MongoDB replica member #{host_instance.host} already registered."
+    else
+      add_cmd    = "mongo admin -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.add(\'#{host_instance.ip_addr}:#{@mongodb_port}\'))\""
+      add_result = execute_command db_primary, add_cmd
+      if add_result[:exit_code] == 0
+        puts "MongoDB replica member #{host_instance.host} registered."
+      else
+        display_error_info host_instance, add_result, 'This host could not be registered as a MongoDB replica member'
+        exit 1
+      end
+    end
   end
-  cmd << "rm -f /var/www/openshift/broker/httpd/run/httpd.pid;"
-  cmd << "rm -f /var/www/openshift/console/httpd/run/httpd.pid;"
-  cmd += services.map do |service|
-    "/sbin/service #{service} start;"
-  end
-  cmd << "rm -rf /var/www/openshift/broker/tmp/cache/*;"
-  cmd << "/etc/cron.minutely/openshift-facts;"
-  cmd << "/sbin/service openshift-tc start || /sbin/service openshift-tc reload;"
-  cmd << "/sbin/service network reload;"
-  cmd << "/sbin/service network restart;"
-  cmd << "/sbin/service messagebus restart;"
-  cmd << "/sbin/service oddjobd restart;"
-
-  restart_cmds = host_instance.exec_on_host!(cmd.join())
-  if not restart_cmds[:exit_code] == 0
-    display_error_info(host_instance, restart_cmds, 'Attempted service restarts failed')
-    return false
-  end
-
-  tc_status = host_instance.exec_on_host!('service openshift-tc status 2>/dev/null 1>/dev/null')
-  if not tc_status[:exit_code] == 0
-    host_instance.exec_on_host!('service openshift-tc reload')
-  end
-
-  return true
 end
 
 def format_puppet_value value
@@ -300,12 +283,12 @@ end
 # See if the Node to add exists in the config
 host_installation_order = []
 if not @target_node_hostname.nil?
-  @deployment.get_hosts_by_role(:node).select{ |h| h.roles.count == 1 and h.host == @target_node_hostname }.each do |host_instance|
-    @target_node_ssh_host = host_instance.ssh_host
+  @deployment.nodes.select{ |h| h.roles.count == 1 and h.host == @target_node_hostname }.each do |host_instance|
+    @target_node = host_instance
     host_installation_order << host_instance
     break
   end
-  if @target_node_ssh_host.nil?
+  if @target_node.nil?
     puts "The list of nodes in the config file at #{@config_file} does not contain an entry for #{@target_node_hostname}. Exiting."
     exit 1
   end
@@ -351,6 +334,7 @@ end
 # Set up the global puppet settings
 @puppet_global_config['domain'] = @deployment.dns.app_domain
 @puppet_global_config['parallel_deployment'] = host_installation_order.length > 1
+@puppet_global_config['mongodb_port'] = @mongodb_port
 if @deployment.dns.deploy_dns?
   @puppet_global_config['nameserver_hostname'] = @deployment.nameservers[0].host
   @puppet_global_config['nameserver_ip_addr']  = @deployment.nameservers[0].ip_addr
@@ -359,7 +343,13 @@ if @deployment.dns.deploy_dns?
       @puppet_global_config['register_host_with_nameserver'] = true
     else
       @puppet_global_config['dns_infrastructure_zone']  = @deployment.dns.component_domain
-      @puppet_global_config['dns_infrastructure_names'] = '[' + @deployment.hosts.map{ |h| "{ hostname => '#{h.host}', ipaddr => '#{h.ip_addr}' }" }.join(',') + ']'
+      infra_host_list = @deployment.hosts.map{ |h| "{ hostname => '#{h.host}', ipaddr => '#{h.ip_addr}' }" }
+      if @deployment.brokers.length > 1
+        broker_virtual_ip_address = @deployment.load_balancers[0].broker_cluster_virtual_ip_addr
+        broker_virtual_hostname   = @deployment.load_balancers[0].broker_cluster_virtual_host
+        infra_host_list << "{ hostname => '#{broker_virtual_hostname}', ipaddr => '#{broker_virtual_ip_address}' }"
+      end
+      @puppet_global_config['dns_infrastructure_names'] = '[' + infra_host_list.join(',') + ']'
     end
   end
 else
@@ -409,7 +399,7 @@ end
 # Summarize the plan
 if @puppet_template_only
   puts "\nPreparing puppet configuration files for the follwoing deployment:\n"
-elsif @target_node_ssh_host.nil?
+elsif @target_node.nil?
   puts "\nPreparing to install OpenShift Origin on the following hosts:\n"
 else
   puts "\nPreparing to add this node to an OpenShift Origin system:\n"
@@ -451,9 +441,9 @@ host_installation_order.each do |host_instance|
       host_puppet_config['broker_cluster_members']      = '[' + ordered_brokers.map{ |h| "'#{h.host}'" }.join(',') + ']'
       host_puppet_config['broker_cluster_ip_addresses'] = '[' + ordered_brokers.map{ |h| "'#{h.ip_addr}'" }.join(',') + ']'
       host_puppet_config['broker_virtual_ip_address']   = @deployment.load_balancers[0].broker_cluster_virtual_ip_addr
+      host_puppet_config['broker_virtual_hostname']     = @deployment.load_balancers[0].broker_cluster_virtual_host
       if host_instance.is_load_balancer?
         host_puppet_config['load_balancer_master']    = true
-        host_puppet_config['broker_virtual_hostname'] = @deployment.load_balancers[0].broker_cluster_virtual_host
       else
         host_puppet_config['load_balancer_master'] = false
       end
@@ -563,6 +553,7 @@ end
 ############################################
 
 @child_pids = {}
+puts "\n"
 host_installation_order.each do |host_instance|
   # Good to go; step through the puppet setup now.
   @child_pids[host_instance.host] = Process.fork do
@@ -669,72 +660,59 @@ end
 # Stage 7: (Re)Start OpenShift Services #
 #########################################
 
-puts "\nRestarting services in dependency order."
-
-host_installation_order.each do |host_instance|
-  print "\nPerforming service restarts on #{host_instance.host}"
-  if restart_services(host_instance)
-    puts "...restarts successful."
-  else
-    puts "...restarts failed."
+if @target_node.nil?
+  puts "\nRestarting services in dependency order."
+  manage_service :named,                          @deployment.nameservers
+  manage_service :mongod,                         @deployment.dbservers
+  if @deployment.dbservers.length > 1
+    configure_mongodb_replica_set
+    puts "\n"
   end
+  manage_service 'ruby193-mcollective',           @deployment.nodes, :stop
+  manage_service :activemq,                       @deployment.msgservers
+  manage_service 'ruby193-mcollective',           @deployment.nodes, :start
+  manage_service 'openshift-broker',              @deployment.brokers
+  manage_service 'openshift-console',             @deployment.brokers
+  @deployment.nodes.each { |h| h.exec_on_host!('/etc/cron.minutely/openshift-facts') }
+else
+  @target_node.exec_on_host!('/etc/cron.minutely/openshift-facts')
 end
 
 ###############################
 # Stage 8: Post-Install Tasks #
 ###############################
 
-puts "\nNow performing post-installation tasks."
+if @target_node.nil?
+  puts "\nNow performing post-installation tasks."
 
-if @deployment.dbservers.length > 1
-  puts "\nRegistering MongoDB replica set"
-  db_primary = @deployment.db_replica_primaries[0]
-  @deployment.dbservers.each do |host_instance|
-    check_cmd = "mongo admin --host #{db_primary.ip_addr} -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.status())\" | grep '\"name\" : \"#{host_instance.ip_addr}:#{@mongodb_port}\"'"
-    check_result = execute_command db_primary, check_cmd
-    if check_result[:exit_code] == 0
-      puts "MongoDB replica member #{host_instance.host} already registered."
-    else
-      add_cmd = "mongo admin --host #{db_primary.ip_addr} -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.add(\'#{host_instance.ip_addr}:#{@mongodb_port}\'))\""
-      add_result = execute_command db_primary, add_cmd
-      if add_result[:exit_code] == 0
-        puts "MongoDB replica member #{host_instance.host} registered."
-      else
-        display_error_info host_instance, add_result, 'This host could not be registered as a MongoDB replica member'
-        exit 1
-      end
-    end
-  end
-end
-
-# The post-install work can all be run from any broker.
-broker = @deployment.brokers[0]
-@deployment.districts.each do |district|
-  district_cmd = "oo-admin-ctl-district -c create -n #{district.name} -p #{district.gear_size}"
-  create_district = broker.exec_on_host!(district_cmd)
-  if create_district[:exit_code] == 0
-    puts "Successfully created district '#{district.name}'"
-    district.node_hosts.each do |hostname|
-      node_cmd = "oo-admin-ctl-district -c add-node -n #{district.name} -i #{hostname}"
+  # The post-install work can all be run from any broker.
+  broker = @deployment.brokers[0]
+  @deployment.districts.each do |district|
+    district_cmd = "oo-admin-ctl-district -c create -n #{district.name} -p #{district.gear_size}"
+    create_district = broker.exec_on_host!(district_cmd)
+    if create_district[:exit_code] == 0
+      puts "\nSuccessfully created district '#{district.name}'."
+      print "Attempting to add compatible Nodes to #{district.name} district... "
+      node_cmd = "oo-admin-ctl-district -c add-node -n #{district.name} -a"
       add_node = broker.exec_on_host!(node_cmd)
-      if add_node[:exit_status] == 0
-        puts "Added #{hostname} to district #{district.name}"
+      if add_node[:exit_code] == 0
+        puts "succeeded."
       else
-        puts "Failed to add #{hostname} to district #{district.name}.\nYou will need to run the following manually from any Broker to add this node:\n\n\t#{node_cmd}"
+        puts "failed.\nYou will need to run the following manually from any Broker to add this node:\n\n\t#{node_cmd}"
       end
+    else
+      puts "Failed to create district '#{district.name}'.\nYou will need to run the following manually on a Broker to create the district:\n\n\t#{district_cmd}\n\nThen you will need to run the add-node command for each associated node:\n\n\too-admin-ctl-district -c add-node -n #{district.name} -i <node_hostname>"
     end
-  else
-    puts "Failed to create district '#{district.name}'.\nYou will need to run the following manually on a Broker to create the district:\n\n\t#{district_cmd}\n\nThen you will need to run the add-node command for each associated node:\n\n\too-admin-ctl-district -c add-node -n #{district.name} -i <node_hostname>"
   end
-end
 
-puts "\nAttempting to register available cartridge types with Broker(s)."
-carts_cmd = 'oo-admin-ctl-cartridge -c import-node --activate'
-set_carts = broker.exec_on_host!(carts_cmd)
-if not set_carts[:exit_code] == 0
-  puts "Could not register cartridge types with Broker(s).\nLog into any Broker and attempt to register the carts with this command:\n\n\t#{carts_cmd}"
-else
-  puts "Cartridge registrations succeeded."
+  puts "\nAttempting to register available cartridge types with Broker(s)."
+  carts_cmd = 'oo-admin-ctl-cartridge -c import-node --activate'
+  set_carts = broker.exec_on_host!(carts_cmd)
+  if not set_carts[:exit_code] == 0
+    puts "Could not register cartridge types with Broker(s).\nLog into any Broker and attempt to register the carts with this command:\n\n\t#{carts_cmd}\n\n"
+  else
+    puts "Cartridge registrations succeeded."
+  end
 end
 
 close_all_ssh_sessions
