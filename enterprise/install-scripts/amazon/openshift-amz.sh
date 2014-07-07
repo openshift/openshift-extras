@@ -2078,11 +2078,31 @@ install_rsync_pub_key()
 {
   mkdir -p /root/.ssh
   chmod 700 /root/.ssh
-  # Get key hosted on broker machine
-  wget -q -O- --no-check-certificate "https://${broker_hostname}/rsync_id_rsa.pub?host=${node_hostname}" \
-    >> /root/.ssh/authorized_keys \
-    || echo "WARNING: could not install rsync_id_rsa.pub key; please do it manually."
-  chmod 644 /root/.ssh/authorized_keys
+
+  WAIT=600
+  END=`date -d "$WAIT seconds" +%s`
+  echo "OpenShift node: will wait for $WAIT seconds to fetch SSH key."
+
+  while [[ `date +%s` -lt $END ]]; do
+    # try to get key hosted on broker machine
+    cert=$(wget -q -O- --no-check-certificate "https://${broker_hostname}/rsync_id_rsa.pub?host=${node_hostname}")
+    if [ $? -ne 0 ]; then
+      sleep 5
+    else
+      ssh-keygen -lf /dev/stdin <<< $cert
+      if [ $? -ne 0 ]; then
+        break
+      else
+        echo $cert >> /root/.ssh/authorized_keys
+        echo "OpenShift node: SSH key downloaded from broker successfully."
+        chmod 644 /root/.ssh/authorized_keys
+        return
+      fi
+    fi
+  done
+
+  echo "OpenShift node: WARNING: could not install rsync_id_rsa.pub key; please do it manually."
+
 }
 
 echo_installation_intentions()
