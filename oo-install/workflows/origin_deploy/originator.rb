@@ -343,7 +343,13 @@ if @deployment.dns.deploy_dns?
       @puppet_global_config['register_host_with_nameserver'] = true
     else
       @puppet_global_config['dns_infrastructure_zone']  = @deployment.dns.component_domain
-      @puppet_global_config['dns_infrastructure_names'] = '[' + @deployment.hosts.map{ |h| "{ hostname => '#{h.host}', ipaddr => '#{h.ip_addr}' }" }.join(',') + ']'
+      infra_host_list = @deployment.hosts.map{ |h| "{ hostname => '#{h.host}', ipaddr => '#{h.ip_addr}' }" }
+      if @deployment.brokers.length > 1
+        broker_virtual_ip_address = @deployment.load_balancers[0].broker_cluster_virtual_ip_addr
+        broker_virtual_hostname   = @deployment.load_balancers[0].broker_cluster_virtual_host
+        infra_host_list << "{ hostname => '#{broker_virtual_hostname}', ipaddr => '#{broker_virtual_ip_address}' }"
+      end
+      @puppet_global_config['dns_infrastructure_names'] = '[' + infra_host_list.join(',') + ']'
     end
   end
 else
@@ -435,9 +441,9 @@ host_installation_order.each do |host_instance|
       host_puppet_config['broker_cluster_members']      = '[' + ordered_brokers.map{ |h| "'#{h.host}'" }.join(',') + ']'
       host_puppet_config['broker_cluster_ip_addresses'] = '[' + ordered_brokers.map{ |h| "'#{h.ip_addr}'" }.join(',') + ']'
       host_puppet_config['broker_virtual_ip_address']   = @deployment.load_balancers[0].broker_cluster_virtual_ip_addr
+      host_puppet_config['broker_virtual_hostname']     = @deployment.load_balancers[0].broker_cluster_virtual_host
       if host_instance.is_load_balancer?
         host_puppet_config['load_balancer_master']    = true
-        host_puppet_config['broker_virtual_hostname'] = @deployment.load_balancers[0].broker_cluster_virtual_host
       else
         host_puppet_config['load_balancer_master'] = false
       end
@@ -685,15 +691,14 @@ if @target_node.nil?
     district_cmd = "oo-admin-ctl-district -c create -n #{district.name} -p #{district.gear_size}"
     create_district = broker.exec_on_host!(district_cmd)
     if create_district[:exit_code] == 0
-      puts "Successfully created district '#{district.name}'"
-      district.node_hosts.each do |hostname|
-        node_cmd = "oo-admin-ctl-district -c add-node -n #{district.name} -i #{hostname}"
-        add_node = broker.exec_on_host!(node_cmd)
-        if add_node[:exit_status] == 0
-          puts "Added #{hostname} to district #{district.name}"
-        else
-          puts "Failed to add #{hostname} to district #{district.name}.\nYou will need to run the following manually from any Broker to add this node:\n\n\t#{node_cmd}"
-        end
+      puts "\nSuccessfully created district '#{district.name}'."
+      print "Attempting to add compatible Nodes to #{district.name} district... "
+      node_cmd = "oo-admin-ctl-district -c add-node -n #{district.name} -a"
+      add_node = broker.exec_on_host!(node_cmd)
+      if add_node[:exit_code] == 0
+        puts "succeeded."
+      else
+        puts "failed.\nYou will need to run the following manually from any Broker to add this node:\n\n\t#{node_cmd}"
       end
     else
       puts "Failed to create district '#{district.name}'.\nYou will need to run the following manually on a Broker to create the district:\n\n\t#{district_cmd}\n\nThen you will need to run the add-node command for each associated node:\n\n\too-admin-ctl-district -c add-node -n #{district.name} -i <node_hostname>"
@@ -704,7 +709,7 @@ if @target_node.nil?
   carts_cmd = 'oo-admin-ctl-cartridge -c import-node --activate'
   set_carts = broker.exec_on_host!(carts_cmd)
   if not set_carts[:exit_code] == 0
-    puts "Could not register cartridge types with Broker(s).\nLog into any Broker and attempt to register the carts with this command:\n\n\t#{carts_cmd}"
+    puts "Could not register cartridge types with Broker(s).\nLog into any Broker and attempt to register the carts with this command:\n\n\t#{carts_cmd}\n\n"
   else
     puts "Cartridge registrations succeeded."
   end
