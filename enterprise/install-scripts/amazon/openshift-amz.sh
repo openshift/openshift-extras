@@ -2681,7 +2681,18 @@ install_rpms()
   # we often rely on latest selinux policy and other updates
   echo "OpenShift: yum update"
   yum $disable_plugin clean all
-  yum $disable_plugin update -y || abort_install
+
+  COUNT=0
+  while true; do
+    yum $disable_plugin update -y
+    if [ $? -eq 0 ]; then
+      break
+    elif [ $COUNT -gt 3 ]; then
+      abort_install
+    fi
+    let COUNT+=1
+  done
+
   # Install a few packages missing from a minimal RHEL install required by the
   # installer script itself.
   yum_install_or_exit ntp ntpdate lokkit wget
