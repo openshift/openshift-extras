@@ -478,7 +478,7 @@ module Installer
     end
 
     def is_ha?
-      brokers.length > 0 or msgservers.length > 0 or dbservers.length > 0
+      brokers.length > 1 or msgservers.length > 1 or dbservers.length > 1
     end
 
     def to_hash

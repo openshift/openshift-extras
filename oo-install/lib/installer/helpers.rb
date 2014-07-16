@@ -154,6 +154,8 @@ module Installer
 
     def service_accounts_info
       { :mcollective_user => {
+          :name  => 'MCollective User',
+          :order => 3,
           :value => 'mcollective',
           :roles => [:broker, :node, :msgserver],
           :description =>
@@ -163,6 +165,8 @@ module Installer
              broker and node hosts.'.gsub(/( |\t|\n)+/, " ")
         },
         :mcollective_password => {
+          :name  => 'MCollective Password',
+          :order => 4,
           :value => SecureRandom.base64.delete('+/='),
           :roles => [:broker, :node, :msgserver],
           :description =>
@@ -172,6 +176,8 @@ module Installer
              broker and node hosts.'.gsub(/( |\t|\n)+/, " ")
         },
         :mongodb_broker_user => {
+          :name  => 'MongoDB Broker User',
+          :order => 7,
           :value => 'openshift',
           :roles => [:broker, :dbserver],
           :description =>
@@ -181,6 +187,8 @@ module Installer
              hosts'.gsub(/( |\t|\n)+/, " ")
         },
         :mongodb_broker_password => {
+          :name  => 'MongoDB Broker Password',
+          :order => 8,
           :value => SecureRandom.base64.delete('+/='),
           :roles => [:broker, :dbserver],
           :description =>
@@ -190,6 +198,8 @@ module Installer
              hosts'.gsub(/( |\t|\n)+/, " ")
         },
         :mongodb_admin_user => {
+          :name  => 'MongoDB Admin User',
+          :order => 5,
           :value => 'admin',
           :roles => [:dbserver],
           :description =>
@@ -201,6 +211,8 @@ module Installer
              authentication.'.gsub(/( |\t|\n)+/, " ")
         },
         :mongodb_admin_password => {
+          :name  => 'MongoDB Admin Password',
+          :order => 6,
           :value => SecureRandom.base64.delete('+/='),
           :roles => [:dbserver],
           :description =>
@@ -212,6 +224,8 @@ module Installer
              authentication.'.gsub(/( |\t|\n)+/, " ")
         },
         :openshift_user => {
+          :name  => 'OpenShift Console User',
+          :order => 1,
           :value => 'demo',
           :roles => [:broker],
           :description =>
@@ -221,13 +235,16 @@ module Installer
              authentication plugin.'.gsub(/( |\t|\n)+/, " ")
         },
         :openshift_password => {
+          :name  => 'OpenShift Console Password',
+          :order => 2,
           :value => SecureRandom.base64.delete('+/='),
           :roles => [:broker],
           :description =>
             'This is the password created in
              /etc/openshift/htpasswd and used by the
              openshift-origin-auth-remote-user-basic
-             authentication plugin.'.gsub(/( |\t|\n)+/, " ") },
+             authentication plugin.'.gsub(/( |\t|\n)+/, " ")
+        },
       }
     end
 
