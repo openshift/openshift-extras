@@ -717,6 +717,14 @@ end
 
 close_all_ssh_sessions
 
+host = @deployment.hosts[0]
+puts "\n\nThe following user / password combinations were created during the configuration:"
+puts "Web console:   #{host.openshift_user} / #{host.openshift_password}"
+puts "MCollective:   #{host.mcollective_user} / #{host.mcollective_password}"
+puts "MongoDB Admin: #{host.mongodb_admin_user} / #{host.mongodb_admin_password}"
+puts "MongoDB User:  #{host.mongodb_broker_user} / #{host.mongodb_broker_password}"
+puts "\n\nBe sure to record these somewhere for future use.\n\n"
+
 puts "Deployment successful. Exiting installer."
 
 exit

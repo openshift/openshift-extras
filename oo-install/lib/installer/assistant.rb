@@ -529,7 +529,7 @@ module Installer
           if deployment.hosts.length > 1
             menu.choice("Manage Roles") { ui_modify_role }
           end
-          menu.choice("Services Accounts Settings") { ui_modify_account_info }
+          menu.choice("Services Accounts Settings") { ui_modify_account_info(true) }
           menu.choice("Global Gear Settings") { ui_modify_broker_global }
           menu.choice("Node Districts") { ui_modify_districts }
           if deployment.brokers.length > 1 or deployment.dbservers.length > 1
@@ -558,12 +558,11 @@ module Installer
       end
       list_dns
       list_broker_global
+      list_account_settings
       list_districts
       say "\nRole Assignments"
       list_role_host_map
-      if deployment.is_ha?
-        list_ha_details
-      end
+      list_ha_details
       say "\nHost Information"
       list_summarized_host_instances
     end
@@ -892,12 +891,18 @@ module Installer
       deployment.dns.deploy_dns = concur(deploy_dns_question, translate(:help_dns_deployment))
       app_domain_q = "\nAll of your hosted applications will have a DNS name of the form:\n\n<app_name>-<owner_namespace>.<all_applications_domain>\n\nWhat domain name should be used for all of the hosted apps in your OpenShift system? "
       if not deployment.dns.deploy_dns?
-        if remove_role(deployment.nameservers[0], :nameserver)
-          deployment.dns.register_components = false
-          deployment.dns.component_domain    = nil
+        clear_dns_settings = false
+        if deployment.nameservers.length == 0
+          clear_dns_settings = true
+        elsif remove_role(deployment.nameservers[0], :nameserver)
+          clear_dns_settings = true
           app_domain_q << "(Since you are using an existing DNS, make sure that this value corresponds with the dynamic zone configured on that DNS service.): "
         else
           deployment.dns.deploy_dns = true
+        end
+        if clear_dns_settings
+          deployment.dns.register_components = false
+          deployment.dns.component_domain    = nil
         end
       end
       if deployment.dns.deploy_dns?
@@ -1225,6 +1230,7 @@ module Installer
           menu.hidden("q") { return }
         end
       end
+      deployment.save_to_disk!
     end
 
     def ui_remove_district district
@@ -1259,11 +1265,11 @@ module Installer
       if new_district
         district = Installer::District.new
       end
-      district.name = ask("\nWhat is the name of the district?") { |q|
+      district.name = ask("\nWhat is the name of the district? ") { |q|
         if not district.name.nil?
           q.default = district.name
         end
-        q.validate = lambda { |p| is_valid_string?(p) and not deployment.districts.select{ |d| d.name == p }.length > 0 }
+        q.validate = lambda { |p| is_valid_string?(p) and (deployment.districts.select{ |d| d.name == p }.length == 0 or (deployment.districts.select{ |d| d.name == p }.length == 1 and deployment.districts.select{ |d| d.name == p }[0] == district)) }
         q.responses[:not_valid] = "Enter a valid district name that is not already in use."
       }.to_s
       choose do |menu|
@@ -1274,7 +1280,7 @@ module Installer
         end
         menu.hidden("q") { return }
       end
-      if new_district or deployment.districts.length == 1
+      if deployment.districts.length == 0 or deployment.districts.length == 1 and deployment.districts[0] == district
         say "\nBecause this is the only district in the deployment, all Node hosts will automatically be associated with this district. You can change this later by adding more districts."
         district.node_hosts = deployment.nodes.map{ |h| h.host }
       else
@@ -1314,7 +1320,7 @@ module Installer
               deployment.nodes.sort_by{ |h| h.host }.each do |host_instance|
                 current_district = deployment.get_district_by_node(host_instance)
                 next if current_district.name == district.name
-                display_text = host_instance.host
+                display_text = "#{host_instance.host}"
                 if not current_district.nil?
                   display_text << " (current district: #{current_district.name})"
                 end
@@ -1329,8 +1335,8 @@ module Installer
               ui_move_district_node_host(node_to_add,source_district,district)
             else
               district.add_node_host(node_to_add)
-              deployment.save_to_disk!
             end
+            deployment.add_district! district
           elsif action == :move
             node_to_move = nil
             target_district = nil
@@ -1771,7 +1777,7 @@ module Installer
           q.validate = lambda { |p| is_valid_hostname?(p) and not p == 'localhost' }
           q.responses[:not_valid] = "Enter a valid fully-qualified domain name. 'localhost' is not valid here."
         }.to_s
-        if deployment.get_hosts_by_fqdn(new_value).length > 0
+        if not new_value == current_value and deployment.get_hosts_by_fqdn(new_value).length > 0
           say "\nYou have already defined a host with the name '#{new_value}'. Please specify a different host name."
           good_hostname = false
           next
@@ -1795,16 +1801,16 @@ module Installer
       return new_value
     end
 
-    def ui_modify_account_info
-      if deployment.are_accounts_valid? and not concur("\nDo you want to modify the account info settings for the various role services?","Role services include MongoDB, ActiveMQ and the Broker. You can manually set the account info for OpenShift to use, or alternately it can be generated for you.")
+    def ui_modify_account_info(skip_check=false)
+      if not skip_check and deployment.are_accounts_valid? and not concur("\nDo you want to modify the account info settings for the various role services?","Role services include MongoDB, ActiveMQ and the Broker. You can manually set the account info for OpenShift to use, or alternately it can be generated for you.")
         return
       end
 
-      user_guided = concur("\nDo you want to manually specify usernames and passwords for the various supporting service accounts? Answer 'N' to have the values generated for you")
+      user_guided = skip_check or concur("\nDo you want to manually specify usernames and passwords for the various supporting service accounts? Answer 'N' to have the values generated for you")
 
-      service_accounts_info.keys.sort.each do |service_param|
+      service_accounts_info.keys.sort_by{ |k| service_accounts_info[k][:order] }.each do |service_param|
         param_info  = service_accounts_info[service_param]
-        param_name  = service_param.to_s.gsub('_',' ')
+        param_name  = param_info[:name]
         current_val = deployment.get_synchronized_attr(service_param)
         default_val = param_info[:value]
         new_val     = nil
@@ -1812,7 +1818,7 @@ module Installer
           new_val = ask("\nEnter a value for the #{param_name}. #{param_info[:description]} ") { |q|
             q.default = current_val.nil? ? default_val : current_val
             q.validate = lambda { |p| is_valid_string?(p) }
-            q.responses[:not_valid] = "#{attr_name} must be a non-empty string."
+            q.responses[:not_valid] = "#{param_name} must be a non-empty string."
           }.to_s
         else
           new_val = current_val.nil? ? default_val : current_val
@@ -1926,6 +1932,7 @@ module Installer
     end
 
     def list_ha_details
+      return if not deployment.is_ha?
       say "\nHigh Availability Configuration"
       table = Terminal::Table.new do |t|
         if deployment.brokers.length > 1
@@ -1937,6 +1944,21 @@ module Installer
           t.add_row ['DB Replication Key',deployment.db_replica_primaries[0].mongodb_replica_key]
         end
       end
+      puts table
+    end
+
+    def list_account_settings
+      has_settings = false
+      host         = deployment.hosts[0]
+      table = Terminal::Table.new do |t|
+        service_accounts_info.keys.sort_by{ |k| service_accounts_info[k][:order] }.each do |param|
+          next if host.send(param).nil?
+          t.add_row [service_accounts_info[param][:name],host.send(param)]
+          has_settings = true
+        end
+      end
+      return if not has_settings
+      say "\nAccount Settings"
       puts table
     end
 
