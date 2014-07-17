@@ -24,7 +24,7 @@ module Installer
       "#{name} (Gear Size: #{gear_size}, Node Hosts: #{node_hosts.length})"
     end
 
-    def is_valid?(check=:basic,node_instances,broker_global)
+    def is_valid?(check=:basic,node_instances=[],broker_global=nil)
       errors = []
       if not is_valid_string?(name)
         return false if check == :basic
