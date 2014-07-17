@@ -242,7 +242,7 @@ def configure_mongodb_replica_set
   db_primary = @deployment.db_replica_primaries[0]
 
   init_cmd    = "mongo admin -u #{db_primary.mongodb_admin_user} -p #{db_primary.mongodb_admin_password} --quiet --eval \"printjson(rs.initiate())\""
-  init_result = execute_command db_primary, init_cmd
+  init_result = db_primary.exec_on_host!(init_cmd)
   if init_result[:exit_code] == 0
     puts "MongoDB replicaset initialized."
     sleep 10
@@ -252,12 +252,12 @@ def configure_mongodb_replica_set
   end
   @deployment.dbservers.each do |host_instance|
     check_cmd    = "mongo admin -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.status())\" | grep '\"name\" : \"#{host_instance.ip_addr}:#{@mongodb_port}\"'"
-    check_result = execute_command db_primary, check_cmd
+    check_result = db_primary.exec_on_host!(check_cmd)
     if check_result[:exit_code] == 0
       puts "MongoDB replica member #{host_instance.host} already registered."
     else
       add_cmd    = "mongo admin -u #{host_instance.mongodb_admin_user} -p #{host_instance.mongodb_admin_password} --quiet --eval \"printjson(rs.add(\'#{host_instance.ip_addr}:#{@mongodb_port}\'))\""
-      add_result = execute_command db_primary, add_cmd
+      add_result = db_primary.exec_on_host!(add_cmd)
       if add_result[:exit_code] == 0
         puts "MongoDB replica member #{host_instance.host} registered."
       else
@@ -564,7 +564,7 @@ host_installation_order.each do |host_instance|
       puts "User specified that the openshift/openshift_origin module is already installed."
     else
       # Uninstall the existing puppet module (may or not not actually be present)
-      del_module = execute_command(host_instance,"puppet module uninstall -f #{@puppet_module_name}")
+      del_module = host_instance.exec_on_host!("puppet module uninstall -f #{@puppet_module_name}")
       if del_module[:exit_code] == 0
         puts "#{host_instance.host}: Existing puppet module removed."
       else
@@ -575,7 +575,7 @@ host_installation_order.each do |host_instance|
       add_module = nil
       while tries < 3 do
         puts "#{host_instance.host}: Attempting Puppet module installation (try ##{tries + 1})"
-        add_module = execute_command(host_instance,"puppet module install -v #{@puppet_module_ver} #{@puppet_module_name}")
+        add_module = host_instance.exec_on_host!("puppet module install -v #{@puppet_module_ver} #{@puppet_module_name}")
         if not add_module[:exit_code] == 0
           tries += 1
           sleep 5
@@ -592,7 +592,7 @@ host_installation_order.each do |host_instance|
 
     # Reset the yum repos
     puts "#{host_instance.host}: Cleaning yum repos."
-    yum_clean = execute_command(host_instance,'yum clean all')
+    yum_clean = host_instance.exec_on_host!('yum clean all')
     if not yum_clean[:exit_code] == 0
       display_error_info(host_instance, yum_clean, 'Failed to clean yum repo database')
       exit 1
@@ -600,7 +600,7 @@ host_installation_order.each do |host_instance|
 
     # Make the magic
     puts "#{host_instance.host}: Running the Puppet deployment. This step may take up to an hour."
-    run_apply = execute_command(host_instance,"puppet apply --verbose /tmp/#{hostfile} |& tee -a /tmp/openshift-deploy.log")
+    run_apply = host_instance.exec_on_host!("puppet apply --verbose /tmp/#{hostfile} |& tee -a /tmp/openshift-deploy.log")
     if not run_apply[:exit_code] == 0
       display_error_info(host_instance, run_apply, 'Puppet deployment exited with errors')
       exit 1
@@ -609,7 +609,7 @@ host_installation_order.each do |host_instance|
 
     if not @keep_assets
       puts "#{host_instance.host}: Cleaning up temporary files."
-      clean_up = execute_command(host_instance,"rm /tmp/#{hostfile}")
+      clean_up = host_instance.exec_on_host!("rm /tmp/#{hostfile}")
       if not clean_up[:exit_code] == 0
         puts "#{host_instance.host}: Clean up of /tmp/#hostfile} failed; please remove this file manually."
       end
