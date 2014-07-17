@@ -2,6 +2,7 @@ require 'i18n'
 require 'pathname'
 require 'yaml'
 require 'installer/version'
+require 'securerandom'
 
 module Installer
   module Helpers
@@ -44,9 +45,8 @@ module Installer
     end
 
     def supported_targets
-      { :fedora => 'Fedora',
-        :rhel => 'Red Hat Enterprise Linux',
-        :other => 'non-Fedora, non-RHEL',
+      { :rhel   => 'Red Hat Enterprise Linux',
+        :centos => 'CentOS',
       }
     end
 
@@ -89,6 +89,14 @@ module Installer
       Installer::KEEP_PUPPET
     end
 
+    def set_force_install(force_install)
+      Installer.const_set("FORCE_INSTALL", force_install)
+    end
+
+    def force_install?
+      Installer::FORCE_INSTALL
+    end
+
     # SOURCE for #which:
     # http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
     def which(cmd)
@@ -124,7 +132,7 @@ module Installer
           { 'host' => `hostname`.chomp.strip,
             'ssh_host' => 'localhost',
             'user' => 'root',
-            'roles' => ['mqserver','dbserver','broker','node'],
+            'roles' => ['msgserver','dbserver','broker','node','nameserver'],
             'status' => 'validated',
           }
         )
@@ -142,6 +150,102 @@ module Installer
 
     def sym_to_arg value
       value.to_s.gsub('_','-')
+    end
+
+    def service_accounts_info
+      { :mcollective_user => {
+          :name  => 'MCollective User',
+          :order => 3,
+          :value => 'mcollective',
+          :roles => [:broker, :node, :msgserver],
+          :description =>
+            'This is the username shared between broker and node
+             for communicating over the mcollective topic
+             channels in ActiveMQ. Must be the same on all
+             broker and node hosts.'.gsub(/( |\t|\n)+/, " ")
+        },
+        :mcollective_password => {
+          :name  => 'MCollective Password',
+          :order => 4,
+          :value => SecureRandom.base64.delete('+/='),
+          :roles => [:broker, :node, :msgserver],
+          :description =>
+            'This is the password shared between broker and node
+             for communicating over the mcollective topic
+             channels in ActiveMQ. Must be the same on all
+             broker and node hosts.'.gsub(/( |\t|\n)+/, " ")
+        },
+        :mongodb_broker_user => {
+          :name  => 'MongoDB Broker User',
+          :order => 7,
+          :value => 'openshift',
+          :roles => [:broker, :dbserver],
+          :description =>
+            'This is the username that will be created for the
+             broker to connect to the MongoDB datastore. Must
+             be the same on all broker and datastore
+             hosts'.gsub(/( |\t|\n)+/, " ")
+        },
+        :mongodb_broker_password => {
+          :name  => 'MongoDB Broker Password',
+          :order => 8,
+          :value => SecureRandom.base64.delete('+/='),
+          :roles => [:broker, :dbserver],
+          :description =>
+            'This is the password that will be created for the
+             broker to connect to the MongoDB datastore. Must
+             be the same on all broker and datastore
+             hosts'.gsub(/( |\t|\n)+/, " ")
+        },
+        :mongodb_admin_user => {
+          :name  => 'MongoDB Admin User',
+          :order => 5,
+          :value => 'admin',
+          :roles => [:dbserver],
+          :description =>
+            'This is the username of the administrative user
+             that will be created in the MongoDB datastore.
+             These credentials are not used by OpenShift, but
+             an administrative user must be added to MongoDB
+             in order for it to enforce
+             authentication.'.gsub(/( |\t|\n)+/, " ")
+        },
+        :mongodb_admin_password => {
+          :name  => 'MongoDB Admin Password',
+          :order => 6,
+          :value => SecureRandom.base64.delete('+/='),
+          :roles => [:dbserver],
+          :description =>
+            'This is the password of the administrative user
+             that will be created in the MongoDB datastore.
+             These credentials are not used by OpenShift, but
+             an administrative user must be added to MongoDB
+             in order for it to enforce
+             authentication.'.gsub(/( |\t|\n)+/, " ")
+        },
+        :openshift_user => {
+          :name  => 'OpenShift Console User',
+          :order => 1,
+          :value => 'demo',
+          :roles => [:broker],
+          :description =>
+            'This is the username created in
+             /etc/openshift/htpasswd and used by the
+             openshift-origin-auth-remote-user-basic
+             authentication plugin.'.gsub(/( |\t|\n)+/, " ")
+        },
+        :openshift_password => {
+          :name  => 'OpenShift Console Password',
+          :order => 2,
+          :value => SecureRandom.base64.delete('+/='),
+          :roles => [:broker],
+          :description =>
+            'This is the password created in
+             /etc/openshift/htpasswd and used by the
+             openshift-origin-auth-remote-user-basic
+             authentication plugin.'.gsub(/( |\t|\n)+/, " ")
+        },
+      }
     end
 
     def is_valid_ip_addr? text
@@ -210,6 +314,40 @@ module Installer
           return false
         end
       end
+    end
+
+    # The output of the rhsm repo listing is of the multi-line format:
+    #
+    # Repo ID:   <repo_id>
+    # Repo Name: <repo_name>
+    # Repo URL:  <repo_url>
+    # Enabled:   <0|1>
+    #
+    # This helper matched repos by repo ID substring and correlates the
+    # ID to the 'enabled' flag reported in the same block.
+    def rhsm_enabled_repo?(rhsm_text, repo_substr)
+      in_repo_block = false
+      rhsm_text.split("\n").each do |line|
+        if not in_repo_block
+          if line =~ /^Repo ID/ and line =~ /#{repo_substr}/
+            in_repo_block = true
+          end
+          next
+        else
+          if line =~ /^\s*$/
+            in_repo_block = false
+          elsif line =~ /^Enabled/
+            if line =~ /1/
+              return true
+            end
+          end
+        end
+      end
+      return false
+    end
+
+    def get_domain_from_fqdn(fqdn)
+      fqdn.split('.').drop(1).join('.')
     end
 
     def capitalize_attribute(attr)

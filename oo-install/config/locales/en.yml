@@ -76,6 +76,25 @@ en:
     Also provide a host name and IP address (may be internal-only). The nameserver installed with OpenShift will create records for these.
 
     The specific installation options that you've chosen may require additional settings.
+  help_dns_deployment: |-
+    OpenShift deals with DNS at two levels: the OpenShift hosts must
+    be registered with DNS, but OpenShift-hosted apps are also
+    registered with DNS as they get created.
+
+    If you tell the installer to deploy a DNS service, this BIND
+    instance will at a minimum be configured to serve the
+    -application- domain and Node hosts will be configured to register
+    new apps to that service using nsupdate. It can also be configured
+    to work as the name server for the OpenShift component host
+    systems in a separate zone or the same zone as the apps (not
+    recommended).
+
+    If you are already running a DNS service, and you want that
+    system to handle the dynamic zone required for OpenShift apps,
+    tell the installer -not to- deploy DNS. You will be asked to
+    provide the IP address of your DNS server and a DNSSEC key
+    value. These values will be used by OpenShift's Node hosts to
+    register new hosted applications with your DNS service.
   help_subscription_cfg: >
     These are the subscription settings that are stored for future use
     in your configuration file.
@@ -100,6 +119,6 @@ en:
     Node: This is where OpenShift applications are hosted. It needs to be accessible by app owners and app users.
   menu_prompt: "Type a selection and press <return>:"
   basic_mode_explanation: |-
-    Note: ActiveMQ, MongoDB and named will all be installed on the Broker.
+    Note: ActiveMQ and MongoDB will be installed on all Broker instances.
     For more flexibility, rerun the installer in advanced mode (-a).
   ip_config_help_text: This IP address information was found with a scan of the target system. If you would prefer to specify the necessary information manually, answer 'No'.

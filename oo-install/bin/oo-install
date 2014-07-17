@@ -32,6 +32,7 @@ options = {
   :list_workflows => false,
   :debug => false,
   :keep_puppet => false,
+  :force_install => false,
 }
 
 # Parse the command line options
@@ -46,6 +47,9 @@ p = OptionParser.new do |opts|
   end
   opts.on('-w', '--workflow WORKFLOW_ID', 'The installer workflow for unattended deployment.') do |workflow_id|
     options[:workflow_id] = workflow_id
+  end
+  opts.on('--force', 'For unattended deployments, ignore warnings and automatically install missing RPMs') do |force_install|
+    options[:force_install] = force_install
   end
   opts.on('-l', '--list-workflows', 'List the workflow IDs available for use with unattended deployment.') do |flag|
     options[:list_workflows] = flag
@@ -94,6 +98,9 @@ set_debug(options[:debug])
 
 # Set the 'keep puppet' flag
 set_keep_puppet(options[:keep_puppet])
+
+# Set the 'force install' flag
+set_force_install(options[:force_install])
 
 # Before we go any deeper, splat out workflow IDs and exit if '-l' was passed.
 if options[:list_workflows]
@@ -156,7 +163,7 @@ end
 @deployment = @config.get_deployment
 if not options[:advanced_mode] and @deployment.is_advanced?
   options[:advanced_mode] = true
-  puts "The detected deployment is an advanced-mode deployment.\nAutomatically switching to advanced mode."
+  puts "The detected deployment is an advanced-mode deployment.\nAutomatically switching to advanced mode.\n\n"
 end
 # Now set the interface mode
 set_mode(options[:advanced_mode])
