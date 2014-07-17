@@ -291,6 +291,7 @@ module Installer
 
       # Exit the workflow, and possibly the application.
       if not workflow.exit_on_complete?
+        @workflow_id = nil
         raise Installer::AssistantRestartException.new
       elsif workflow.non_deployment?
         raise Installer::AssistantWorkflowNonDeploymentCompletedException.new
@@ -2076,9 +2077,9 @@ module Installer
         # Check the target host deployment type
         if workflow.targets[host_instance.host_type].nil?
           if workflow.targets.keys.length == 1
-            say "* Target host does not appear to be a #{supported_targets[workflow.targets.keys[0]]} system"
+            say "* Target host does not appear to be a #{workflow.targets.values[0]} system"
           else
-            say "* Target host does not appear to be of these types: #{workflow.targets.map{ |t| supported_targets[t] }.join(', ')}"
+            say "* Target host does not appear to be of these types: #{workflow.targets.values.join(', ')}"
           end
           deployment_good = false
           next
