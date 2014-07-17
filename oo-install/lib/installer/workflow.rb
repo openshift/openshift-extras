@@ -83,7 +83,7 @@ module Installer
           @targets[target.to_sym] = supported_targets[target.to_sym]
         end
       else
-        @targets = { :fedora => supported_targets[:fedora], :rhel => supported_targets[:rhel] }
+        @targets = { :centos => supported_targets[:centos], :rhel => supported_targets[:rhel] }
       end
       @summary = config['Summary']
       @description = config['Description']
