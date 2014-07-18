@@ -518,12 +518,7 @@ host_installation_order.each do |host_instance|
       close_all_ssh_sessions
       exit 1
     else
-      if not @keep_assets and File.exists?(hostfilepath)
-        puts 'success. Removing local copy.'
-        File.unlink(hostfilepath)
-      else
-        puts 'success. Keeping local copy.'
-      end
+      puts "success."
     end
   end
 end
@@ -723,8 +718,28 @@ puts "Web console:   #{host.openshift_user} / #{host.openshift_password}"
 puts "MCollective:   #{host.mcollective_user} / #{host.mcollective_password}"
 puts "MongoDB Admin: #{host.mongodb_admin_user} / #{host.mongodb_admin_password}"
 puts "MongoDB User:  #{host.mongodb_broker_user} / #{host.mongodb_broker_password}"
-puts "\n\nBe sure to record these somewhere for future use.\n\n"
+puts "\n\nBe sure to record these somewhere for future use."
 
-puts "Deployment successful. Exiting installer."
+if not @keep_assets
+  saw_errors = []
+  @puppet_templates.each do |filepath|
+    if File.exists?(filepath)
+      begin
+        File.unlink(filepath)
+      rescue
+        saw_errors << filepath
+      end
+    end
+  end
+  if saw_errors.length > 0
+    puts "\n\nSome temporary files could not be removed, but are safe to delete:\n* #{saw_errors.join("\n* ")}"
+  else
+    puts "\n\nLocal temporary files removed."
+  end
+else
+  puts "\n\nLocal temporary files preserved:\n* #{@puppet_templates.join("\n* ")}"
+end
+
+puts "\n\nDeployment successful. Exiting installer."
 
 exit
