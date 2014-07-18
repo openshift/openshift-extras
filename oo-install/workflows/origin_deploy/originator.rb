@@ -512,7 +512,7 @@ host_installation_order.each do |host_instance|
   # Copy the file over.
   if not host_instance.localhost?
     print "* Copying Puppet script to host... "
-    `#{@scp_cmd} #{hostfilepath} #{host_instance.user}@#{host_instance.ssh_host}:#{hostfilepath} 2>&1`
+    `#{@scp_cmd} #{hostfilepath} #{host_instance.user}@#{host_instance.ssh_host}:#{hostfilepath}`
     if not $?.exitstatus == 0
       puts "copy attempt failed.\nExiting.\n"
       close_all_ssh_sessions
