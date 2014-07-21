@@ -3708,6 +3708,10 @@ do
   "$action"
 done
 
+# In the case of a kickstart, some services will not be able to start, and the
+# host will automatically reboot anyway after the kickstart script completes.
+[[ "$environment" = ks ]] && RESTART_NEEDED=false
+
 $RESTART_NEEDED && ! $RESTART_COMPLETED && restart_services
 
 $PASSWORDS_TO_DISPLAY && display_passwords
