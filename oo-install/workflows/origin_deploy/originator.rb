@@ -3,6 +3,7 @@
 require 'yaml'
 require 'net/ssh'
 require 'installer'
+require 'installer/exceptions'
 require 'installer/helpers'
 require 'installer/config'
 
