@@ -1937,12 +1937,22 @@ module Installer
       say "\nHigh Availability Configuration"
       table = Terminal::Table.new do |t|
         if deployment.brokers.length > 1
-          t.add_row ['Broker Load Balancer',deployment.load_balancers[0].host]
-          t.add_row ['Broker Virtual IP',deployment.load_balancers[0].broker_cluster_virtual_ip_addr]
+          if deployment.load_balancers.length > 0
+            t.add_row ['Broker Load Balancer',deployment.load_balancers[0].host]
+            t.add_row ['Broker Virtual IP',deployment.load_balancers[0].broker_cluster_virtual_ip_addr]
+          else
+            t.add_row ['Broker Load balancer','[unset]']
+            t.add_row ['Broker Virtual IP','[unset]']
+          end
         end
         if deployment.dbservers.length > 1
-          t.add_row ['DB Replica Primary',deployment.db_replica_primaries[0].host]
-          t.add_row ['DB Replication Key',deployment.db_replica_primaries[0].mongodb_replica_key]
+          if deployment.db_replica_primaries.length > 0
+            t.add_row ['DB Replica Primary',deployment.db_replica_primaries[0].host]
+            t.add_row ['DB Replication Key',deployment.db_replica_primaries[0].mongodb_replica_key]
+          else
+            t.add_row ['DB Replica Primary','[unset]']
+            t.add_row ['DB Replication Key','[unset]']
+          end
         end
       end
       puts table
