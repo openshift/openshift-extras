@@ -4,7 +4,7 @@ module Installer
   class Subscription
     include Installer::Helpers
 
-    @repo_attrs = [:repos_base, :jboss_repo_base, :jenkins_repo_base, :scl_repo, :os_repo, :os_optional_repo]
+    @repo_attrs = [:repos_base, :jboss_repo_base, :jenkins_repo_base, :scl_repo, :os_repo, :os_optional_repo, :puppet_repo_rpm]
     @object_attrs = [:subscription_type, :rh_username, :rh_password, :sm_reg_pool, :rhn_reg_actkey].concat(@repo_attrs)
 
     attr_reader :config, :type
@@ -37,6 +37,7 @@ module Installer
               :scl_repo => 'The base URL for an SCL repository',
               :os_repo => 'The URL of a yum repository for the operating system',
               :os_optional_repo => 'The URL for an "Optional" repository for the operating system',
+              :puppet_repo_rpm => 'The URL for a Puppet Labs repository RPM',
             },
             :attr_order => repo_attrs,
           }

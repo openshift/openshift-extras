@@ -1,5 +1,7 @@
 require 'fileutils'
+require 'installer/deployment'
 require 'installer/helpers'
+require 'installer/subscription'
 require 'yaml'
 
 module Installer

@@ -97,8 +97,8 @@ module Installer
     end
   end
 
-  class DeploymentMultipleRoleHostsException < Exception
-    def initialize(message="The installer currently does not support deployments with multiple instances of some roles.", code=1)
+  class DeploymentAccountInfoMismatchException < Exception
+    def initialize(message="The username/password combo for a particular service does not match across host instances.", code=1)
       super(message, code)
     end
   end
@@ -165,6 +165,30 @@ module Installer
 
   class HostInstanceDuplicateRoleException < Exception
     def initialize(message="A host instance has been assigned to the same role multiple times.", code=1)
+      super(message, code)
+    end
+  end
+
+  class HostInstanceMismatchedSettingsException < Exception
+    def initialize(message="A host instance has conflicting settings.", code=1)
+      super(message, code)
+    end
+  end
+
+  class HostInstanceSettingException < Exception
+    def initialize(message="A host instance has a missing or malformed setting value.", code=1)
+      super(message, code)
+    end
+  end
+
+  class BrokerGlobalSettingsException < Exception
+    def intialize(message="One of the Broker global settings is incorrect.")
+      super(message, code)
+    end
+  end
+
+  class DistrictSettingsException < Exception
+    def intialize(message="One of the District configuration settings is incorrect.")
       super(message, code)
     end
   end
