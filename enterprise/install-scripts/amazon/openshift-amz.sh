@@ -412,13 +412,18 @@ abort_install()
 yum_install_or_exit()
 {
   echo "OpenShift: yum install $*"
-  yum install -y $* $disable_plugin
-  if [ $? -ne 0 ]
-  then
-    echo "OpenShift: Command failed: yum install $*"
-    echo "OpenShift: Please ensure relevant repos/subscriptions are configured."
-    abort_install
-  fi
+  COUNT=0
+  while true; do
+    yum install -y $* $disable_plugin
+    if [ $? -eq 0 ]; then
+      return
+    elif [ $COUNT -gt 3 ]; then
+      echo "OpenShift: Command failed: yum install $*"
+      echo "OpenShift: Please ensure relevant repos/subscriptions are configured."
+      abort_install
+    fi
+    let COUNT+=1
+  done
 }
 
 # Install the client tools.
@@ -2103,11 +2108,31 @@ install_rsync_pub_key()
 {
   mkdir -p /root/.ssh
   chmod 700 /root/.ssh
-  # Get key hosted on broker machine
-  wget -q -O- --no-check-certificate "https://${broker_hostname}/rsync_id_rsa.pub?host=${node_hostname}" \
-    >> /root/.ssh/authorized_keys \
-    || echo "WARNING: could not install rsync_id_rsa.pub key; please do it manually."
-  chmod 644 /root/.ssh/authorized_keys
+
+  WAIT=600
+  END=`date -d "$WAIT seconds" +%s`
+  echo "OpenShift node: will wait for $WAIT seconds to fetch SSH key."
+
+  while [[ `date +%s` -lt $END ]]; do
+    # try to get key hosted on broker machine
+    cert=$(wget -q -O- --no-check-certificate "https://${broker_hostname}/rsync_id_rsa.pub?host=${node_hostname}")
+    if [ $? -ne 0 ]; then
+      sleep 5
+    else
+      ssh-keygen -lf /dev/stdin <<< $cert
+      if [ $? -ne 0 ]; then
+        break
+      else
+        echo $cert >> /root/.ssh/authorized_keys
+        echo "OpenShift node: SSH key downloaded from broker successfully."
+        chmod 644 /root/.ssh/authorized_keys
+        return
+      fi
+    fi
+  done
+
+  echo "OpenShift node: WARNING: could not install rsync_id_rsa.pub key; please do it manually."
+
 }
 
 echo_installation_intentions()
@@ -2699,7 +2724,18 @@ install_rpms()
   # we often rely on latest selinux policy and other updates
   echo "OpenShift: yum update"
   yum $disable_plugin clean all
-  yum $disable_plugin update -y || abort_install
+
+  COUNT=0
+  while true; do
+    yum $disable_plugin update -y
+    if [ $? -eq 0 ]; then
+      break
+    elif [ $COUNT -gt 3 ]; then
+      abort_install
+    fi
+    let COUNT+=1
+  done
+
   # Install a few packages missing from a minimal RHEL install required by the
   # installer script itself.
   yum_install_or_exit ntp ntpdate wget
