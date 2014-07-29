@@ -42,11 +42,15 @@ configure_repos()
   # functions.
 
   # Make need_${repo}_repo return false by default.
-  for repo in optional infra node jbosseap_cartridge client_tools jbosseap jbossews; do
+  for repo in optional infra node jbosseap_cartridge client_tools jbosseap jbossews extra; do
       eval "need_${repo}_repo() { false; }"
   done
 
   is_true "$CONF_OPTIONAL_REPO" && need_optional_repo() { :; }
+
+  if [ -n "${CONF_JBOSSEWS_EXTRA_REPO}${CONF_JBOSSEAP_EXTRA_REPO}${CONF_RHEL_OPTIONAL_REPO}${CONF_RHSCL_EXTRA_REPO}" ]; then
+    need_extra_repo() { :; }
+  fi
 
   if activemq || broker || datastore || named; then
     # The ose-infrastructure channel has the activemq, broker, and mongodb
@@ -111,6 +115,7 @@ configure_yum_repos()
     eval "need_${repo}_repo && configure_${repo}_repo"
   done
   configure_ose_yum_repos
+  configure_extra_repos
   yum clean metadata
   yum_install_or_exit openshift-enterprise-release
 }
@@ -252,9 +257,75 @@ YUM
   fi
 }
 
+configure_extra_repos()
+{
+  extra_repo_file=/etc/yum.repos.d/ose_extra.repo
+  if [ -e "${extra_repo_file}" ]; then
+      echo > "${extra_repo_file}"
+  fi
+
+  if [ "${rhel_extra_repo}x" != "x" ]; then
+    cat <<YUM >> "${extra_repo_file}"
+[rhel_extra]
+name=rhel_extra
+baseurl=${rhel_extra_repo}
+enabled=1
+gpgcheck=0
+sslverify=false
+priority=20
+sslverify=false
+exclude=tomcat6*
+
+YUM
+  fi
+
+  if [ "x${jbosseap_extra_repo}" != "x" ]; then
+    cat <<YUM >> "${extra_repo_file}"
+[jbosseap_extra]
+name=jbosseap_extra
+baseurl=${jbosseap_extra_repo}
+enabled=1
+priority=30
+gpgcheck=0
+sslverify=false
+
+YUM
+
+  fi
+
+  if [ "x${jbossews_extra_repo}" != "x" ]; then
+    cat <<YUM >> "${extra_repo_file}"
+[jbossews_extra]
+name=jbossews_extra
+baseurl=${jbossews_extra_repo}
+enabled=1
+priority=30
+gpgcheck=0
+sslverify=false
+
+YUM
+
+  fi
+
+  if [ "x${rhscl_extra_repo}" != "x" ]; then
+    cat <<YUM >> "${extra_repo_file}"
+[rhscl_extra]
+name=rhscl_extra
+baseurl=${rhscl_extra_repo}
+enabled=1
+priority=10
+gpgcheck=0
+sslverify=false
+
+YUM
+
+  fi
+}
+
 configure_subscription()
 {
    configure_ose_yum_repos # if requested
+   need_extra_repo && configure_extra_repos
    # install our tool to enable repo/channel configuration
    yum_install_or_exit openshift-enterprise-yum-validator
 
@@ -271,6 +342,7 @@ configure_subscription()
    # wrong channel before yum-validator does its work. So, install it afterward.
    yum_install_or_exit openshift-enterprise-release
    configure_ose_yum_repos # refresh if overwritten by validator
+   need_extra_repo && configure_extra_repos
 }
 
 configure_rhn_channels()
@@ -1940,8 +2012,12 @@ set_defaults()
   # There a no defaults for these. Customers should be using
   # subscriptions via RHN. Internally we use private systems.
   rhel_repo="${CONF_RHEL_REPO%/}"
+  rhel_extra_repo="${CONF_RHEL_EXTRA_REPO%/}"
   jboss_repo_base="${CONF_JBOSS_REPO_BASE%/}"
+  jbosseap_extra_repo="${CONF_JBOSSEAP_EXTRA_REPO%/}"
+  jbossews_extra_repo="${CONF_JBOSSEWS_EXTRA_REPO%/}"
   rhscl_repo_base="${CONF_RHSCL_REPO_BASE%/}"
+  rhscl_extra_repo="${CONF_RHSCL_EXTRA_REPO%/}"
   rhel_optional_repo="${CONF_RHEL_OPTIONAL_REPO%/}"
   # Where to find the OpenShift repositories; just the base part before
   # splitting out into Infrastructure/Node/etc.
