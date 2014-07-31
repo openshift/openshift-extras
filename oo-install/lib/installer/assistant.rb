@@ -392,7 +392,7 @@ module Installer
           # We don't add hosts when there is an existing host instance.
           say "\nThat's everything we need to know right now for this #{role_item}."
           if deployment.hosts.length > 1
-            say "\nCurrently you have desribed the following host system(s):"
+            say "\nCurrently you have described the following host system(s):"
             deployment.hosts.sort_by{ |h| h.host }.each do |host_instance|
               say "* #{host_instance.summarize}"
             end
