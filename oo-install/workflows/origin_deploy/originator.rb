@@ -14,7 +14,7 @@ include Installer::Helpers
 ######################################
 
 @puppet_module_name = 'openshift/openshift_origin'
-@puppet_module_ver  = '4.0.6'
+@puppet_module_ver  = '4.0.8'
 @mongodb_port       = 27017
 
 # Check ENV for an alternate config file location.
