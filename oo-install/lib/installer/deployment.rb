@@ -193,18 +193,22 @@ module Installer
       hosts.each do |host_instance|
         dns_host = host_instance.has_role?(:nameserver)
         if host_instance.roles.include?(:broker)
-          # Broker hosts (which may also contain a node) get msgserver and dbserver as well
+          # Broker hosts (which may also contain a node and/or nameserver) get msgserver and dbserver as well
           host_instance.roles = [:msgserver,:dbserver].concat(host_instance.roles).uniq
         elsif host_instance.roles.include?(:node)
-          # Node hosts (which don't include brokers) get any other roles removed
+          # Node hosts (which don't include brokers) get roles other than nameserver removed
           host_instance.roles = dns_host ? [:node,:nameserver] : [:node]
+        elsif dns_host
+          # If the DNS host is not on a broker or node, just make sure that the
+          # other roles are stripped off.
+          host_instance.roles = [:nameserver]
         else
           # Other hosts get nuked.
-          to_delete << host_instance.id
+          to_delete << host_instance.object_id
         end
       end
       if to_delete.length > 0
-        hosts.delete_if{ |h| to_delete.include?(h.id) }
+        hosts.delete_if{ |h| to_delete.include?(h.object_id) }
       end
       save_to_disk!
     end
