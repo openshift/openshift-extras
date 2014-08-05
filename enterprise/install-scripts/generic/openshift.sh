@@ -207,9 +207,13 @@
 #     none - install sources are already set up when the script executes (DEFAULT)
 #     yum - set up yum repos based on config
 #       rhel_repo / CONF_RHEL_REPO -- see below
+#       rhel_extra_repo / CONF_RHEL_EXTRA_REPO -- see below
 #       rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO -- see below
 #       jboss_repo_base / CONF_JBOSS_REPO_BASE -- see below
+#       jbosseap_extra_repo / CONF_JBOSSEAP_EXTRA_REPO -- see below
+#       jbossews_extra_repo / CONF_JBOSSEWS_EXTRA_REPO -- see below
 #       rhscl_repo_base / CONF_RHSCL_REPO_BASE -- see below
+#       rhscl_extra_repo / CONF_RHSCL_EXTRA_REPO -- see below
 #       ose_repo_base / CONF_OSE_REPO_BASE -- see below
 #       ose_extra_repo_base / CONF_OSE_EXTRA_REPO_BASE -- see below
 #     rhsm - use subscription-manager
@@ -300,6 +304,12 @@
 #   The URL for a RHEL 6 yum repository used with the "yum" install method.
 #   Should end in /6Server/x86_64/os/
 
+# rhel_extra_repo / CONF_RHEL_EXTRA_REPO
+#   If set, will define a yum repo under the yum,rhsm,rhn install
+#   methods. This will parallel the regular RHEL channels/repos at the
+#   same priority. The value of this option sets the "baseurl" setting
+#   for the defined repo. Useful for testing prerelease content
+
 # rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO
 #   The URL for a RHEL 6 Optional yum repository used with the "yum" install method.
 #   (only used if CONF_OPTIONAL_REPO is true)
@@ -309,9 +319,30 @@
 #   The base URL for the JBoss repositories used with the "yum"
 #   install method - the part before jbeap/jbews - ends in /6Server/x86_64
 
+# jbosseap_extra_repo / CONF_JBOSSEAP_EXTRA_REPO
+#   If set, will define a yum repo under the yum,rhsm,rhn install
+#   methods. This will parallel the regular JBoss channels/repos at
+#   the same priority. The value of this option sets the "baseurl"
+#   setting for the defined repo. Useful for testing prerelease
+#   content
+
+# jbossews_extra_repo / CONF_JBOSSEWS_EXTRA_REPO
+#   If set, will define a yum repo under the yum,rhsm,rhn install
+#   methods. This will parallel the regular JBoss channels/repos at
+#   the same priority. The value of this option sets the "baseurl"
+#   setting for the defined repo. Useful for testing prerelease
+#   content
+
 # rhscl_repo_base / CONF_RHSCL_REPO_BASE
 #   The base URL for the SCL repositories used with the "yum"
 #   install method - the part before rhscl - ends in /6Server/x86_64
+
+# rhscl_extra_repo / CONF_RHSCL_EXTRA_REPO
+#   If set, will define a yum repo under the yum,rhsm,rhn install
+#   methods. This will parallel the regular RHSCL channels/repos at
+#   the same priority. The value of this option sets the "baseurl"
+#   setting for the defined repo. Useful for testing prerelease
+#   content
 
 # ose_extra_repo_base / CONF_OSE_EXTRA_REPO_BASE -- see below
 #   If defined, will define yum repos under the yum,rhsm,rhn install methods.
@@ -772,11 +803,15 @@ configure_repos()
   # functions.
 
   # Make need_${repo}_repo return false by default.
-  for repo in optional infra node jbosseap_cartridge client_tools jbosseap jbossews; do
+  for repo in optional infra node jbosseap_cartridge client_tools jbosseap jbossews extra; do
       eval "need_${repo}_repo() { false; }"
   done
 
   is_true "$CONF_OPTIONAL_REPO" && need_optional_repo() { :; }
+
+  if [ -n "${CONF_JBOSSEWS_EXTRA_REPO}${CONF_JBOSSEAP_EXTRA_REPO}${CONF_RHEL_OPTIONAL_REPO}${CONF_RHSCL_EXTRA_REPO}" ]; then
+    need_extra_repo() { :; }
+  fi
 
   if activemq || broker || datastore || named; then
     # The ose-infrastructure channel has the activemq, broker, and mongodb
@@ -839,6 +874,7 @@ configure_yum_repos()
     eval "need_${repo}_repo && configure_${repo}_repo"
   done
   configure_ose_yum_repos
+  configure_extra_repos
   yum clean metadata
   yum_install_or_exit openshift-enterprise-release
 }
@@ -979,9 +1015,74 @@ YUM
   fi
 }
 
+configure_extra_repos()
+{
+  extra_repo_file=/etc/yum.repos.d/ose_extra.repo
+  if [ -e "${extra_repo_file}" ]; then
+      echo > "${extra_repo_file}"
+  fi
+
+  if [ "${rhel_extra_repo}x" != "x" ]; then
+    cat <<YUM >> "${extra_repo_file}"
+[rhel_extra]
+name=rhel_extra
+baseurl=${rhel_extra_repo}
+enabled=1
+gpgcheck=0
+priority=20
+sslverify=false
+exclude=tomcat6* ${CONF_YUM_EXCLUDE_PKGS}
+
+YUM
+  fi
+
+  if [ "x${jbosseap_extra_repo}" != "x" ]; then
+    cat <<YUM >> "${extra_repo_file}"
+[jbosseap_extra]
+name=jbosseap_extra
+baseurl=${jbosseap_extra_repo}
+enabled=1
+priority=30
+gpgcheck=0
+exclude= ${CONF_YUM_EXCLUDE_PKGS}
+
+YUM
+
+  fi
+
+  if [ "x${jbossews_extra_repo}" != "x" ]; then
+    cat <<YUM >> "${extra_repo_file}"
+[jbossews_extra]
+name=jbossews_extra
+baseurl=${jbossews_extra_repo}
+enabled=1
+priority=30
+gpgcheck=0
+exclude= ${CONF_YUM_EXCLUDE_PKGS}
+
+YUM
+
+  fi
+
+  if [ "x${rhscl_extra_repo}" != "x" ]; then
+    cat <<YUM >> "${extra_repo_file}"
+[rhscl_extra]
+name=rhscl_extra
+baseurl=${rhscl_extra_repo}
+enabled=1
+priority=10
+gpgcheck=0
+exclude= ${CONF_YUM_EXCLUDE_PKGS}
+
+YUM
+
+  fi
+}
+
 configure_subscription()
 {
    configure_ose_yum_repos # if requested
+   need_extra_repo && configure_extra_repos
    # install our tool to enable repo/channel configuration
    yum_install_or_exit openshift-enterprise-yum-validator
 
@@ -998,6 +1099,7 @@ configure_subscription()
    # wrong channel before yum-validator does its work. So, install it afterward.
    yum_install_or_exit openshift-enterprise-release
    configure_ose_yum_repos # refresh if overwritten by validator
+   need_extra_repo && configure_extra_repos
 }
 
 configure_rhn_channels()
@@ -2989,7 +3091,7 @@ set_defaults()
   # The declare statement below is generated by the following command:
   #
   #   echo declare -A valid_settings=\( $(grep -o 'CONF_[0-9A-Z_]\+' openshift.ks |sort -u |grep -v -F -e CONF_BAZ -e CONF_FOO |sed -e 's/.*/[&]=/') \)
-  declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]= [CONF_ACTIVEMQ_ADMIN_PASSWORD]= [CONF_ACTIVEMQ_AMQ_USER_PASSWORD]= [CONF_ACTIVEMQ_HOSTNAME]= [CONF_ACTIVEMQ_REPLICANTS]= [CONF_BIND_KEY]= [CONF_BIND_KEYALGORITHM]= [CONF_BIND_KEYSIZE]= [CONF_BIND_KEYVALUE]= [CONF_BIND_KRB_KEYTAB]= [CONF_BIND_KRB_PRINCIPAL]= [CONF_BROKER_AUTH_SALT]= [CONF_BROKER_HOSTNAME]= [CONF_BROKER_IP_ADDR]= [CONF_BROKER_KRB_AUTH_REALMS]= [CONF_BROKER_KRB_SERVICE_NAME]= [CONF_BROKER_SESSION_SECRET]= [CONF_CARTRIDGES]= [CONF_CDN_LAYOUT]= [CONF_CDN_REPO_BASE]= [CONF_CONSOLE_SESSION_SECRET]= [CONF_DATASTORE_HOSTNAME]= [CONF_DATASTORE_REPLICANTS]= [CONF_DEFAULT_DISTRICTS]= [CONF_DEFAULT_GEAR_CAPABILITIES]= [CONF_DEFAULT_GEAR_SIZE]= [CONF_DISTRICT_MAPPINGS]= [CONF_DOMAIN]= [CONF_FORWARD_DNS]= [CONF_HOSTS_DOMAIN]= [CONF_HOSTS_DOMAIN_KEYFILE]= [CONF_IDLE_INTERVAL]= [CONF_INSTALL_COMPONENTS]= [CONF_INSTALL_METHOD]= [CONF_INTERFACE]= [CONF_JBOSS_REPO_BASE]= [CONF_KEEP_HOSTNAME]= [CONF_KEEP_NAMESERVERS]= [CONF_MCOLLECTIVE_PASSWORD]= [CONF_MCOLLECTIVE_USER]= [CONF_METAPKGS]= [CONF_METRICS_INTERVAL]= [CONF_MONGODB_ADMIN_PASSWORD]= [CONF_MONGODB_ADMIN_USER]= [CONF_MONGODB_BROKER_PASSWORD]= [CONF_MONGODB_BROKER_USER]= [CONF_MONGODB_KEY]= [CONF_MONGODB_NAME]= [CONF_MONGODB_PASSWORD]= [CONF_MONGODB_REPLSET]= [CONF_NAMED_ENTRIES]= [CONF_NAMED_HOSTNAME]= [CONF_NAMED_IP_ADDR]= [CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST]= [CONF_NODE_APACHE_FRONTEND]= [CONF_NODE_HOSTNAME]= [CONF_NODE_IP_ADDR]= [CONF_NODE_LOG_CONTEXT]= [CONF_NODE_PROFILE]= [CONF_NO_JBOSS]= [CONF_NO_JBOSSEAP]= [CONF_NO_JBOSSEWS]= [CONF_NO_NTP]= [CONF_NO_SCRAMBLE]= [CONF_OPENSHIFT_PASSWORD]= [CONF_OPENSHIFT_PASSWORD1]= [CONF_OPENSHIFT_USER]= [CONF_OPENSHIFT_USER1]= [CONF_OPTIONAL_REPO]= [CONF_OSE_ERRATA_BASE]= [CONF_OSE_EXTRA_REPO_BASE]= [CONF_OSE_REPO_BASE]= [CONF_PROFILE_NAME]= [CONF_REPOS_BASE]= [CONF_RHEL_OPTIONAL_REPO]= [CONF_RHEL_REPO]= [CONF_RHN_PASS]= [CONF_RHN_REG_ACTKEY]= [CONF_RHN_REG_NAME]= [CONF_RHN_REG_OPTS]= [CONF_RHN_REG_PASS]= [CONF_RHN_USER]= [CONF_RHSCL_REPO_BASE]= [CONF_ROUTING_PLUGIN]= [CONF_ROUTING_PLUGIN_PASS]= [CONF_ROUTING_PLUGIN_USER]= [CONF_SM_REG_NAME]= [CONF_SM_REG_PASS]= [CONF_SM_REG_POOL]= [CONF_SYSLOG]= [CONF_VALID_GEAR_SIZES]= [CONF_YUM_EXCLUDE_PKGS]= )
+  declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]= [CONF_ACTIVEMQ_ADMIN_PASSWORD]= [CONF_ACTIVEMQ_AMQ_USER_PASSWORD]= [CONF_ACTIVEMQ_HOSTNAME]= [CONF_ACTIVEMQ_REPLICANTS]= [CONF_BIND_KEY]= [CONF_BIND_KEYALGORITHM]= [CONF_BIND_KEYSIZE]= [CONF_BIND_KEYVALUE]= [CONF_BIND_KRB_KEYTAB]= [CONF_BIND_KRB_PRINCIPAL]= [CONF_BROKER_AUTH_SALT]= [CONF_BROKER_HOSTNAME]= [CONF_BROKER_IP_ADDR]= [CONF_BROKER_KRB_AUTH_REALMS]= [CONF_BROKER_KRB_SERVICE_NAME]= [CONF_BROKER_SESSION_SECRET]= [CONF_CARTRIDGES]= [CONF_CDN_LAYOUT]= [CONF_CDN_REPO_BASE]= [CONF_CONSOLE_SESSION_SECRET]= [CONF_DATASTORE_HOSTNAME]= [CONF_DATASTORE_REPLICANTS]= [CONF_DEFAULT_DISTRICTS]= [CONF_DEFAULT_GEAR_CAPABILITIES]= [CONF_DEFAULT_GEAR_SIZE]= [CONF_DISTRICT_MAPPINGS]= [CONF_DOMAIN]= [CONF_FORWARD_DNS]= [CONF_HOSTS_DOMAIN]= [CONF_HOSTS_DOMAIN_KEYFILE]= [CONF_IDLE_INTERVAL]= [CONF_INSTALL_COMPONENTS]= [CONF_INSTALL_METHOD]= [CONF_INTERFACE]= [CONF_JBOSSEAP_EXTRA_REPO]= [CONF_JBOSSEWS_EXTRA_REPO]= [CONF_JBOSS_REPO_BASE]= [CONF_KEEP_HOSTNAME]= [CONF_KEEP_NAMESERVERS]= [CONF_MCOLLECTIVE_PASSWORD]= [CONF_MCOLLECTIVE_USER]= [CONF_METAPKGS]= [CONF_METRICS_INTERVAL]= [CONF_MONGODB_ADMIN_PASSWORD]= [CONF_MONGODB_ADMIN_USER]= [CONF_MONGODB_BROKER_PASSWORD]= [CONF_MONGODB_BROKER_USER]= [CONF_MONGODB_KEY]= [CONF_MONGODB_NAME]= [CONF_MONGODB_PASSWORD]= [CONF_MONGODB_REPLSET]= [CONF_NAMED_ENTRIES]= [CONF_NAMED_HOSTNAME]= [CONF_NAMED_IP_ADDR]= [CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST]= [CONF_NODE_APACHE_FRONTEND]= [CONF_NODE_HOSTNAME]= [CONF_NODE_IP_ADDR]= [CONF_NODE_LOG_CONTEXT]= [CONF_NODE_PROFILE]= [CONF_NO_JBOSS]= [CONF_NO_JBOSSEAP]= [CONF_NO_JBOSSEWS]= [CONF_NO_NTP]= [CONF_NO_SCRAMBLE]= [CONF_OPENSHIFT_PASSWORD]= [CONF_OPENSHIFT_PASSWORD1]= [CONF_OPENSHIFT_USER]= [CONF_OPENSHIFT_USER1]= [CONF_OPTIONAL_REPO]= [CONF_OSE_ERRATA_BASE]= [CONF_OSE_EXTRA_REPO_BASE]= [CONF_OSE_REPO_BASE]= [CONF_PROFILE_NAME]= [CONF_REPOS_BASE]= [CONF_RHEL_EXTRA_REPO]= [CONF_RHEL_OPTIONAL_REPO]= [CONF_RHEL_REPO]= [CONF_RHN_PASS]= [CONF_RHN_REG_ACTKEY]= [CONF_RHN_REG_NAME]= [CONF_RHN_REG_OPTS]= [CONF_RHN_REG_PASS]= [CONF_RHN_USER]= [CONF_RHSCL_EXTRA_REPO]= [CONF_RHSCL_REPO_BASE]= [CONF_ROUTING_PLUGIN]= [CONF_ROUTING_PLUGIN_PASS]= [CONF_ROUTING_PLUGIN_USER]= [CONF_SM_REG_NAME]= [CONF_SM_REG_PASS]= [CONF_SM_REG_POOL]= [CONF_SYSLOG]= [CONF_VALID_GEAR_SIZES]= [CONF_YUM_EXCLUDE_PKGS]= )
   for setting in "${!CONF_@}"
   do
     if ! [[ ${valid_settings[$setting]+1} ]]
@@ -3055,8 +3157,12 @@ set_defaults()
   # There a no defaults for these. Customers should be using
   # subscriptions via RHN. Internally we use private systems.
   rhel_repo="${CONF_RHEL_REPO%/}"
+  rhel_extra_repo="${CONF_RHEL_EXTRA_REPO%/}"
   jboss_repo_base="${CONF_JBOSS_REPO_BASE%/}"
+  jbosseap_extra_repo="${CONF_JBOSSEAP_EXTRA_REPO%/}"
+  jbossews_extra_repo="${CONF_JBOSSEWS_EXTRA_REPO%/}"
   rhscl_repo_base="${CONF_RHSCL_REPO_BASE%/}"
+  rhscl_extra_repo="${CONF_RHSCL_EXTRA_REPO%/}"
   rhel_optional_repo="${CONF_RHEL_OPTIONAL_REPO%/}"
   # Where to find the OpenShift repositories; just the base part before
   # splitting out into Infrastructure/Node/etc.
