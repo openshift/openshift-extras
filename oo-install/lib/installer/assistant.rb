@@ -1012,6 +1012,7 @@ module Installer
           else
             say "Please configure a host to use as the nameserver."
             ui_edit_host_instance(nil, :nameserver, false, create_mode)
+            deployment.save_to_disk!
           end
         end
       end
