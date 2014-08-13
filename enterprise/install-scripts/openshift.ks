@@ -2097,8 +2097,8 @@ install_activemq_pkgs()
 
 configure_activemq()
 {
-  networkConnectors=
-  authenticationUser_amq=
+  local networkConnectors=
+  local authenticationUser_amq=
   function allow_openwire() { false; }
   for replicant in ${activemq_replicants//,/ }
   do
