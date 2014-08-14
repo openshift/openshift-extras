@@ -235,12 +235,12 @@ def_ose_yum_repo()
   declare -A map
   case $layout in
   puddle | extra)
-    map=([client_tools]=RHOSE-CLIENT-2.1 [infra]=RHOSE-INFRA-2.1 [node]=RHOSE-NODE-2.1 [jbosseap_cartridge]=RHOSE-JBOSSEAP-2.1)
+    map=([client_tools]=RHOSE-CLIENT-2.2 [infra]=RHOSE-INFRA-2.2 [node]=RHOSE-NODE-2.2 [jbosseap_cartridge]=RHOSE-JBOSSEAP-2.2)
     url="$repo_base/${map[$channel]}/x86_64/os/"
     ;;
   cdn | * )
     map=([client_tools]=ose-rhc [infra]=ose-infra [node]=ose-node [jbosseap_cartridge]=ose-jbosseap)
-    url="$repo_base/${map[$channel]}/2.1/os"
+    url="$repo_base/${map[$channel]}/2.2/os"
     ;;
   esac
   cat > "/etc/yum.repos.d/openshift-${channel}-${layout}.repo" <<YUM

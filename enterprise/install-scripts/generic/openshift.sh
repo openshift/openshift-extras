@@ -773,10 +773,10 @@
 # <base>/jbews/2/os
 # <base>/optional/os        - "optional" channel, not normally needed
 # <base>/os                 - RHEL 6 itself
-# <base>/ose-infra/2.1/os     - Released OpenShift Enterprise repos
-# <base>/ose-jbosseap/2.1/os
-# <base>/ose-node/2.1/os
-# <base>/ose-rhc/2.1/os
+# <base>/ose-infra/2.2/os     - Released OpenShift Enterprise repos
+# <base>/ose-jbosseap/2.2/os
+# <base>/ose-node/2.2/os
+# <base>/ose-rhc/2.2/os
 # <base>/rhscl/1/os/        - RH software collections
 #
 # To use this layout, simply set the CDN base URL below. Alternatively,
@@ -787,10 +787,10 @@
 # The nightly OSE build repositories use a different layout from CDN.
 # If the location of these is different from the CDN base and CONF_CDN_LAYOUT
 # is not set, then this layout is defined:
-# <ose_repo_base>/RHOSE-CLIENT-2.1/x86_64/os
-# <ose_repo_base>/RHOSE-INFRA-2.1/x86_64/os
-# <ose_repo_base>/RHOSE-JBOSSEAP-2.1/x86_64/os
-# <ose_repo_base>/RHOSE-NODE-2.1/x86_64/os
+# <ose_repo_base>/RHOSE-CLIENT-2.2/x86_64/os
+# <ose_repo_base>/RHOSE-INFRA-2.2/x86_64/os
+# <ose_repo_base>/RHOSE-JBOSSEAP-2.2/x86_64/os
+# <ose_repo_base>/RHOSE-NODE-2.2/x86_64/os
 
 # cdn_repo_base / CONF_CDN_REPO_BASE
 #   Default base URL for all repositories used for the "yum" install method (see above).
@@ -800,7 +800,7 @@
 #   If defined, will define yum repos under the yum,rhsm,rhn install methods.
 #   The base URL for the OpenShift yum repositories - the part before RHOSE-*
 #   Note that if this is the same as CONF_CDN_REPO_BASE, then the
-#   CDN format will be used instead, e.g. x86_64/ose-node/1.2/os
+#   CDN format will be used instead, e.g. x86_64/ose-node/2.2/os
 #CONF_OSE_REPO_BASE="https://.../6Server/x86_64"
 
 # rhel_repo / CONF_RHEL_REPO
@@ -1086,12 +1086,12 @@ def_ose_yum_repo()
   declare -A map
   case $layout in
   puddle | extra)
-    map=([client_tools]=RHOSE-CLIENT-2.1 [infra]=RHOSE-INFRA-2.1 [node]=RHOSE-NODE-2.1 [jbosseap_cartridge]=RHOSE-JBOSSEAP-2.1)
+    map=([client_tools]=RHOSE-CLIENT-2.2 [infra]=RHOSE-INFRA-2.2 [node]=RHOSE-NODE-2.2 [jbosseap_cartridge]=RHOSE-JBOSSEAP-2.2)
     url="$repo_base/${map[$channel]}/x86_64/os/"
     ;;
   cdn | * )
     map=([client_tools]=ose-rhc [infra]=ose-infra [node]=ose-node [jbosseap_cartridge]=ose-jbosseap)
-    url="$repo_base/${map[$channel]}/2.1/os"
+    url="$repo_base/${map[$channel]}/2.2/os"
     ;;
   esac
   cat > "/etc/yum.repos.d/openshift-${channel}-${layout}.repo" <<YUM
