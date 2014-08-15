@@ -531,8 +531,6 @@ install_broker_pkgs()
   is_true "$CONF_ROUTING_PLUGIN" && pkgs="$pkgs rubygem-openshift-origin-routing-activemq"
 
   yum_install_or_exit $pkgs
-
-  RESTART_NEEDED=true
 }
 
 # Install node-specific packages.
@@ -566,8 +564,6 @@ install_node_pkgs()
   esac
 
   yum_install_or_exit $pkgs
-
-  RESTART_NEEDED=true
 }
 
 # Remove abrt-addon-python if necessary
