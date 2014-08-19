@@ -60,6 +60,9 @@ cp -a ./%{gem_dir}/* %{buildroot}%{gem_dir}/
 
 mkdir -p %{buildroot}/etc/openshift/plugins.d
 cp conf/openshift-origin-gear-placement.conf.example %{buildroot}/etc/openshift/plugins.d/openshift-origin-gear-placement.conf.example
+cp conf/openshift-origin-gear-placement.conf.blacklisted-vendor-example %{buildroot}/etc/openshift/plugins.d/openshift-origin-gear-placement.conf.blacklisted-vendor-example
+cp conf/openshift-origin-gear-placement.conf.pin-php-to-host-example %{buildroot}/etc/openshift/plugins.d/openshift-origin-gear-placement.conf.pin-php-to-host-example
+cp conf/openshift-origin-gear-placement.conf.pin-user-to-host-example %{buildroot}/etc/openshift/plugins.d/openshift-origin-gear-placement.conf.pin-user-to-host-example
 
 %files
 %dir %{gem_instdir}
@@ -70,5 +73,8 @@ cp conf/openshift-origin-gear-placement.conf.example %{buildroot}/etc/openshift/
 %{gem_dir}/cache/%{gem_name}-%{version}.gem
 %{gem_dir}/specifications/%{gem_name}-%{version}.gemspec
 /etc/openshift/plugins.d/openshift-origin-gear-placement.conf.example
+/etc/openshift/plugins.d/openshift-origin-gear-placement.conf.blacklisted-vendor-example
+/etc/openshift/plugins.d/openshift-origin-gear-placement.conf.pin-php-to-host-example
+/etc/openshift/plugins.d/openshift-origin-gear-placement.conf.pin-user-to-host-example
 
 %changelog
