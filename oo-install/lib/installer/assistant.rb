@@ -2040,7 +2040,7 @@ module Installer
         q.responses[:not_valid] = full_help
         q.responses[:ask_on_error] = :question
       }
-      case response
+      case response.downcase[0]
       when 'y'
         return true
       when 'n'
@@ -2051,7 +2051,8 @@ module Installer
     end
 
     def return_to_main_menu
-      say "\nReturning to main menu."
+      say "\nReturning to main menu.\n\n"
+      @workflow_id = nil
       raise Installer::AssistantRestartException.new
     end
 
