@@ -3401,8 +3401,8 @@ set_defaults()
   broker && assign_pass openshift_password1 "changeme" CONF_OPENSHIFT_PASSWORD1
 
   # auth info for the topic from the sample routing SPI plugin
-  broker && routing_plugin_user="${CONF_ROUTING_PLUGIN_USER:-routinginfo}"
-  broker && assign_pass routing_plugin_pass "routinginfopassword" CONF_ROUTING_PLUGIN_PASS
+  routing_plugin_user="${CONF_ROUTING_PLUGIN_USER:-routinginfo}"
+  assign_pass routing_plugin_pass "routinginfopassword" CONF_ROUTING_PLUGIN_PASS
 
   # cartridge dependency metapackages
   metapkgs="${CONF_METAPKGS:-recommended}"
