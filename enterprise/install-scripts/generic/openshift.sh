@@ -513,10 +513,11 @@
 #CONF_NO_NTP=true
 
 # activemq_replicants / CONF_ACTIVEMQ_REPLICANTS
-#   Default: the value of activemq_hostname
-#   A comma-separated list of ActiveMQ broker replicants.  If you are
-#   not installing in a configuration with ActiveMQ replication, you can
-#   leave this setting at its default value.
+#   Default: the value of activemq_hostname (no replication)
+#   A comma-separated list of ActiveMQ broker replicants.  Each replicant must
+#   be represented by a hostname without a port number (port 61613 is assumed).
+#   If you are not installing in a configuration with ActiveMQ replication, you
+#   can leave this setting at its default value.
 #CONF_ACTIVEMQ_REPLICANTS="activemq01.example.com,activemq02.example.com"
 
 # Passwords used to secure various services. You are advised to specify
@@ -587,8 +588,9 @@
 
 # datastore_replicants / CONF_DATASTORE_REPLICANTS
 #   Default: the value of datastore_hostname (no replication)
-#   A comma-separated list of MongoDB replicants to be used as a
-#   replica set. For each replicant, if you omit the port specification
+#   A comma-separated list of MongoDB replicants to be used as a replica set.
+#   Each replicant must be represented by a hostname and, optionally, a colon
+#   and port number.  For each replicant, if you omit the port specification
 #   for that replicant, port :27017 will be appended.
 #
 #   To install and configure a HA replica set, install at least three
