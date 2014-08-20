@@ -2734,13 +2734,11 @@ configure_routing_plugin()
   if is_true "$CONF_ROUTING_PLUGIN"; then
     conffile=/etc/openshift/plugins.d/openshift-origin-routing-activemq.conf
     sed -e '/^ACTIVEMQ_\(USERNAME\|PASSWORD\|HOST\)/ d' $conffile.example > $conffile
-    routinghost="${activemq_replicants%%,*}" # use the first by default
-    for host in ${activemq_replicants//,/ } ; do # use self if appropriate
-      [[ "$host" == "$activemq_hostname" ]] && routinghost="$host"
-    done
-    echo "ACTIVEMQ_HOST='$routinghost'" >> $conffile
-    echo "ACTIVEMQ_USERNAME='$routing_plugin_user'" >> $conffile
-    echo "ACTIVEMQ_PASSWORD='$routing_plugin_pass'" >> $conffile
+    cat <<EOF >> "$conffile"
+ACTIVEMQ_HOST='$activemq_replicants'
+ACTIVEMQ_USERNAME='$routing_plugin_user'
+ACTIVEMQ_PASSWORD='$routing_plugin_pass'
+EOF
     RESTART_NEEDED=true
   fi
 }
