@@ -1389,6 +1389,28 @@ configure_activemq()
   done
   networkConnectors="${networkConnectors:+$networkConnectors    </networkConnectors>$'\n'}"
 
+  local schedulerSupport= routingPolicy=
+  if is_true "${CONF_ROUTING_PLUGIN}"
+  then
+    schedulerSupport='schedulerSupport="true"'
+    IFS= read -r -d '' routingPolicy <<'EOF'
+          <redeliveryPlugin fallbackToDeadLetter="true"
+                            sendToDlqIfMaxRetriesExceeded="true">
+            <redeliveryPolicyMap>
+              <redeliveryPolicyMap>
+                <redeliveryPolicyEntries>
+                  <redeliveryPolicy queue="routinginfo"
+                                    maximumRedeliveries="4"
+                                    useExponentialBackOff="true"
+                                    backOffMultiplier="4"
+                                    initialRedeliveryDelay="2000" />
+                </redeliveryPolicyEntries>
+              </redeliveryPolicyMap>
+            </redeliveryPolicyMap>
+          </redeliveryPlugin>
+EOF
+  fi
+
   cat <<EOF > /etc/activemq/activemq.xml
 <!--
     Licensed to the Apache Software Foundation (ASF) under one or more
@@ -1426,7 +1448,8 @@ configure_activemq()
     <broker xmlns="http://activemq.apache.org/schema/core"
             brokerName="${activemq_hostname}"
             dataDirectory="\${activemq.data}"
-            schedulePeriodForDestinationPurge="60000">
+            schedulePeriodForDestinationPurge="60000"
+            ${schedulerSupport}>
 
         <destinationPolicy>
             <policyMap>
@@ -1513,6 +1536,7 @@ $networkConnectors
               </authorizationMap>
             </map>
           </authorizationPlugin>
+${routingPolicy}
         </plugins>
 
           <!--
