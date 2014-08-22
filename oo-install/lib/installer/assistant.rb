@@ -2040,10 +2040,10 @@ module Installer
         q.responses[:not_valid] = full_help
         q.responses[:ask_on_error] = :question
       }
-      case response.downcase[0]
-      when 'y'
+      case
+      when response.downcase.start_with?('y')
         return true
-      when 'n'
+      when response.downcase.start_with?('n')
         return false
       else
         return_to_main_menu
