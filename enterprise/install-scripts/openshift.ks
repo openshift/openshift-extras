@@ -512,10 +512,11 @@
 #CONF_NO_NTP=true
 
 # activemq_replicants / CONF_ACTIVEMQ_REPLICANTS
-#   Default: the value of activemq_hostname
-#   A comma-separated list of ActiveMQ broker replicants.  If you are
-#   not installing in a configuration with ActiveMQ replication, you can
-#   leave this setting at its default value.
+#   Default: the value of activemq_hostname (no replication)
+#   A comma-separated list of ActiveMQ broker replicants.  Each replicant must
+#   be represented by a hostname without a port number (port 61613 is assumed).
+#   If you are not installing in a configuration with ActiveMQ replication, you
+#   can leave this setting at its default value.
 #CONF_ACTIVEMQ_REPLICANTS="activemq01.example.com,activemq02.example.com"
 
 # Passwords used to secure various services. You are advised to specify
@@ -586,8 +587,9 @@
 
 # datastore_replicants / CONF_DATASTORE_REPLICANTS
 #   Default: the value of datastore_hostname (no replication)
-#   A comma-separated list of MongoDB replicants to be used as a
-#   replica set. For each replicant, if you omit the port specification
+#   A comma-separated list of MongoDB replicants to be used as a replica set.
+#   Each replicant must be represented by a hostname and, optionally, a colon
+#   and port number.  For each replicant, if you omit the port specification
 #   for that replicant, port :27017 will be appended.
 #
 #   To install and configure a HA replica set, install at least three
@@ -2097,8 +2099,8 @@ install_activemq_pkgs()
 
 configure_activemq()
 {
-  networkConnectors=
-  authenticationUser_amq=
+  local networkConnectors=
+  local authenticationUser_amq=
   function allow_openwire() { false; }
   for replicant in ${activemq_replicants//,/ }
   do
@@ -2131,6 +2133,28 @@ configure_activemq()
     fi
   done
   networkConnectors="${networkConnectors:+$networkConnectors    </networkConnectors>$'\n'}"
+
+  local schedulerSupport= routingPolicy=
+  if is_true "${CONF_ROUTING_PLUGIN}"
+  then
+    schedulerSupport='schedulerSupport="true"'
+    IFS= read -r -d '' routingPolicy <<'EOF'
+          <redeliveryPlugin fallbackToDeadLetter="true"
+                            sendToDlqIfMaxRetriesExceeded="true">
+            <redeliveryPolicyMap>
+              <redeliveryPolicyMap>
+                <redeliveryPolicyEntries>
+                  <redeliveryPolicy queue="routinginfo"
+                                    maximumRedeliveries="4"
+                                    useExponentialBackOff="true"
+                                    backOffMultiplier="4"
+                                    initialRedeliveryDelay="2000" />
+                </redeliveryPolicyEntries>
+              </redeliveryPolicyMap>
+            </redeliveryPolicyMap>
+          </redeliveryPlugin>
+EOF
+  fi
 
   cat <<EOF > /etc/activemq/activemq.xml
 <!--
@@ -2169,7 +2193,8 @@ configure_activemq()
     <broker xmlns="http://activemq.apache.org/schema/core"
             brokerName="${activemq_hostname}"
             dataDirectory="\${activemq.data}"
-            schedulePeriodForDestinationPurge="60000">
+            schedulePeriodForDestinationPurge="60000"
+            ${schedulerSupport}>
 
         <destinationPolicy>
             <policyMap>
@@ -2256,6 +2281,7 @@ $networkConnectors
               </authorizationMap>
             </map>
           </authorizationPlugin>
+${routingPolicy}
         </plugins>
 
           <!--
@@ -2732,13 +2758,11 @@ configure_routing_plugin()
   if is_true "$CONF_ROUTING_PLUGIN"; then
     conffile=/etc/openshift/plugins.d/openshift-origin-routing-activemq.conf
     sed -e '/^ACTIVEMQ_\(USERNAME\|PASSWORD\|HOST\)/ d' $conffile.example > $conffile
-    routinghost="${activemq_replicants%%,*}" # use the first by default
-    for host in ${activemq_replicants//,/ } ; do # use self if appropriate
-      [[ "$host" == "$activemq_hostname" ]] && routinghost="$host"
-    done
-    echo "ACTIVEMQ_HOST='$routinghost'" >> $conffile
-    echo "ACTIVEMQ_USERNAME='$routing_plugin_user'" >> $conffile
-    echo "ACTIVEMQ_PASSWORD='$routing_plugin_pass'" >> $conffile
+    cat <<EOF >> "$conffile"
+ACTIVEMQ_HOST='$activemq_replicants'
+ACTIVEMQ_USERNAME='$routing_plugin_user'
+ACTIVEMQ_PASSWORD='$routing_plugin_pass'
+EOF
     RESTART_NEEDED=true
   fi
 }
@@ -3423,8 +3447,8 @@ set_defaults()
   broker && assign_pass openshift_password1 "changeme" CONF_OPENSHIFT_PASSWORD1
 
   # auth info for the topic from the sample routing SPI plugin
-  broker && routing_plugin_user="${CONF_ROUTING_PLUGIN_USER:-routinginfo}"
-  broker && assign_pass routing_plugin_pass "routinginfopassword" CONF_ROUTING_PLUGIN_PASS
+  routing_plugin_user="${CONF_ROUTING_PLUGIN_USER:-routinginfo}"
+  assign_pass routing_plugin_pass "routinginfopassword" CONF_ROUTING_PLUGIN_PASS
 
   # cartridge dependency metapackages
   metapkgs="${CONF_METAPKGS:-recommended}"
