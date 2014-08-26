@@ -2035,10 +2035,15 @@ securityprovider=psk
 plugin.psk = asimplething
 
 connector = activemq
+$(generate_mcollective_pools_configuration)
+# For further options on heartbeats and timeouts, refer to
+# https://docs.puppetlabs.com/mcollective/reference/plugins/connector_activemq.html
 plugin.activemq.heartbeat_interval = 30
 plugin.activemq.max_hbread_fails = 2
 plugin.activemq.max_hbrlck_fails = 2
-$(generate_mcollective_pools_configuration)
+# Broker will retry ActiveMQ connection, then report error
+plugin.activemq.initial_reconnect_delay = 0.1
+plugin.activemq.max_reconnect_attempts = 6
 
 # Facts
 factsource = yaml
@@ -2076,10 +2081,16 @@ securityprovider = psk
 plugin.psk = asimplething
 
 connector = activemq
+$(generate_mcollective_pools_configuration)
+# For further options on heartbeats and timeouts, refer to
+# https://docs.puppetlabs.com/mcollective/reference/plugins/connector_activemq.html
 plugin.activemq.heartbeat_interval = 30
 plugin.activemq.max_hbread_fails = 2
 plugin.activemq.max_hbrlck_fails = 2
-$(generate_mcollective_pools_configuration)
+# Node should retry connecting to ActiveMQ forever
+plugin.activemq.max_reconnect_attempts = 0
+plugin.activemq.initial_reconnect_delay = 0.1
+plugin.activemq.max_reconnect_delay = 4.0
 
 # Facts
 factsource = yaml
