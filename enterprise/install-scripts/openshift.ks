@@ -1,24 +1,30 @@
 # -*- mode: bash; sh-basic-offset: 2 -*-
 # This script configures a single host with OpenShift components. It may
 # be used either as a RHEL6 kickstart script, or the %post section may
-# be extracted and run directly to install on top of an installed RHEL6
-# image. When running the %post outside kickstart, a reboot is required
-# afterward.
+# be extracted and run directly to deploy on an installed RHEL6 image.
 #
-# If this script aborts due to an inability to install packages (the most
-# common failure), it should be safe to re-run once you've resolved the
-# problem (i.e. either manually fix configuration and run with
-# INSTALL_METHOD=none, or unregister / remove all repos and start over).
-# Once package installation completes and configuration begins, aborts
-# are unlikely; but in the event that one occurs, re-running could
-# introduce misconfigurations as configure steps do not all include
-# enough intelligence to be repeatable.
+# While this script provides many options and is well-equipped for many
+# deployments, it is not comprehensive or flexible enough to fulfill
+# every enterprise use case. Production deployments can be expected to
+# require significant adaptations and the script is designed to be modular
+# for ease of customization.
+
+# Table of contents:
 #
-# While this script serves as a good example script for installing a
-# single host, it is not comprehensive nor robust enough to be considered
-# a proper enterprise installer on its own. Production installations will
-# typically require significant adaptations or an entirely different
-# method of installation. Please adapt it to your needs.
+# SPECIFYING PARAMETERS
+# INSTALLATION REPOSITORIES
+# OTHER IMPORTANT NOTES
+# POST-DEPLOY STEP
+# MANUAL TASKS
+# PARAMETER DESCRIPTIONS
+# - General script options
+# - Service users and passwords
+# - Parameters for all hosts
+# - Brokers
+# - DNS service
+# - Redundant MongoDB and ActiveMQ
+# - Node hosts
+# - Parameters for "yum" install method
 
 # SPECIFYING PARAMETERS
 #
@@ -26,36 +32,56 @@
 # with default configuration, which should give you a running demo,
 # given properly configured repositories / subscriptions on the host.
 #
-# For a kickstart, you can supply further kernel parameters (in addition
-# to the ks=location itself).  e.g.
-#  virt-install ... -x "ks=http://.../openshift.ks domain=example.com"
-#
-# As a bash script, just add the parameters as bash variables at the top
-# of the script (or export environment variables). Kickstart parameters
-# are mapped to uppercase bash variables prepended with CONF_ so for
-# example, "domain=example.com" as a kickstart parameter would be
-# "CONF_DOMAIN=example.com" as a variable.
-#
-# Finally, if you are using the extracted openshift.sh version of this
-# script, the parse_cmdline function enables specifying the parameters
-# on the command line just like for the kickstart, e.g.:
-#  openshift.sh domain=example.com
-#
 # Available parameters are listed at length below the following notes.
+# The method of specifying parameters depends on how this is used.
+#
+# If you are using the extracted openshift.sh version of this
+# script, the parse_cmdline function enables specifying the lowercase
+# parameters on the command line, e.g.:
+#   sh openshift.sh domain=example.com
+#
+# As a bash script in any context, you can just add the uppercase
+# parameters as bash variables at the top of the script (or exported
+# environment variables). Lowercase parameters are mapped to uppercase
+# bash variables prepended with CONF_ so for example, "domain=example.com"
+# as a command-line parameter would be "CONF_DOMAIN=example.com" as
+# a variable.
+#   export CONF_DOMAIN=example.com
+#   sh openshift.sh
+#
+# For a kickstart, you can supply kernel parameters (in addition
+# to the ks=location itself) with the lowercase form.  e.g.
+#   virt-install ... -x "ks=http://.../openshift.ks domain=example.com"
 
-# IMPORTANT NOTES - DEPENDENCIES
+# INSTALLATION REPOSITORIES
 #
 # Configuring sources for yum to install packages can be the hardest part
 # of an installation. This script enables several methods to automatically
 # configure the necessary repositories, which are described in parameters
 # below. If you already configured repositories prior to running this
 # script, you may leave the default method (which is to do nothing);
-# otherwise you will need to modify the script or provide parameters to
-# configure install sources.
+# otherwise you will need to modify the script or provide parameters
+# to configure install sources. Be aware that correct yum configuration
+# involves configuring repo priorities and exclusions, not just enabling
+# repositories.
 #
-# In order for the %post section to succeed, yum must have access to the
-# latest RHEL 6 packages. The %post section does not share the method
-# used in the base install (network, DVD, etc.). Either by modifying
+# If this script aborts due to an inability to install packages (the most
+# common failure), it should be safe to re-run once you've resolved the
+# problem (i.e. either manually fix configuration and run with
+# install_method=none, or unregister / remove all repos and start over).
+# Once package installation completes and configuration begins, aborts
+# are unlikely; but in the event that one occurs, re-running could
+# introduce misconfigurations as configure steps do not all include
+# enough intelligence to be repeatable.
+#
+# DO NOT install with third-party (non-RHEL) repos enabled (e.g. EPEL).
+# You may install different package versions than OpenShift expects and
+# be in for a long troubleshooting session. Also avoid pre-installing
+# third-party software like Puppet for the same reason.
+#
+# When used as a kickstart, for the %post section to succeed, yum must have
+# access to the latest RHEL 6 packages. The %post section does not share the
+# method used in the base install (HTTP, DVD, etc.). Either by modifying
 # the base install, the %post script, or the script parameters, you must
 # ensure that subscriptions or plain yum repos are available for RHEL.
 #
@@ -64,11 +90,6 @@
 # these are configured for the %post script to run. Due to the complexity
 # involved in this configuration, we recommend specifying parameters to
 # use one of the script's install methods.
-#
-# DO NOT install with third-party (non-RHEL) repos enabled (e.g. EPEL).
-# You may install different package versions than OpenShift expects and
-# be in for a long troubleshooting session. Also avoid pre-installing
-# third-party software like Puppet for the same reason.
 
 # OTHER IMPORTANT NOTES
 #
@@ -78,9 +99,8 @@
 # access the system after installation.
 #
 # If you install a broker, the rhc client is installed as well, for
-# convenient local testing. Also, a test OpenShift user "demo" with
-# password "changeme" is created for use by the default local file
-# authentication option.
+# convenient local testing. Also, a test user "demo" is created in
+# /etc/openshift/htpasswd for use with the default broker authentication.
 #
 # If you want to use the broker from a client outside the installation,
 # then of course that client must be using a DNS server that knows
@@ -88,6 +108,17 @@
 # have DNS failures when creating the app and be unable to reach it in a
 # browser.
 #
+
+# POST-DEPLOY STEP
+#
+# After installing and configuring all hosts in a deployment, the
+# broker must issue commands to district its nodes and import cartridges
+# from its nodes. Because this relies on node deployment being completed,
+# this step must usually be performed separately from the regular broker
+# deployment and is not performed by default.
+#
+# This script can perform this step via the post_deploy action.
+#   sh openshift.sh action=post_deploy
 
 # MANUAL TASKS
 #
@@ -136,8 +167,13 @@
 #    credentials created by a different broker - auto-scaling, Jenkins
 #    builds, and recording deployments.
 
-
+###########################################################################
+#
 # PARAMETER DESCRIPTIONS
+
+#----------------------------------------------------------#
+#                  General script options                  #
+#----------------------------------------------------------#
 
 # install_components / CONF_INSTALL_COMPONENTS
 #   Comma-separated selections from the following:
@@ -149,7 +185,7 @@
 #   Default: all.
 #   Only the specified components are installed and configured.
 #   e.g. install_components=broker,datastore only installs the broker
-#   and DB, and assumes you have use other hosts for messaging and DNS.
+#   and DB, and assumes you have used other hosts for messaging and DNS.
 #
 # Example kickstart parameter:
 #  install_components="node,broker,named,activemq,datastore"
@@ -157,10 +193,461 @@
 #  CONF_INSTALL_COMPONENTS="node,broker,named,activemq,datastore"
 #CONF_INSTALL_COMPONENTS="node"
 
-# no_jbossews / CONF_NO_JBOSSEWS
-# no_jbosseap / CONF_NO_JBOSSEAP
-#   Deprecated; see CONF_CARTRIDGES. Setting to true has the same
-#   effect as negating the corresponding cartridge in the list.
+# install_method / CONF_INSTALL_METHOD
+#   Choose from the following methods to configure yum for RPM installation:
+#     none - install sources are already configured when the script executes (DEFAULT)
+#     rhsm - use subscription-manager (RHSM)
+#       rhn_user / CONF_RHN_USER
+#       rhn_pass / CONF_RHN_PASS
+#       rhn_reg_opts / CONF_RHN_REG_OPTS - extra options to subscription-manager register,
+#                     e.g. "--serverurl=https://sam.example.com"
+#       sm_reg_pool / CONF_SM_REG_POOL - pool ID for OpenShift subscription (required)
+#                     Subscribe multiple with comma-separated list poolid1,poolid2,...
+#     rhn - use rhn-register (RHN Classic)
+#       rhn_user / CONF_RHN_USER
+#       rhn_pass / CONF_RHN_PASS
+#       rhn_reg_opts / CONF_RHN_REG_OPTS - extra options to rhnreg_ks,
+#                     e.g. "--serverUrl=https://satellite.example.com"
+#       rhn_reg_actkey / CONF_RHN_REG_ACTKEY - optional activation key
+#     yum - configure plain old yum repos; refer to later section for usage
+#   Default: none
+#CONF_INSTALL_METHOD="rhsm"
+# Hint: when running as a cmdline script, to enter your password invisibly:
+#  read -s CONF_RHN_PASS
+#  export CONF_RHN_PASS
+
+# actions / CONF_ACTIONS
+#   Default: do_all_actions
+#   Comma-separated list of bash functions to run.  This
+#   setting is intended to allow configuration steps defined within this
+#   file to be run or re-run selectively.  For a typical installation,
+#   this setting can be left at its default value, but note the example
+#   below for the all-in-one case.
+#
+#   Some helpful actions:
+#     init_message,validate_preflight,configure_repos,
+#     install_rpms,configure_host,configure_openshift,
+#     configure_datastore_add_replicants,post_deploy
+#
+# For example, these are the actions to run on a primary MongoDB replicant:
+#CONF_ACTIONS=do_all_actions,configure_datastore_add_replicants
+# For an all-in-one host, the post_deploy action completes configuration:
+#CONF_ACTIONS=do_all_actions,post_deploy
+# (normally post_deploy should only run on the broker after all nodes are done)
+
+# abort_on_unrecognized_settings / CONF_ABORT_ON_UNRECOGNIZED_SETTINGS
+#   Default: true (automatically set to false for kickstarts)
+#   Enabling this option causes the installation script to abort when
+#   unrecognized settings, which could be typos or deprecated settings,
+#   are specified.
+#
+#  If the installation script is used to kickstart a host, then the
+#  script reads the kernel command-line for arguments to the kickstart
+#  installation.  Because the kernel command-line is likely to have
+#  arguments that are unrelated to the installation script, the script
+#  will override the default and set it to false during kickstarts.
+#CONF_ABORT_ON_UNRECOGNIZED_SETTINGS=false
+
+#----------------------------------------------------------#
+#               Service users and passwords                #
+#----------------------------------------------------------#
+
+# Passwords are used to secure various services. In a typical deployment
+# at least some services will need to be accessed by clients on other
+# hosts, so all hosts need to know the same service user/pass.
+#
+# As a secure default, passwords are set to randomized values which will not
+# match between hosts. To get matching values, either set them explicitly
+# or disable the randomizing in order to use shared (and thus not secure)
+# defaults. oo-install coordinates multi-host deployments by setting
+# secure randomized values across all hosts. http://red.ht/1uocikk
+#
+# You are advised to specify only alphanumeric users/passwords as
+# others may cause syntax errors depending on context. If non-alphanumeric
+# values are required, update them separately after installation.
+#
+# no_scramble / CONF_NO_SCRAMBLE
+#   Default: false
+#   This flag determines whether default passwords should be randomized
+#   or set to insecure defaults.
+
+# mcollective_user / CONF_MCOLLECTIVE_USER
+# mcollective_password / CONF_MCOLLECTIVE_PASSWORD
+#   Default: mcollective/<randomized>
+#   Default with CONF_NO_SCRAMBLE: mcollective/marionette
+#   This is the user and password shared between broker and node for
+#   communicating over the mcollective topic channels in ActiveMQ. Must
+#   be the same on all broker and node hosts.
+#CONF_MCOLLECTIVE_USER="mcollective"
+#CONF_MCOLLECTIVE_PASSWORD="mcollective"
+#
+# activemq_admin_password / CONF_ACTIVEMQ_ADMIN_PASSWORD
+#   Default: <randomized>
+#   This is the admin password for the ActiveMQ admin console, which is
+#   not needed by OpenShift but might be useful in troubleshooting.
+#CONF_ACTIVEMQ_ADMIN_PASSWORD="ChangeMe"
+
+# mongodb_name / CONF_MONGODB_NAME
+#   Default: openshift_broker
+#   This is the name of the database in MongoDB in which the broker will
+#   store data.
+#CONF_MONGODB_NAME="openshift_broker"
+#
+# mongodb_broker_user / CONF_MONGODB_BROKER_USER
+# mongodb_broker_password / CONF_MONGODB_BROKER_PASSWORD
+#   Default: openshift:<randomized>
+#   Default with CONF_NO_SCRAMBLE: openshift:mongopass
+#   These are the username and password of the normal user that will be
+#   created for the broker to connect to the MongoDB datastore. The
+#   broker application's MongoDB plugin is also configured with these
+#   values.
+#CONF_MONGODB_BROKER_USER="openshift"
+#CONF_MONGODB_BROKER_PASSWORD="mongopass"
+#
+# mongodb_admin_user / CONF_MONGODB_ADMIN_USER
+# mongodb_admin_password / CONF_MONGODB_ADMIN_PASSWORD
+#   Default: admin:<randomized>
+#   Default with CONF_NO_SCRAMBLE: admin:mongopass
+#   These are the username and password of the administrative user that
+#   will be created in the MongoDB datastore. These credentials are not
+#   used by in this script or by OpenShift, but an administrative user
+#   must be added to MongoDB in order for it to enforce authentication.
+#   Note: The administrative user will not be created if
+#   CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST is enabled.
+#CONF_MONGODB_ADMIN_USER="admin"
+#CONF_MONGODB_ADMIN_PASSWORD="mongopass"
+
+# openshift_user1 / CONF_OPENSHIFT_USER1
+# openshift_password1 / CONF_OPENSHIFT_PASSWORD1
+#   Default: demo/<randomized>
+#   Default with CONF_NO_SCRAMBLE: demo/changeme
+#   This user and password are entered in the /etc/openshift/htpasswd
+#   file as a demo/test user. You will likely want to remove it after
+#   installation (or just use a different auth method).
+#CONF_OPENSHIFT_USER1="demo"
+#CONF_OPENSHIFT_PASSWORD1="changeme"
+
+# broker_auth_salt / CONF_BROKER_AUTH_SALT
+#   Should be the same on all brokers!
+#CONF_BROKER_AUTH_SALT=""
+#
+# broker_session_secret / CONF_BROKER_SESSION_SECRET
+#   Should be the same on all brokers!
+#CONF_BROKER_SESSION_SECRET=""
+#
+# console_session_secret / CONF_CONSOLE_SESSION_SECRET
+#   Should be the same on all brokers!
+#CONF_CONSOLE_SESSION_SECRET=""
+
+
+#----------------------------------------------------------#
+#                 Parameters for all hosts                 #
+#----------------------------------------------------------#
+
+# domain / CONF_DOMAIN
+#   Default: example.com
+#   The cloud domain under which app DNS entries will be created.
+#CONF_DOMAIN="example.com"
+
+# keep_nameservers / CONF_KEEP_NAMESERVERS
+#   Default: false (not set)
+#   Enabling this option prevents the installation script from placing
+#   the OpenShift nameserver at the top of /etc/resolv.conf, which is
+#   the default (because rogue DNS is assumed). Set this to true if
+#   OpenShift app DNS is properly delegated/authoritative.
+#CONF_KEEP_NAMESERVERS=true
+#
+# named_ip_addr / CONF_NAMED_IP_ADDR
+#   Default: current IP if installing named, otherwise broker_ip_addr
+#   This is used by every host to configure its primary nameserver
+#   unless keep_nameservers is true.
+#CONF_NAMED_IP_ADDR=10.10.10.10
+
+# keep_hostname / CONF_KEEP_HOSTNAME
+#   Default: false (not set)
+#   Enabling this option prevents the installation script from setting
+#   the hostname on the host, leaving it as found.  Use this option if
+#   the hostname is already set as you like. The default behavior is
+#   to set the hostname, which makes it a little easier to recognize
+#   which host you are looking at when logging in as an administrator.
+#   The hostname is also used as a node's mcollective server_identity.
+#CONF_KEEP_HOSTNAME=true
+
+# broker_hostname / CONF_BROKER_HOSTNAME
+# node_hostname / CONF_NODE_HOSTNAME
+# named_hostname / CONF_NAMED_HOSTNAME
+# activemq_hostname / CONF_ACTIVEMQ_HOSTNAME
+# datastore_hostname / CONF_DATASTORE_HOSTNAME
+#   Default: the root plus the host domain, e.g. broker.example.com - except
+#   named=ns1.example.com
+#
+#   These supply the FQDN of the hosts containing these components. Used
+#   for configuring the host's name at install, and also for clients to
+#   access services on specific hosts.
+#
+#   The broker must access ActiveMQ and the datastore.
+#   Nodes must access ActiveMQ and the broker (could be a LB/VIP).
+#   These should be correct even if the service is on the local host.
+#
+#   If installing a BIND nameserver, the script by default
+#   uses these values to create DNS entries for the hostnames of any
+#   components being installed on the same host as BIND.
+#
+#CONF_BROKER_HOSTNAME="broker.example.com"
+#CONF_NODE_HOSTNAME="node.example.com"
+#CONF_NAMED_HOSTNAME="ns1.example.com"
+#CONF_ACTIVEMQ_HOSTNAME="activemq.example.com"
+#CONF_DATASTORE_HOSTNAME="datastore.example.com"
+
+# syslog / CONF_SYSLOG
+#   Default: log only to files
+#   Specify which components log to the syslog.
+#   Comma or space-separated options include:
+#     broker - broker rails app server logs
+#     console - console rails app server logs
+#     node - node platform logs
+#     frontend - host httpd access logs
+#     gears - gear app server logs
+#CONF_SYSLOG="broker,console,node,frontend,gears"
+
+# interface / CONF_INTERFACE
+#   Default: eth0
+#   The network device to configure.  Used by configure_network, 
+#   configure_dns_resolution, and configure_node
+#CONF_INTERFACE="eth0"
+
+# no_ntp / CONF_NO_NTP
+#   Default: false
+#   Enabling this option prevents the installation script from
+#   configuring NTP.  It is important that the time be synchronized
+#   across hosts because MCollective messages have a TTL of 60 seconds
+#   and may be dropped if the clocks are too far out of synch.  However,
+#   NTP is not necessary if the clock will be kept in synch by some
+#   other means.
+#CONF_NO_NTP=true
+
+#----------------------------------------------------------#
+#                          Brokers                         #
+#----------------------------------------------------------#
+
+# broker.conf settings for node/gear profiles:
+#
+# valid_gear_sizes / CONF_VALID_GEAR_SIZES   (comma-separated list)
+#CONF_VALID_GEAR_SIZES="small"
+#
+# default_gear_capabilities / CONF_DEFAULT_GEAR_CAPABILITIES (comma separated list)
+#CONF_DEFAULT_GEAR_CAPABILITIES="small"
+#
+# default_gear_size / CONF_DEFAULT_GEAR_SIZE
+#CONF_DEFAULT_GEAR_SIZE="small"
+
+#default_districts / CONF_DEFAULT_DISTRICTS
+#   Default: true
+#   When enabled (and executing the post_deploy action), a district will be
+#   created for each entry in valid_gear_sizes/CONF_VALID_GEAR_SIZES
+#   and all non-districted nodes of that size will be added to the default
+#   district matching that size.
+#CONF_DEFAULT_DISTRICTS=true
+#
+#district_mappings / CONF_DISTRICT_MAPPINGS
+#   A string describing district/node mappings to be created during the
+#   post_deploy action.  default_districts/CONF_DEFAULT_DISTRICTS
+#   must be set to false for this variable to have an effect.
+#CONF_DISTRICT_MAPPINGS="district1:node1.hosts.example.com,node2.hosts.example.com;district2:node3.hosts.example.com;district3:node4.hosts.example.com,node5.hosts.example.com"
+#
+#district_first_uid / CONF_DISTRICT_FIRST_UID
+#   Default: 1000
+#   Districts will be created on the broker with a pool of gear UIDs
+#   beginning at this number. Should be between 1000 and 500,000.
+#   These UIDs will be used for gears on nodes.
+
+# routing_plugin / CONF_ROUTING_PLUGIN
+# routing_plugin_user / CONF_ROUTING_PLUGIN_USER
+# routing_plugin_pass / CONF_ROUTING_PLUGIN_PASS
+#   Default: do not install the sample routing plugin
+#   When enabled, the routing plugin publishes routing events to a topic
+#   on the ActiveMQ instance(s) used by OpenShift Enterprise.
+#   For more info: http://red.ht/1eG9lHr
+#CONF_ROUTING_PLUGIN=true
+#CONF_ROUTING_PLUGIN_USER=routinginfo
+#CONF_ROUTING_PLUGIN_PASS=...
+#   Default: <randomized>
+#   Default with CONF_NO_SCRAMBLE: routinginfopassword
+
+# Settings for configuring Kerberos as user authentication method
+#
+# The KrbServiceName value for mod_auth_kerb configuration
+#CONF_BROKER_KRB_SERVICE_NAME=""
+#
+# The KrbAuthRealms value for mod_auth_kerb configuration
+#CONF_BROKER_KRB_AUTH_REALMS=""
+#
+# The Krb5KeyTab value of mod_auth_kerb is not configurable -- the keytab
+# is expected in /var/www/openshift/broker/httpd/conf.d/http.keytab
+
+#----------------------------------------------------------#
+#                        DNS service                       #
+#----------------------------------------------------------#
+
+# For demonstration purposes, OpenShift installs BIND to serve as its
+# DNS service. This service can be configured with host names in the
+# deployment as well as supporting dynamic updates to the app domain.
+#
+# This BIND server can be delegated as an authoritative server for an
+# actual deployment, but many administrators may wish to reuse an
+# existing DNS service with OpenShift or set up one independently.
+# Parameters exist to configure for all of these possibilities.
+# However, this script does not configure non-standard DDNS plugins.
+
+# The broker needs a key for updating dynamic DNS. This key should be
+# configured into BIND if installed for use with the deployment.
+#
+# bind_key / CONF_BIND_KEY
+#   Specify a key for updating the app domain, whether the service is
+#   BIND or something else. If not set, one is generated.
+#   Any base64-encoded value can be used, but ideally an HMAC-SHA256 key
+#   generated by dnssec-keygen should be used.
+#CONF_BIND_KEY=""
+#
+# bind_keyalgorithm / CONF_BIND_KEYALGORITHM
+#   The key algorithm used for generating the bind_key.
+#   (Specify for separate service using a different algorithm.)
+#CONF_BIND_KEYALGORITHM="HMAC-SHA256"
+#
+# bind_keysize / CONF_BIND_KEYSIZE
+#   The key size used for generating a bind key, if not default 256.
+#CONF_BIND_KEYSIZE="256"
+
+# To use kerberos authentication rather than a key to update DNS:
+#
+# bind_krb_keytab / CONF_BIND_KRB_KEYTAB
+#   When the nameserver is remote, Kerberos keytab together with principal
+#   can be used instead of the HMAC-SHA256 key for updates.
+#CONF_BIND_KRB_KEYTAB=""
+#
+# bind_krb_principal / CONF_BIND_KRB_PRINCIPAL
+#   When the nameserver is remote, this Kerberos principal together with
+#   Kerberos keytab can be used instead of the HMAC-MD5 key for updates.
+#CONF_BIND_KRB_PRINCIPAL=""
+
+# When installing BIND, it can be configured with a host domain and
+# entries for hosts in the deployment.
+#
+# named_entries / CONF_NAMED_ENTRIES
+#   Comma separated, colon delimited hostname:ipaddress pairs
+#   You may also set to "none" to create no DNS entries for hosts.
+#   Default: entries for components installed on this host.
+#
+#   Specify host DNS entries to be created under the hosts_domain.
+#   $hosts_domain is appended if not included.
+#CONF_NAMED_ENTRIES="broker:192.168.0.1,node:192.168.0.2"
+#
+# hosts_domain / CONF_HOSTS_DOMAIN
+#   Default: $CONF_DOMAIN (example.com)
+#   If host DNS entries are to be created, this domain will be created
+#   and used for host DNS records (app records will still go in the
+#   main domain).
+#CONF_HOSTS_DOMAIN="hosts.example.com"
+#
+# hosts_domain_keyfile / CONF_HOSTS_DOMAIN_KEYFILE
+#   Default: "/var/named/${hosts_domain}.key"
+#   If specified and calling register_named_entries, the specified keyfile
+#   will be used for updating the entries.
+#CONF_HOSTS_DOMAIN_KEYFILE="/var/named/hosts.example.com.key"
+#
+# broker_ip_addr / CONF_BROKER_IP_ADDR
+#   Default: the current IP (at install)
+#   IP address to register for the broker hostname.
+#   Used for the nameserver IP if none specified.
+#CONF_BROKER_IP_ADDR=10.10.10.10
+
+# forward_dns / CONF_FORWARD_DNS
+#   Default: false (not set)
+#   This option determines whether the BIND server being installed will
+#   forward requests for which it is not authoritative to upstream DNS
+#   servers. This should not be necessary in most cases; with this
+#   disabled, BIND will refuse requests (status REFUSED) that it
+#   cannot answer directly, which should cause most clients to ask the
+#   next nameserver in their configuration.
+#CONF_FORWARD_DNS=true
+
+#----------------------------------------------------------#
+#             Redundant MongoDB and ActiveMQ               #
+#----------------------------------------------------------#
+
+# datastore_replicants / CONF_DATASTORE_REPLICANTS
+#   Default: the value of datastore_hostname (no replication)
+#   A comma-separated list of MongoDB replicants to be used as a replica set.
+#   Each replicant must be represented by a hostname and, optionally, a colon
+#   and port number.  For each replicant, if you omit the port specification
+#   for that replicant, port :27017 will be appended.
+#
+#   To install and configure a HA replica set, install at least three
+#   hosts with the datastore component, and when all are complete,
+#   all hostnames resolve and all databases are reachable,
+#   on one host execute the configure_datastore_add_replicants
+#   action to configure the replica set; e.g. (on the last host only):
+#CONF_ACTIONS=do_all_actions,configure_datastore_add_replicants
+#   All hosts should be installed with all replicants specified:
+#CONF_DATASTORE_REPLICANTS="datastore01.example.com:27017,datastore02.example.com:27017,datastore03.example.com:27017"
+#
+# mongodb_replset / CONF_MONGODB_REPLSET
+#   Default: ose
+#   In a replicated setup, this is the shared name of the replica set.
+#CONF_MONGODB_REPLSET="ose"
+#
+# mongodb_key / CONF_MONGODB_KEY
+#   Default: <randomized>
+#   Default with CONF_NO_SCRAMBLE: OSEnterprise
+#   In a replicated setup, this is the key that slaves will use to
+#   authenticate with the master.
+#CONF_MONGODB_KEY="OSEnterprise"
+
+# activemq_replicants / CONF_ACTIVEMQ_REPLICANTS
+#   Default: the value of activemq_hostname (no replication)
+#   A comma-separated list of ActiveMQ broker replicants.  Each replicant must
+#   be represented by a hostname without a port number (port 61613 is assumed).
+#   If you are not installing in a configuration with ActiveMQ replication, you
+#   can leave this setting at its default value.
+#CONF_ACTIVEMQ_REPLICANTS="activemq01.example.com,activemq02.example.com"
+#
+# activemq_amq_user_password / CONF_ACTIVEMQ_AMQ_USER_PASSWORD
+#   Default: <randomized>
+#   Default with CONF_NO_SCRAMBLE: password
+#   This is the password for the ActiveMQ amq user, which is
+#   used by ActiveMQ broker replicants to communicate with one another.
+#   The amq user is enabled only if replicants are specified using
+#   the activemq_replicants setting.
+#CONF_ACTIVEMQ_AMQ_USER_PASSWORD="ChangeMe"
+
+#----------------------------------------------------------#
+#                         Node hosts                       #
+#----------------------------------------------------------#
+
+# Set profile and resource_limits on the node.
+# A node profile (aka "gear size") is just a name. The actual resource limits
+# configured for a profile may vary by node host; for example, specific nodes
+# may have more CPUs or RAM than others, or live on a more costly network.
+# openshift.sh will use the profile and node type to choose one from a listing
+# of resource_limits.conf files as follows:
+#
+# 1. If /etc/openshift/resource_limits.conf.$profile.$type exists, use that.
+# 2. Else, if /etc/openshift/resource_limits.conf.$profile exists, use that.
+# 3. Else, just change the profile name in /etc/openshift/resource_limits.conf
+#
+# OpenShift installs three resource_limits.conf examples with profiles
+# "small", "medium", "large", and "xpaas" for type "m3.xlarge".
+# Any others in place when this script runs could also be used.
+#
+#
+# node_host_type / CONF_NODE_HOST_TYPE
+#   Default: m3.xlarge (Amazon EC2 VM type)
+#CONF_NODE_HOST_TYPE=""
+#
+# Set profile on the node.
+# node_profile / CONF_NODE_PROFILE
+#   Default: small
+#CONF_NODE_PROFILE="medium"
 
 # cartridges / CONF_CARTRIDGES
 #   Comma-separated selections from the following:
@@ -201,68 +688,84 @@
 #
 #   Default: all
 
-# install_method / CONF_INSTALL_METHOD
-#   Choose from the following ways to provide packages:
-#     none - install sources are already set up when the script executes (DEFAULT)
-#     yum - set up yum repos based on config
-#       rhel_repo / CONF_RHEL_REPO -- see below
-#       rhel_extra_repo / CONF_RHEL_EXTRA_REPO -- see below
-#       rhel_optional_repo / CONF_RHEL_OPTIONAL_REPO -- see below
-#       jboss_repo_base / CONF_JBOSS_REPO_BASE -- see below
-#       jbosseap_extra_repo / CONF_JBOSSEAP_EXTRA_REPO -- see below
-#       jbossews_extra_repo / CONF_JBOSSEWS_EXTRA_REPO -- see below
-#       rhscl_repo_base / CONF_RHSCL_REPO_BASE -- see below
-#       rhscl_extra_repo / CONF_RHSCL_EXTRA_REPO -- see below
-#       ose_repo_base / CONF_OSE_REPO_BASE -- see below
-#       ose_extra_repo_base / CONF_OSE_EXTRA_REPO_BASE -- see below
-#     rhsm - use subscription-manager
-#       rhn_user / CONF_RHN_USER
-#       rhn_pass / CONF_RHN_PASS
-#       rhn_reg_opts / CONF_RHN_REG_OPTS - extra options to subscription-manager register,
-#                     e.g. "--serverurl=https://sam.example.com"
-#       sm_reg_pool / CONF_SM_REG_POOL - pool ID for OpenShift subscription (required)
-#                     Subscribe multiple with comma-separated list poolid1,poolid2,...
-#     rhn - use rhn-register
-#       rhn_user / CONF_RHN_USER
-#       rhn_pass / CONF_RHN_PASS
-#       rhn_reg_opts / CONF_RHN_REG_OPTS - extra options to rhnreg_ks,
-#                     e.g. "--serverUrl=https://satellite.example.com"
-#       rhn_reg_actkey / CONF_RHN_REG_ACTKEY - optional activation key
-#   Default: none
-#CONF_INSTALL_METHOD="yum"
+# metapkgs / CONF_METAPKGS
+#   Default: recommended
+#   Specify which cartridge dependency metapackages should be installed
+#   Comma or space-separated options include:
+#     none - Install none of the cart dep metapackages
+#     recommended - Install only the recommended cart dep metapackages
+#     optional - Install the optional AND recommended cart dep metapackages
+# CONF_METAPKGS=optional
 
-# Hint: when running as a cmdline script, to enter your password invisibly:
-#  read -s CONF_RHN_PASS
-#  export CONF_RHN_PASS
+# no_jbossews / CONF_NO_JBOSSEWS
+# no_jbosseap / CONF_NO_JBOSSEAP
+#   Deprecated; see CONF_CARTRIDGES. Setting to true has the same
+#   effect as negating the corresponding cartridge in the list.
 
-# optional_repo / CONF_OPTIONAL_REPO
-#   Enable unsupported RHEL "optional" repo.
-#   Not usually needed, but may help with temporary dependency mismatches
-#   Default: no
-#CONF_OPTIONAL_REPO=1
-
-# actions / CONF_ACTIONS
-#   Default: do_all_actions
-#   Comma-separated list of bash functions to run.  This
-#   setting is intended to allow configuration steps defined within this
-#   file to be run or re-run selectively.  For a typical installation,
-#   this setting can be left at its default value.
+# Various node front end proxies for accessing gears.
 #
-#   Some helpful actions:
-#     init_message,validate_preflight,parse_cartridges,configure_repos,
-#     install_rpms,configure_host,configure_openshift,
-#     configure_datastore_add_replicants,reboot_after
+# Node httpd proxy frontend. Valid options are vhost and mod_rewrite.
+# mod_rewrite is intended for nodes with thousands of gears (mostly idle).
+# vhost is not as scalable but more extensible.
+#CONF_NODE_APACHE_FRONTEND=mod_rewrite
 #
-# For example, these are the actions to run on a primary MongoDB replicant:
-#CONF_ACTIONS=do_all_actions,configure_datastore_add_replicants
-
-
-# # # # # # # # # # # # yum-based install method # # # # # # # # # # # #
+# enable_sni_proxy / CONF_ENABLE_SNI_PROXY
+#   Default: false (but true for "xpaas" profile)
+#   Whether to enable the node sni proxy frontend.
+#CONF_ENABLE_SNI_PROXY=false
 #
-# Define plain old yum repositories for use internally to set up
-# test systems; can also be used for offline installs. The assumed
-# layout of the repositories is that of the CDN used with released
-# products, which is:
+# sni_first_port / CONF_SNI_FIRST_PORT
+#   Default: 2303
+# sni_proxy_ports / CONF_SNI_PROXY_PORTS
+#   Default: 5 (10 for "xpaas" profile)
+# Number of ports exposed and bound to the SNI proxy, beginning at first.
+#CONF_SNI_PROXY_PORTS=5
+#
+# ports_per_gear / CONF_PORTS_PER_GEAR
+#   Default: 5 (15 for "xpaas" profile)
+# External ports to allocate per gear. Change with caution; increasing
+# the ports per gear requires reducing the number of UIDs the district
+# is created with so that the port requirement for the district is not
+# larger than the external port range of its nodes.
+#CONF_PORTS_PER_GEAR=5
+
+# idle_interval / CONF_IDLE_INTERVAL
+#   Default: do not idle gears on the node
+#   Specify the number of hours after which a gear should be idled if it
+#   has not been accessed. Creates an hourly cron job to check for
+#   inactive gears and idle them.
+#CONF_IDLE_INTERVAL=240
+
+# N.B.: see CONF_SYSLOG for directing logging to the syslog.
+# node_log_context / CONF_NODE_LOG_CONTEXT
+#   Default: disabled
+#   When true, enables extra context annotations in the node and frontend
+#   logs to indicate (where relevant) the request id on broker requests,
+#   the application UUID and the gear UUID.
+#CONF_NODE_LOG_CONTEXT=true
+
+# metrics_interval / CONF_METRICS_INTERVAL
+#   Default: metrics gathering disabled
+#   Specify an interval (in seconds) at which to have watchman gather
+#   gear metrics on a node. Lower values gather metrics more often,
+#   using more CPU and filling the logs faster. There are many related
+#   options available in node.conf; consult the Administration Guide.
+#CONF_METRICS_INTERVAL=60
+
+# node_ip_addr / CONF_NODE_IP_ADDR
+#   Default: the current IP (at install)
+#   This is used for the node to specify a public IP, if different from the
+#   one on its NIC.
+#CONF_NODE_IP_ADDR=10.10.10.10
+
+#----------------------------------------------------------#
+#           Parameters for "yum" install method            #
+#----------------------------------------------------------#
+
+# This method defines "plain old" yum repositories (not from a
+# subscription), mainly for internal test systems. This can also be
+# used for offline installs. The assumed layout of the repositories is
+# that of the CDN used with released products, which is:
 #
 # <base> = http(s)://server/.../x86_64   # top of x86_64 architecture tree
 # <base>/jbeap/6/os         - JBoss repos
@@ -349,426 +852,17 @@
 #   the same (non-CDN) layout as ose_repo_base. These are intended to supply RPMs
 #   that augment or update the contents of the normal channels/repos.
 
+# optional_repo / CONF_OPTIONAL_REPO
+#   Enable unsupported RHEL "optional" repo.
+#   Not usually needed, but may help with temporary dependency mismatches
+#   Default: no
+#CONF_OPTIONAL_REPO=1
+
 # yum_exclude_pkgs / CONF_YUM_EXCLUDE_PKGS
 #   (not advised) Work around temporarily faulty dev yum repos by permanently excluding
 #   missing packages from yum repos.
 #CONF_YUM_EXCLUDE_PKGS="foo-1.1-2.el6_5 bar-1.2-3"
 
-# # # # # # # # # # # domains, DNS, hostnames, and IPs # # # # # # # # # # # # # # # # #
-#
-# domain / CONF_DOMAIN
-#   Default: example.com
-#   The network domain under which app DNS entries will be placed.
-#CONF_DOMAIN="example.com"
-
-# interface / CONF_INTERFACE
-#   Default: eth0
-#   The network device to configure.  Used by configure_network, 
-#   configure_dns_resolution, and configure_node
-#CONF_INTERFACE="eth0"
-
-# hosts_domain / CONF_HOSTS_DOMAIN
-#   Default: hosts.example.com
-#   If specified and host DNS is to be created, this domain will be created
-#   and used for creating host DNS records (app records will still go in the
-#   main domain).
-#CONF_HOSTS_DOMAIN="hosts.example.com"
-
-# hosts_domain_keyfile / CONF_HOSTS_DOMAIN_KEYFILE
-#   Default: "/var/named/${hosts_domain}.key"
-#   If specified and calling register_named_entries, the specified keyfile
-#   will be used for updating the entries.
-#CONF_HOSTS_DOMAIN_KEYFILE="/var/named/hosts.example.com.key"
-
-# broker_hostname / CONF_BROKER_HOSTNAME
-# node_hostname / CONF_NODE_HOSTNAME
-# named_hostname / CONF_NAMED_HOSTNAME
-# activemq_hostname / CONF_ACTIVEMQ_HOSTNAME
-# datastore_hostname / CONF_DATASTORE_HOSTNAME
-#   Default: the root plus the domain, e.g. broker.example.com - except
-#   named=ns1.example.com
-#   These supply the FQDN of the hosts containing these components. Used
-#   for configuring the host's name at install, and also for configuring
-#   the broker application to reach the services needed.
-#
-#   IMPORTANT NOTE: if installing a nameserver, the script will create
-#   DNS entries for the hostnames of the other components being
-#   installed on this host as well. If you are using a nameserver set
-#   up separately, you are responsible for all necessary DNS entries.
-#CONF_BROKER_HOSTNAME="broker.example.com"
-#CONF_NODE_HOSTNAME="node.example.com"
-#CONF_NAMED_HOSTNAME="ns1.example.com"
-#CONF_ACTIVEMQ_HOSTNAME="activemq.example.com"
-#CONF_DATASTORE_HOSTNAME="datastore.example.com"
-
-# named_entries / CONF_NAMED_ENTRIES
-#   Default: create entries above only for components installed on BIND host.
-#   Comma separated, colon delimited hostname:ipaddress pairs
-#   Specify host DNS entries to be created instead of the defaults.
-#   You may also set to "none" to create no DNS entries for hosts.
-#CONF_NAMED_ENTRIES="broker:192.168.0.1,node:192.168.0.2"
-
-# named_ip_addr / CONF_NAMED_IP_ADDR
-#   Default: current IP if installing named, otherwise broker_ip_addr
-#   This is used by every host to configure its primary nameserver.
-#CONF_NAMED_IP_ADDR=10.10.10.10
-
-# bind_key / CONF_BIND_KEY
-#   Specify a key for updating BIND rather than generating one.
-#   Any base64-encoded value can be used, but ideally an HMAC-SHA256 key
-#   generated by dnssec-keygen should be used.
-#CONF_BIND_KEY=""
-
-# bind_keyalgorithm / CONF_BIND_KEYALGORITHM
-#   Specify a key algorithm to use when generating a bind key. Or if specifying
-#   a bind_key, this should be set to the algorithm which was used when the
-#   bind_key was generated.
-#CONF_BIND_KEYALGORITHM="HMAC-SHA265"
-
-# bind_keysize / CONF_BIND_KEYSIZE
-#   Specify a key size to use for generating a bind key. Or if specifying
-#   a bind_key, this should be set to the key size used when the bind_key was
-#   generated.
-#CONF_BIND_KEYSIZE="256"
-
-# bind_krb_keytab / CONF_BIND_KRB_KEYTAB
-#   When the nameserver is remote, Kerberos keytab together with principal
-#   can be used instead of the HMAC-MD5 key for updates.
-#CONF_BIND_KRB_KEYTAB=""
-
-# bind_krb_principal / CONF_BIND_KRB_PRINCIPAL
-#   When the nameserver is remote, this Kerberos principal together with
-#   Kerberos keytab can be used instead of the HMAC-MD5 key for updates.
-#CONF_BIND_KRB_PRINCIPAL=""
-
-# broker_ip_addr / CONF_BROKER_IP_ADDR
-#   Default: the current IP (at install)
-#   This is used for the node to record its broker. Also is the default
-#   for the nameserver IP if none is given.
-#CONF_BROKER_IP_ADDR=10.10.10.10
-
-# node_ip_addr / CONF_NODE_IP_ADDR
-#   Default: the current IP (at install)
-#   This is used for the node to give a public IP, if different from the
-#   one on its NIC.
-#CONF_NODE_IP_ADDR=10.10.10.10
-
-# keep_hostname / CONF_KEEP_HOSTNAME
-#   Default: false (not set)
-#   Enabling this option prevents the installation script from setting
-#   the hostname on the host, leaving it as found.  Use this option if
-#   the hostname is already set as you like. The default behavior is
-#   to set the hostname, which makes it a little easier to recognize
-#   which host you are looking at when logging in as an administrator.
-#CONF_KEEP_HOSTNAME=true
-
-# keep_nameservers / CONF_KEEP_NAMESERVERS
-#   Default: false (not set)
-#   Enabling this option prevents the installation script from placing
-#   the OpenShift nameserver at the top of /etc/resolv.conf, which is
-#   the default (because rogue DNS is assumed). Set this to true if
-#   OpenShift app DNS is properly delegated/authoritative.
-#CONF_KEEP_NAMESERVERS=true
-
-# forward_dns / CONF_FORWARD_DNS
-#   Default: false (not set)
-#   This option determines whether the BIND server being installed will
-#   forward requests for which it is not authoritative to upstream DNS
-#   servers. This should not be necessary in most cases; with this
-#   disabled, BIND will refuse requests (status REFUSED) that it
-#   cannot answer directly, which should cause most clients to ask the
-#   next nameserver in their configuration.
-#CONF_FORWARD_DNS=true
-
-
-# # # # # # # # # # # miscellaneous other settings # # # # # # # # # # #
-
-
-# abort_on_unrecognized_settings / CONF_ABORT_ON_UNRECOGNIZED_SETTINGS
-#   Default: true (automatically set to false for kickstarts)
-#   Enabling this option causes the installation script to abort when
-#   unrecognized settings, which could be typos or deprecated settings,
-#   are specified.
-#
-#  If the installation script is used to kickstart a host, then the
-#  script reads the kernel command-line for arguments to the kickstart
-#  installation.  Because the kernel command-line is likely to have
-#  arguments that are unrelated to the installation script, the script
-#  will override the default and set it to false during kickstarts.
-#CONF_ABORT_ON_UNRECOGNIZED_SETTINGS=false
-
-# Valid options are vhost and mod_rewrite.  vhost is less performant but more
-# extensible.
-#CONF_NODE_APACHE_FRONTEND=mod_rewrite
-
-# no_ntp / CONF_NO_NTP
-#   Default: false
-#   Enabling this option prevents the installation script from
-#   configuring NTP.  It is important that the time be synchronized
-#   across hosts because MCollective messages have a TTL of 60 seconds
-#   and may be dropped if the clocks are too far out of synch.  However,
-#   NTP is not necessary if the clock will be kept in synch by some
-#   other means.
-#CONF_NO_NTP=true
-
-# activemq_replicants / CONF_ACTIVEMQ_REPLICANTS
-#   Default: the value of activemq_hostname (no replication)
-#   A comma-separated list of ActiveMQ broker replicants.  Each replicant must
-#   be represented by a hostname without a port number (port 61613 is assumed).
-#   If you are not installing in a configuration with ActiveMQ replication, you
-#   can leave this setting at its default value.
-#CONF_ACTIVEMQ_REPLICANTS="activemq01.example.com,activemq02.example.com"
-
-# Passwords used to secure various services. You are advised to specify
-# only alphanumeric values in this script as others may cause syntax
-# errors depending on context. If non-alphanumeric values are required,
-# update them separately after installation.
-#
-# no_scramble / CONF_NO_SCRAMBLE
-#   Default: false
-#   This flag determines whether default passwords should be randomized
-#   or set to insecure defaults.
-#
-# activemq_admin_password / CONF_ACTIVEMQ_ADMIN_PASSWORD
-#   Default: <randomized>
-#   This is the admin password for the ActiveMQ admin console, which is
-#   not needed by OpenShift but might be useful in troubleshooting.
-#CONF_ACTIVEMQ_ADMIN_PASSWORD="ChangeMe"
-
-# activemq_amq_user_password / CONF_ACTIVEMQ_AMQ_USER_PASSWORD
-#   Default: <randomized>
-#   Default with CONF_NO_SCRAMBLE: password
-#   This is the password for the ActiveMQ amq user, which is
-#   used by ActiveMQ broker replicants to communicate with one another.
-#   The amq user is enabled only if replicants are specified using
-#   the activemq_replicants setting.
-#CONF_ACTIVEMQ_AMQ_USER_PASSWORD="ChangeMe"
-
-# mcollective_user / CONF_MCOLLECTIVE_USER
-# mcollective_password / CONF_MCOLLECTIVE_PASSWORD
-#   Default: mcollective/<randomized>
-#   Default with CONF_NO_SCRAMBLE: mcollective/marionette
-#   This is the user and password shared between broker and node for
-#   communicating over the mcollective topic channels in ActiveMQ. Must
-#   be the same on all broker and node hosts.
-#CONF_MCOLLECTIVE_USER="mcollective"
-#CONF_MCOLLECTIVE_PASSWORD="mcollective"
-
-
-# mongodb_name / CONF_MONGODB_NAME
-#   Default: openshift_broker
-#   This is the name of the database in MongoDB in which the broker will
-#   store data.
-#CONF_MONGODB_NAME="openshift_broker"
-
-# mongodb_broker_user / CONF_MONGODB_BROKER_USER
-# mongodb_broker_password / CONF_MONGODB_BROKER_PASSWORD
-#   Default: openshift:<randomized>
-#   Default with CONF_NO_SCRAMBLE: openshift:mongopass
-#   These are the username and password of the normal user that will be
-#   created for the broker to connect to the MongoDB datastore. The
-#   broker application's MongoDB plugin is also configured with these
-#   values.
-#CONF_MONGODB_BROKER_USER="openshift"
-#CONF_MONGODB_BROKER_PASSWORD="mongopass"
-
-# mongodb_admin_user / CONF_MONGODB_ADMIN_USER
-# mongodb_admin_password / CONF_MONGODB_ADMIN_PASSWORD
-#   Default: admin:<randomized>
-#   Default with CONF_NO_SCRAMBLE: admin:mongopass
-#   These are the username and password of the administrative user that
-#   will be created in the MongoDB datastore. These credentials are not
-#   used by in this script or by OpenShift, but an administrative user
-#   must be added to MongoDB in order for it to enforce authentication.
-#   Note: The administrative user will not be created if
-#   CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST is enabled.
-#CONF_MONGODB_ADMIN_USER="admin"
-#CONF_MONGODB_ADMIN_PASSWORD="mongopass"
-
-# datastore_replicants / CONF_DATASTORE_REPLICANTS
-#   Default: the value of datastore_hostname (no replication)
-#   A comma-separated list of MongoDB replicants to be used as a replica set.
-#   Each replicant must be represented by a hostname and, optionally, a colon
-#   and port number.  For each replicant, if you omit the port specification
-#   for that replicant, port :27017 will be appended.
-#
-#   To install and configure a HA replica set, install at least three
-#   hosts with the datastore component, and when all are complete,
-#   all hostnames resolve and all databases are reachable,
-#   on one host execute the configure_datastore_add_replicants
-#   action to configure the replica set; e.g. (on the last host only):
-#CONF_ACTIONS=do_all_actions,configure_datastore_add_replicants
-#   All hosts should be installed with all replicants specified:
-#CONF_DATASTORE_REPLICANTS="datastore01.example.com:27017,datastore02.example.com:27017,datastore03.example.com:27017"
-
-# mongodb_replset / CONF_MONGODB_REPLSET
-#   Default: ose
-#   In a replicated setup, this is the name of the replica set.
-#CONF_MONGODB_REPLSET="ose"
-
-# mongodb_key / CONF_MONGODB_KEY
-#   Default: <randomized>
-#   Default with CONF_NO_SCRAMBLE: OSEnterprise
-#   In a replicated setup, this is the key that slaves will use to
-#   authenticate with the master.
-#CONF_MONGODB_KEY="OSEnterprise"
-
-# openshift_user1 / CONF_OPENSHIFT_USER1
-# openshift_password1 / CONF_OPENSHIFT_PASSWORD1
-#   Default: demo/<randomized>
-#   Default with CONF_NO_SCRAMBLE: demo/changeme
-#   This user and password are entered in the /etc/openshift/htpasswd
-#   file as a demo/test user. You will likely want to remove it after
-#   installation (or just use a different auth method).
-#CONF_OPENSHIFT_USER1="demo"
-#CONF_OPENSHIFT_PASSWORD1="changeme"
-
-# broker_auth_salt / CONF_BROKER_AUTH_SALT
-#CONF_BROKER_AUTH_SALT=""
-
-# broker_session_secret / CONF_BROKER_SESSION_SECRET
-#CONF_BROKER_SESSION_SECRET=""
-
-# console_session_secret / CONF_CONSOLE_SESSION_SECRET
-#CONF_CONSOLE_SESSION_SECRET=""
-
-# broker.conf profile settings:
-#
-# valid_gear_sizes / CONF_VALID_GEAR_SIZES   (comma-separated list)
-#CONF_VALID_GEAR_SIZES="small"
-#
-# default_gear_capabilities / CONF_DEFAULT_GEAR_CAPABILITIES (comma separated list)
-#CONF_DEFAULT_GEAR_CAPABILITIES="small"
-#
-# default_gear_size / CONF_DEFAULT_GEAR_SIZE
-#CONF_DEFAULT_GEAR_SIZE="small"
-
-# Set profile and resource_limits on the node.
-# A node profile (aka "gear size") is just a name. The actual resource limits
-# configured for a profile may vary by node host; for example, specific nodes
-# may have more CPUs or RAM than others, or live on a more costly network.
-# openshift.sh will use the profile and node type to choose one from a listing
-# of resource_limits.conf files as follows:
-#
-# 1. If /etc/openshift/resource_limits.conf.$profile.$type exists, use that.
-# 2. Else, if /etc/openshift/resource_limits.conf.$profile exists, use that.
-# 3. Else, just change the profile name in /etc/openshift/resource_limits.conf
-#
-# OpenShift installs three resource_limits.conf examples with profiles
-# "small", "medium", "large" for type "m3.xlarge". Any others in place when
-# this script runs could also be used.
-#
-#
-# node_host_type / CONF_NODE_HOST_TYPE
-#   Default: m3.xlarge (Amazon EC2 VM type)
-#CONF_NODE_HOST_TYPE=""
-#
-# Set profile on the node.
-# node_profile / CONF_NODE_PROFILE
-#   Default: small
-#CONF_NODE_PROFILE="medium"
-
-#default_districts / CONF_DEFAULT_DISTRICTS
-#   Default: true
-#   When enabled (and executing the post_deploy action), a district will be
-#   created for each entry in valid_gear_sizes/CONF_VALID_GEAR_SIZES
-#   and all non-districted nodes of that size will be added to the default
-#   district matching that size.
-#CONF_DEFAULT_DISTRICTS=true
-
-#district_mappings / CONF_DISTRICT_MAPPINGS
-#   A string describing district/node mappings to be created during the
-#   post_deploy action.  default_districts/CONF_DEFAULT_DISTRICTS
-#   must be set to false for this variable to have an effect.
-#CONF_DISTRICT_MAPPINGS="district1:node1.hosts.example.com,node2.hosts.example.com;district2:node3.hosts.example.com;district3:node4.hosts.example.com,node5.hosts.example.com"
-
-#district_first_uid / CONF_DISTRICT_FIRST_UID
-#   Default: 1000
-#   Districts will be created on the broker with a pool of gear UIDs
-#   beginning at this number. Should be between 1000 and 500,000.
-
-# Settings for configuring Kerberos as broker authentication method
-# The KrbServiceName value for mod_auth_kerb configuration
-#CONF_BROKER_KRB_SERVICE_NAME=""
-#
-# The KrbAuthRealms value for mod_auth_kerb configuration
-#CONF_BROKER_KRB_AUTH_REALMS=""
-#
-# The Krb5KeyTab value of mod_auth_kerb is not configurable -- the keytab
-# is expected in /var/www/openshift/broker/httpd/conf.d/http.keytab
-
-# routing_plugin / CONF_ROUTING_PLUGIN
-# routing_plugin_user / CONF_ROUTING_PLUGIN_USER
-# routing_plugin_pass / CONF_ROUTING_PLUGIN_PASS
-#   Default: do not install the sample routing plugin
-#   When enabled, the routing plugin publishes routing events to a topic
-#   on the ActiveMQ instance(s) used by OpenShift Enterprise.
-#   For more info: http://red.ht/1eG9lHr
-#CONF_ROUTING_PLUGIN=true
-#CONF_ROUTING_PLUGIN_USER=routinginfo
-#CONF_ROUTING_PLUGIN_PASS=routinginfopassword
-
-# idle_interval / CONF_IDLE_INTERVAL
-#   Default: do not idle gears on the node
-#   Specify the number of hours after which a gear should be idled if it
-#   has not been accessed. Creates an hourly cron job to check for
-#   inactive gears and idle them.
-#CONF_IDLE_INTERVAL=240
-
-# ports_per_gear / CONF_PORTS_PER_GEAR
-#   Default: 5 (15 for "xpaas" profile)
-# External ports to allocate per gear. Change with caution; increasing
-# the ports per gear requires reducing the number of UIDs the district
-# is created with so that the port requirement for the district is not
-# larger than the external port range of its nodes.
-#CONF_PORTS_PER_GEAR=5
-
-# enable_sni_proxy / CONF_ENABLE_SNI_PROXY
-#   Default: false (but true for "xpaas" profile)
-#   Whether to enable the node sni proxy frontend.
-#CONF_ENABLE_SNI_PROXY=false
-#
-# sni_first_port / CONF_SNI_FIRST_PORT
-#   Default: 2303
-# sni_proxy_ports / CONF_SNI_PROXY_PORTS
-#   Default: 5 (10 for "xpaas" profile)
-# Number of ports exposed and bound to the SNI proxy, beginning at first.
-#CONF_SNI_PROXY_PORTS=5
-
-# metapkgs / CONF_METAPKGS
-#   Default: recommended
-#   Specify which cartridge dependency metapackages should be installed
-#   Comma or space-separated options include:
-#     none - Install none of the cart dep metapackages
-#     recommended - Install only the recommended cart dep metapackages
-#     optional - Install the optional AND recommended cart dep metapackages
-# CONF_METAPKGS=optional
-
-# syslog / CONF_SYSLOG
-#   Default: log only to files
-#   Specify which components log to the syslog.
-#   Comma or space-separated options include:
-#     broker - broker rails app server logs
-#     console - console rails app server logs
-#     node - node platform logs
-#     frontend - host httpd access logs
-#     gears - gear app server logs
-#CONF_SYSLOG="broker,console,node,frontend,gears"
-
-# node_log_context / CONF_NODE_LOG_CONTEXT
-#   Default: disabled
-#   When true, enables extra context annotations in the node and frontend
-#   logs to indicate (where relevant) the request id on broker requests,
-#   the application UUID and the gear UUID.
-#CONF_NODE_LOG_CONTEXT=true
-
-# metrics_interval / CONF_METRICS_INTERVAL
-#   Default: metrics gathering disabled
-#   Specify an interval (in seconds) at which to have watchman gather
-#   gear metrics on a node. Lower values gather metrics more often,
-#   using more CPU and filling the logs faster. There are many related
-#   options available in node.conf; consult the Administration Guide.
-#CONF_METRICS_INTERVAL=60
 
 ########################################################################
 
@@ -3211,49 +3305,11 @@ is_xpaas()
 # value of CONF_BIND_KRB_KEYTAB and CONF_BIND_KRB_PRINCIPAL, or the
 # the $bind_key variable will be set to the value of CONF_BIND_KEY.
 #
-# The following variables will be defined:
-#
-#   actions
-#   activemq_hostname
-#   bind_key		# if bind_krb_keytab and bind_krb_principal unset
-#   bind_krb_keytab
-#   bind_krb_principal
-#   broker_hostname
-#   cur_ip_addr
-#   domain
-#   datastore_hostname
-#   named_hostname
-#   named_ip_addr
-#   nameservers
-#   node_hostname
-#   ose_repo_base
-#   ose_extra_repo_base
-#
 # This function makes use of variables that may be set by parse_kernel_cmdline
 # based on the content of /proc/cmdline or may be hardcoded by modifying
 # this file.  All of these variables are optional; best attempts are
 # made at determining reasonable defaults.
 #
-# The following variables are used:
-#
-#   CONF_ACTIONS
-#   CONF_ACTIVEMQ_HOSTNAME
-#   CONF_BIND_KEY
-#   CONF_BIND_KEYALGORITHM
-#   CONF_BIND_KEYVALUE
-#   CONF_BROKER_HOSTNAME
-#   CONF_BROKER_IP_ADDR
-#   CONF_DATASTORE_HOSTNAME
-#   CONF_DOMAIN
-#   CONF_HOSTS_DOMAIN
-#   CONF_INSTALL_COMPONENTS
-#   CONF_NAMED_HOSTNAME
-#   CONF_NAMED_IP_ADDR
-#   CONF_NODE_HOSTNAME
-#   CONF_NODE_IP_ADDR
-#   CONF_NODE_APACHE_FRONTEND
-#   CONF_OSE_REPO_BASE
-#   CONF_OSE_ERRATA_BASE
 set_defaults()
 {
   abort_on_unrecognized_settings="${CONF_ABORT_ON_UNRECOGNIZED_SETTINGS:-true}"

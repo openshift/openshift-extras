@@ -2416,49 +2416,11 @@ is_xpaas()
 # value of CONF_BIND_KRB_KEYTAB and CONF_BIND_KRB_PRINCIPAL, or the
 # the $bind_key variable will be set to the value of CONF_BIND_KEY.
 #
-# The following variables will be defined:
-#
-#   actions
-#   activemq_hostname
-#   bind_key		# if bind_krb_keytab and bind_krb_principal unset
-#   bind_krb_keytab
-#   bind_krb_principal
-#   broker_hostname
-#   cur_ip_addr
-#   domain
-#   datastore_hostname
-#   named_hostname
-#   named_ip_addr
-#   nameservers
-#   node_hostname
-#   ose_repo_base
-#   ose_extra_repo_base
-#
 # This function makes use of variables that may be set by parse_kernel_cmdline
 # based on the content of /proc/cmdline or may be hardcoded by modifying
 # this file.  All of these variables are optional; best attempts are
 # made at determining reasonable defaults.
 #
-# The following variables are used:
-#
-#   CONF_ACTIONS
-#   CONF_ACTIVEMQ_HOSTNAME
-#   CONF_BIND_KEY
-#   CONF_BIND_KEYALGORITHM
-#   CONF_BIND_KEYVALUE
-#   CONF_BROKER_HOSTNAME
-#   CONF_BROKER_IP_ADDR
-#   CONF_DATASTORE_HOSTNAME
-#   CONF_DOMAIN
-#   CONF_HOSTS_DOMAIN
-#   CONF_INSTALL_COMPONENTS
-#   CONF_NAMED_HOSTNAME
-#   CONF_NAMED_IP_ADDR
-#   CONF_NODE_HOSTNAME
-#   CONF_NODE_IP_ADDR
-#   CONF_NODE_APACHE_FRONTEND
-#   CONF_OSE_REPO_BASE
-#   CONF_OSE_ERRATA_BASE
 set_defaults()
 {
   abort_on_unrecognized_settings="${CONF_ABORT_ON_UNRECOGNIZED_SETTINGS:-true}"
