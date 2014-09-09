@@ -1,4 +1,4 @@
-# -*- mode: sh; sh-basic-offset: 2 -*-
+# -*- mode: bash; sh-basic-offset: 2 -*-
 # This script configures a single host with OpenShift components. It may
 # be used either as a RHEL6 kickstart script, or the %post section may
 # be extracted and run directly to install on top of an installed RHEL6
@@ -3657,7 +3657,7 @@ configure_host()
 
   # all hosts should enable ssh access
   firewall_allow[ssh]=tcp:22
-
+  configure_firewall_add_rules
   echo "OpenShift: Completed configuring host."
 }
 
@@ -3690,17 +3690,19 @@ EOF
 # Note: This function must be run after configure_firewall.
 configure_firewall_add_rules()
 {
-  rules="$(
-    for svc in ${firewall_allow[@]}
-    do
-      for rule in ${svc//,/ }
+  rules=""
+  for svc in ${!firewall_allow[@]}
+  do
+    rules+="$(
+      for rule in ${firewall_allow[$svc]//,/ }
       do
         prot="${rule%%:*}"
         port="${rule##*:}"
         printf ' \\\n-A INPUT -m state --state NEW -m %s -p %s --dport %s -j ACCEPT' "$prot" "$prot" "$port"
       done
-    done
-  )"
+    )"
+    unset firewall_allow[$svc]
+  done
 
   # Insert the rules specified by ${firewall_allow[@]} before the first
   # REJECT rule in the INPUT chain.
