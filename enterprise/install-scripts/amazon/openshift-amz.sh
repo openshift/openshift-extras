@@ -546,6 +546,7 @@ install_node_pkgs()
 
   pkgs="$pkgs rubygem-openshift-origin-container-selinux"
   pkgs="$pkgs rubygem-openshift-origin-frontend-nodejs-websocket"
+  pkgs="$pkgs rubygem-openshift-origin-frontend-haproxy-sni-proxy"
   # technically not needed unless $CONF_SYSLOG includes gears, but it
   # does not hurt to have them available:
   pkgs="$pkgs rsyslog7 rsyslog7-mmopenshift"
@@ -1205,7 +1206,7 @@ allow syslogd_t inotifyfs_t:dir read;
 POLICY
     checkmodule -M -m -o rsyslog7-mmopenshift.mod rsyslog7-mmopenshift.te
     semodule_package -o rsyslog7-mmopenshift.pp -m rsyslog7-mmopenshift.mod
-    semodule -i rsyslog7-mmopenshift.pp 
+    semodule -i rsyslog7-mmopenshift.pp
   popd
   "rm" -r $dir
 }
@@ -1214,16 +1215,21 @@ POLICY
 # Enable services to start on boot for the node.
 enable_services_on_node()
 {
-  # We use --nostart below because activating the configuration here
-  # will produce errors.  Anyway, we only need the configuration
-  # activated after Anaconda reboots, so --nostart makes sense in any case.
-
   firewall_allow[https]=tcp:443
   firewall_allow[http]=tcp:80
 
   # Allow connections to openshift-node-web-proxy
   firewall_allow[ws]=tcp:8000
   firewall_allow[wss]=tcp:8443
+
+  # Allow connections to openshift-sni-proxy
+  if is_true "$enable_sni_proxy"; then
+    local last_port; let "last_port=$sni_first_port+$sni_proxy_ports-1"
+    firewall_allow[sni]="tcp:${sni_first_port}:${last_port}"
+    chkconfig openshift-sni-proxy on
+  else
+    chkconfig openshift-sni-proxy off
+  fi
 
   chkconfig httpd on
   chkconfig network on
@@ -1238,10 +1244,6 @@ enable_services_on_node()
 # Enable services to start on boot for the broker and fix up some issues.
 enable_services_on_broker()
 {
-  # We use --nostart below because activating the configuration here
-  # will produce errors.  Anyway, we only need the configuration
-  # activated after Anaconda reboots, so --nostart makes sense.
-
   firewall_allow[https]=tcp:443
   firewall_allow[http]=tcp:80
 
@@ -1937,8 +1939,17 @@ configure_controller()
 }
 
 configure_messaging_plugin()
-{
-  cp /etc/openshift/plugins.d/openshift-origin-msg-broker-mcollective.conf{.example,}
+{ # 1 optional arg - ports per gear
+  local ports="${1:-$ports_per_gear}"
+  local first_uid="${CONF_DISTRICT_FIRST_UID:-1000}"
+  local pool_size=6000
+  let "pool_size=30000/$ports"
+
+  local file=/etc/openshift/plugins.d/openshift-origin-msg-broker-mcollective.conf
+  cp "$file"{.example,}
+  sed -i -e "s/DISTRICTS_FIRST_UID=.*/DISTRICTS_FIRST_UID=${first_uid}/
+             s/DISTRICTS_MAX_CAPACITY=.*/DISTRICTS_MAX_CAPACITY=${pool_size}/
+            " $file
   RESTART_NEEDED=true
 }
 
@@ -2122,22 +2133,35 @@ configure_hostname()
   fi
 }
 
-# Set some parameters in the OpenShift node configuration file.
+# Set some parameters in the OpenShift node configuration files.
 configure_node()
 {
+  local resrc=/etc/openshift/resource_limits.conf
+  if [[ -f "$resrc.${node_profile}.${node_host_type}" ]]; then
+    cp "$resrc.${node_profile}.${node_host_type}" $resrc
+  elif [[ -f "$resrc.${node_profile}" ]]; then
+    cp "$resrc.${node_profile}" $resrc
+  else
+    sed -i -e "s/^node_profile=.*$/node_profile=${node_profile}/" $resrc
+  fi
+
+  local conf=/etc/openshift/node.conf
   sed -i -e "s/^PUBLIC_IP=.*$/PUBLIC_IP=${node_ip_addr}/;
              s/^CLOUD_DOMAIN=.*$/CLOUD_DOMAIN=${domain}/;
              s/^PUBLIC_HOSTNAME=.*$/PUBLIC_HOSTNAME=${hostname}/;
              s/^BROKER_HOST=.*$/BROKER_HOST=${broker_hostname}/;
              s/^[# ]*EXTERNAL_ETH_DEV=.*$/EXTERNAL_ETH_DEV='${interface}'/" \
-      /etc/openshift/node.conf
-  if [[ -f "/etc/openshift/resource_limits.conf.${node_profile}.${node_host_type}" ]]; then
-    cp "/etc/openshift/resource_limits.conf.${node_profile}.${node_host_type}" /etc/openshift/resource_limits.conf
-  elif [[ -f "/etc/openshift/resource_limits.conf.${node_profile}" ]]; then
-    cp "/etc/openshift/resource_limits.conf.${node_profile}" /etc/openshift/resource_limits.conf
-  else
-    sed -i -e "s/^node_profile=.*$/node_profile=${node_profile}/" \
-      /etc/openshift/resource_limits.conf
+      $conf
+  if [[ "$ports_per_gear" != 5 ]]; then
+    sed -i -e "/PORTS_PER_USER=/ cPORTS_PER_USER=${ports_per_gear}" $conf
+    # if not already there, we need to add it
+    grep -q '^PORTS_PER_USER' $conf || sed -i -e "$ a\\
+\\
+# Number of proxy ports available per gear. Increasing the ports per gear requires reducing\\
+# the number of UIDs the district has so that the ports allocated to all UIDs fit in the\\
+# proxy port range.\\
+PORTS_PER_USER=${ports_per_gear}
+                                                 " $conf
   fi
 
   case "$node_apache_frontend" in
@@ -2145,9 +2169,18 @@ configure_node()
       # No-op.  node.conf uses mod_rewrite by default
       ;;
     vhost)
-      sed -i -e "s/mod-rewrite/vhost/" /etc/openshift/node.conf
+      sed -i -e "s/mod-rewrite/vhost/" $conf
       ;;
   esac
+
+  if is_true "$enable_sni_proxy"; then
+    # configure in the sni proxy
+    grep -q 'OPENSHIFT_FRONTEND_HTTP_PLUGINS=.*sni-proxy' $conf || \
+      sed -i -e '/OPENSHIFT_FRONTEND_HTTP_PLUGINS/ s/=/=openshift-origin-frontend-haproxy-sni-proxy,/' $conf
+    local last_port; let "last_port=$sni_first_port+$sni_proxy_ports-1"
+    local port_list=$(seq -s, "$sni_first_port" "$last_port")
+    sed -i -e "/PROXY_PORTS/ cPROXY_PORTS=${port_list}" /etc/openshift/node-plugins.d/openshift-origin-frontend-haproxy-sni-proxy.conf
+  fi
 
   echo $broker_hostname > /etc/openshift/env/OPENSHIFT_BROKER_HOST
   echo $domain > /etc/openshift/env/OPENSHIFT_CLOUD_DOMAIN
@@ -2336,6 +2369,12 @@ is_false()
   return 1
 }
 
+is_xpaas()
+{ # checks first arg or $node_profile, true if contains "xpaas"
+  local profile="${1:-$node_profile}"
+  [[ "${profile}" == *xpaas* ]]
+}
+
 # For each component, this function defines a constant function that
 # returns either true or false.  For example, there will be a named
 # function indicating whether we are currently installing the named
@@ -2377,49 +2416,11 @@ is_false()
 # value of CONF_BIND_KRB_KEYTAB and CONF_BIND_KRB_PRINCIPAL, or the
 # the $bind_key variable will be set to the value of CONF_BIND_KEY.
 #
-# The following variables will be defined:
-#
-#   actions
-#   activemq_hostname
-#   bind_key		# if bind_krb_keytab and bind_krb_principal unset
-#   bind_krb_keytab
-#   bind_krb_principal
-#   broker_hostname
-#   cur_ip_addr
-#   domain
-#   datastore_hostname
-#   named_hostname
-#   named_ip_addr
-#   nameservers
-#   node_hostname
-#   ose_repo_base
-#   ose_extra_repo_base
-#
 # This function makes use of variables that may be set by parse_kernel_cmdline
 # based on the content of /proc/cmdline or may be hardcoded by modifying
 # this file.  All of these variables are optional; best attempts are
 # made at determining reasonable defaults.
 #
-# The following variables are used:
-#
-#   CONF_ACTIONS
-#   CONF_ACTIVEMQ_HOSTNAME
-#   CONF_BIND_KEY
-#   CONF_BIND_KEYALGORITHM
-#   CONF_BIND_KEYVALUE
-#   CONF_BROKER_HOSTNAME
-#   CONF_BROKER_IP_ADDR
-#   CONF_DATASTORE_HOSTNAME
-#   CONF_DOMAIN
-#   CONF_HOSTS_DOMAIN
-#   CONF_INSTALL_COMPONENTS
-#   CONF_NAMED_HOSTNAME
-#   CONF_NAMED_IP_ADDR
-#   CONF_NODE_HOSTNAME
-#   CONF_NODE_IP_ADDR
-#   CONF_NODE_APACHE_FRONTEND
-#   CONF_OSE_REPO_BASE
-#   CONF_OSE_ERRATA_BASE
 set_defaults()
 {
   abort_on_unrecognized_settings="${CONF_ABORT_ON_UNRECOGNIZED_SETTINGS:-true}"
@@ -2429,7 +2430,7 @@ set_defaults()
   # The declare statement below is generated by the following command:
   #
   #   echo declare -A valid_settings=\( $(grep -o 'CONF_[0-9A-Z_]\+' openshift.ks |sort -u |grep -v -F -e CONF_BAZ -e CONF_FOO |sed -e 's/.*/[&]=/') \)
-  declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]= [CONF_ACTIVEMQ_ADMIN_PASSWORD]= [CONF_ACTIVEMQ_AMQ_USER_PASSWORD]= [CONF_ACTIVEMQ_HOSTNAME]= [CONF_ACTIVEMQ_REPLICANTS]= [CONF_BIND_KEY]= [CONF_BIND_KEYALGORITHM]= [CONF_BIND_KEYSIZE]= [CONF_BIND_KEYVALUE]= [CONF_BIND_KRB_KEYTAB]= [CONF_BIND_KRB_PRINCIPAL]= [CONF_BROKER_AUTH_SALT]= [CONF_BROKER_HOSTNAME]= [CONF_BROKER_IP_ADDR]= [CONF_BROKER_KRB_AUTH_REALMS]= [CONF_BROKER_KRB_SERVICE_NAME]= [CONF_BROKER_SESSION_SECRET]= [CONF_CARTRIDGES]= [CONF_CDN_LAYOUT]= [CONF_CDN_REPO_BASE]= [CONF_CONSOLE_SESSION_SECRET]= [CONF_DATASTORE_HOSTNAME]= [CONF_DATASTORE_REPLICANTS]= [CONF_DEFAULT_DISTRICTS]= [CONF_DEFAULT_GEAR_CAPABILITIES]= [CONF_DEFAULT_GEAR_SIZE]= [CONF_DISTRICT_MAPPINGS]= [CONF_DOMAIN]= [CONF_FORWARD_DNS]= [CONF_HOSTS_DOMAIN]= [CONF_HOSTS_DOMAIN_KEYFILE]= [CONF_IDLE_INTERVAL]= [CONF_INSTALL_COMPONENTS]= [CONF_INSTALL_METHOD]= [CONF_INTERFACE]= [CONF_JBOSSEAP_EXTRA_REPO]= [CONF_JBOSSEWS_EXTRA_REPO]= [CONF_JBOSS_REPO_BASE]= [CONF_KEEP_HOSTNAME]= [CONF_KEEP_NAMESERVERS]= [CONF_MCOLLECTIVE_PASSWORD]= [CONF_MCOLLECTIVE_USER]= [CONF_METAPKGS]= [CONF_METRICS_INTERVAL]= [CONF_MONGODB_ADMIN_PASSWORD]= [CONF_MONGODB_ADMIN_USER]= [CONF_MONGODB_BROKER_PASSWORD]= [CONF_MONGODB_BROKER_USER]= [CONF_MONGODB_KEY]= [CONF_MONGODB_NAME]= [CONF_MONGODB_PASSWORD]= [CONF_MONGODB_REPLSET]= [CONF_NAMED_ENTRIES]= [CONF_NAMED_HOSTNAME]= [CONF_NAMED_IP_ADDR]= [CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST]= [CONF_NODE_APACHE_FRONTEND]= [CONF_NODE_HOSTNAME]= [CONF_NODE_IP_ADDR]= [CONF_NODE_LOG_CONTEXT]= [CONF_NODE_HOST_TYPE]= [CONF_NODE_PROFILE]= [CONF_NO_JBOSS]= [CONF_NO_JBOSSEAP]= [CONF_NO_JBOSSEWS]= [CONF_NO_NTP]= [CONF_NO_SCRAMBLE]= [CONF_OPENSHIFT_PASSWORD]= [CONF_OPENSHIFT_PASSWORD1]= [CONF_OPENSHIFT_USER]= [CONF_OPENSHIFT_USER1]= [CONF_OPTIONAL_REPO]= [CONF_OSE_ERRATA_BASE]= [CONF_OSE_EXTRA_REPO_BASE]= [CONF_OSE_REPO_BASE]= [CONF_PROFILE_NAME]= [CONF_REPOS_BASE]= [CONF_RHEL_EXTRA_REPO]= [CONF_RHEL_OPTIONAL_REPO]= [CONF_RHEL_REPO]= [CONF_RHN_PASS]= [CONF_RHN_REG_ACTKEY]= [CONF_RHN_REG_NAME]= [CONF_RHN_REG_OPTS]= [CONF_RHN_REG_PASS]= [CONF_RHN_USER]= [CONF_RHSCL_EXTRA_REPO]= [CONF_RHSCL_REPO_BASE]= [CONF_ROUTING_PLUGIN]= [CONF_ROUTING_PLUGIN_PASS]= [CONF_ROUTING_PLUGIN_USER]= [CONF_SM_REG_NAME]= [CONF_SM_REG_PASS]= [CONF_SM_REG_POOL]= [CONF_SYSLOG]= [CONF_VALID_GEAR_SIZES]= [CONF_YUM_EXCLUDE_PKGS]= )
+  declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]= [CONF_ACTIVEMQ_ADMIN_PASSWORD]= [CONF_ACTIVEMQ_AMQ_USER_PASSWORD]= [CONF_ACTIVEMQ_HOSTNAME]= [CONF_ACTIVEMQ_REPLICANTS]= [CONF_BIND_KEY]= [CONF_BIND_KEYALGORITHM]= [CONF_BIND_KEYSIZE]= [CONF_BIND_KEYVALUE]= [CONF_BIND_KRB_KEYTAB]= [CONF_BIND_KRB_PRINCIPAL]= [CONF_BROKER_AUTH_SALT]= [CONF_BROKER_HOSTNAME]= [CONF_BROKER_IP_ADDR]= [CONF_BROKER_KRB_AUTH_REALMS]= [CONF_BROKER_KRB_SERVICE_NAME]= [CONF_BROKER_SESSION_SECRET]= [CONF_CARTRIDGES]= [CONF_CDN_LAYOUT]= [CONF_CDN_REPO_BASE]= [CONF_CONSOLE_SESSION_SECRET]= [CONF_DATASTORE_HOSTNAME]= [CONF_DATASTORE_REPLICANTS]= [CONF_DEFAULT_DISTRICTS]= [CONF_DEFAULT_GEAR_CAPABILITIES]= [CONF_DEFAULT_GEAR_SIZE]= [CONF_DISTRICT_FIRST_UID]= [CONF_DISTRICT_MAPPINGS]= [CONF_DOMAIN]= [CONF_FORWARD_DNS]= [CONF_HOSTS_DOMAIN]= [CONF_HOSTS_DOMAIN_KEYFILE]= [CONF_IDLE_INTERVAL]= [CONF_INSTALL_COMPONENTS]= [CONF_INSTALL_METHOD]= [CONF_INTERFACE]= [CONF_JBOSSEAP_EXTRA_REPO]= [CONF_JBOSSEWS_EXTRA_REPO]= [CONF_JBOSS_REPO_BASE]= [CONF_KEEP_HOSTNAME]= [CONF_KEEP_NAMESERVERS]= [CONF_MCOLLECTIVE_PASSWORD]= [CONF_MCOLLECTIVE_USER]= [CONF_METAPKGS]= [CONF_METRICS_INTERVAL]= [CONF_MONGODB_ADMIN_PASSWORD]= [CONF_MONGODB_ADMIN_USER]= [CONF_MONGODB_BROKER_PASSWORD]= [CONF_MONGODB_BROKER_USER]= [CONF_MONGODB_KEY]= [CONF_MONGODB_NAME]= [CONF_MONGODB_PASSWORD]= [CONF_MONGODB_REPLSET]= [CONF_NAMED_ENTRIES]= [CONF_NAMED_HOSTNAME]= [CONF_NAMED_IP_ADDR]= [CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST]= [CONF_NODE_APACHE_FRONTEND]= [CONF_NODE_HOSTNAME]= [CONF_NODE_HOST_TYPE]= [CONF_NODE_IP_ADDR]= [CONF_NODE_LOG_CONTEXT]= [CONF_NODE_PROFILE]= [CONF_NO_JBOSS]= [CONF_NO_JBOSSEAP]= [CONF_NO_JBOSSEWS]= [CONF_NO_NTP]= [CONF_NO_SCRAMBLE]= [CONF_OPENSHIFT_PASSWORD]= [CONF_OPENSHIFT_PASSWORD1]= [CONF_OPENSHIFT_USER]= [CONF_OPENSHIFT_USER1]= [CONF_OPTIONAL_REPO]= [CONF_OSE_ERRATA_BASE]= [CONF_OSE_EXTRA_REPO_BASE]= [CONF_OSE_REPO_BASE]= [CONF_PORTS_PER_GEAR]= [CONF_ENABLE_SNI_PROXY]= [CONF_SNI_FIRST_PORT]= [CONF_SNI_PROXY_PORTS]= [CONF_PROFILE_NAME]= [CONF_REPOS_BASE]= [CONF_RHEL_EXTRA_REPO]= [CONF_RHEL_OPTIONAL_REPO]= [CONF_RHEL_REPO]= [CONF_RHN_PASS]= [CONF_RHN_REG_ACTKEY]= [CONF_RHN_REG_NAME]= [CONF_RHN_REG_OPTS]= [CONF_RHN_REG_PASS]= [CONF_RHN_USER]= [CONF_RHSCL_EXTRA_REPO]= [CONF_RHSCL_REPO_BASE]= [CONF_ROUTING_PLUGIN]= [CONF_ROUTING_PLUGIN_PASS]= [CONF_ROUTING_PLUGIN_USER]= [CONF_SM_REG_NAME]= [CONF_SM_REG_PASS]= [CONF_SM_REG_POOL]= [CONF_SYSLOG]= [CONF_VALID_GEAR_SIZES]= [CONF_YUM_EXCLUDE_PKGS]= )
   for setting in "${!CONF_@}"
   do
     if ! [[ ${valid_settings[$setting]+1} ]]
@@ -2628,6 +2629,15 @@ set_defaults()
   # Set $node_profile to $CONF_NODE_PROFILE
   node && node_profile="${CONF_NODE_PROFILE:-small}"
   node && node_host_type="${CONF_NODE_HOST_TYPE:-m3.xlarge}"
+  # determine node port proxy settings
+  local def_ports=5; is_xpaas && def_ports=15
+  ports_per_gear="${CONF_PORTS_PER_GEAR:-$def_ports}"
+  # determine node sni proxy settings
+  local def_enable="false"; is_xpaas && def_enable="true"
+  enable_sni_proxy="${CONF_ENABLE_SNI_PROXY:-$def_enable}"
+  sni_first_port="${CONF_SNI_FIRST_PORT:-2303}"
+  def_ports=5; is_xpaas && def_ports=10
+  sni_proxy_ports="${CONF_SNI_PROXY_PORTS:-$def_ports}"
 
   # Set $default_districts to $CONF_DEFAULT_DISTRICTS
   broker && default_districts=${CONF_DEFAULT_DISTRICTS:-true}
@@ -2929,7 +2939,7 @@ configure_firewall_add_rules()
       for rule in ${firewall_allow[$svc]//,/ }
       do
         prot="${rule%%:*}"
-        port="${rule##*:}"
+        port="${rule#*:}"
         printf ' \\\n-A INPUT -m state --state NEW -m %s -p %s --dport %s -j ACCEPT' "$prot" "$prot" "$port"
       done
     )"
@@ -3012,9 +3022,10 @@ restart_services()
   { node || broker; } && service httpd restart
   broker && service openshift-broker restart
   broker && service openshift-console restart
-  node && service openshift-iptables-port-proxy restart
   node && service oddjobd restart
+  node && service openshift-iptables-port-proxy restart
   node && service openshift-node-web-proxy restart
+  node && is_true "$enable_sni_proxy" && service openshift-sni-proxy restart
   node && service openshift-watchman restart
 
   # ensure openshift facts are updated
@@ -3042,9 +3053,12 @@ configure_districts()
 {
   echo "OpenShift: Configuring districts."
 
+  local restart=$RESTART_NEEDED
   if is_true "$default_districts"; then
     for p in ${valid_gear_sizes//,/ }; do
+      is_xpaas "$p" && configure_messaging_plugin 15  # xpaas profile requires more ports
       oo-admin-ctl-district -p $p -n default-${p} -c add-node --available |& sed -e 's/^\(Error\)/OpenShift: oo-admin-ctl-district - \1/g'
+      is_xpaas "$p" && configure_messaging_plugin  # back to default
     done
   else
     for mapping in ${district_mappings//;/ }; do
@@ -3062,12 +3076,16 @@ configure_districts()
       done
       if [ "x$profile" != "x" ]; then
         echo "OpenShift: Adding nodes: $nodes with profile: $profile to district: $district."
+        is_xpaas "$profile" && configure_messaging_plugin 15  # xpaas profile requires more ports
         oo-admin-ctl-district -p $profile -n $district -c add-node -i $nodes |& sed -e 's/^\(Error\)/OpenShift: oo-admin-ctl-district - \1/g'
+        is_xpaas "$profile" && configure_messaging_plugin  # back to default
       else
         echo "OpenShift: Could not determine gear profile for nodes: ${nodes}, cannot add to district $district"
       fi
     done
   fi
+  # configuring districts should not normally require a service restart
+  RESTART_NEEDED=$restart
 
   echo "OpenShift: Completed configuring districts."
 }
