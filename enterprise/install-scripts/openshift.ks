@@ -1846,6 +1846,9 @@ wait_for_mongod()
 }
 
 # $1 = commands
+# $2 = regex to test output
+# $3 = user
+# $4 = password
 execute_mongodb()
 {
   echo "Running commands on MongoDB:"
@@ -1853,7 +1856,13 @@ execute_mongodb()
   echo "$1"
   echo "---"
 
-  output="$( echo "$1" | mongo )"
+  if [ -n "$3" -a -n "$4" ]; then
+    userpass="-u ${3} -p ${4} admin"
+  else
+    userpass=""
+  fi
+
+  output="$( echo "$1" | mongo ${userpass} )"
   echo "$output"
   if [ "$2" ]; then # test output against regex
     [[ "$output" =~ $2 ]] || return 1
@@ -1886,7 +1895,7 @@ configure_datastore_add_users()
     echo "db.addUser('${mongodb_broker_user}', '${mongodb_broker_password}')"
   )"
   set -x
-  
+
   PASSWORDS_TO_DISPLAY=true
 }
 
@@ -1897,30 +1906,37 @@ configure_datastore_add_replicants()
   set +x  # just confusing to have everything re-echo
   wait_for_mongod
 
-  # Configure the replica set.
+  # initiate the replica set with just this host
   execute_mongodb "$(
-    echo 'rs.initiate({'
-    echo "  '_id' : '${mongodb_replset}',"
-    echo "  'members': ["
-    i=0
-    for replicant in ${datastore_replicants//,/ }
-    do
-      if [[ $i -ne 0 ]]
-      then
-        echo ','
-      fi
-      # Because of a bug in Bash, we need to do weird quoting around the comma
-      # to inhibit brace expansion.
-      # https://bugzilla.redhat.com/show_bug.cgi?id=1012015
-      echo -n "    {'_id' : ${i}"," 'host' : '${replicant}'}"
-      ((++i))
-    done
-    echo
-    echo '  ]'
-    echo '})'
+    echo 'rs.initiate()'
   )" '"ok" : 1' || abort_install "OpenShift: Failed to form MongoDB replica set; please do this manually."
 
   configure_datastore_add_users
+
+  # Configure the replica set.
+  for replicant in ${datastore_replicants//,/ }
+  do
+    if [[ ! "$replicant" =~ "$datastore_hostname" ]]
+    then
+      # verify connectivity to $replicant before attempting to add it to the replica set
+      # looks like we can rely on attempt to use mongo shell to connect, even if not
+      # auth'd it appears to return a 0 exit code on successful connect
+      for i in {1..10}
+      do
+        echo "Attempting to connect to ${replicant}..."
+        if echo "" | mongo $replicant
+        then
+          break
+        fi
+        sleep 60
+      done
+
+      execute_mongodb "$(
+        echo "rs.add(\"${replicant}\")"
+      )" '"ok" : 1' ${mongodb_admin_user} ${mongodb_admin_password} || abort_install "OpenShift: Failed to add ${repicant} to replica set; please verify the replica set manually"
+    fi
+  done
+
   set -x
 }
 
