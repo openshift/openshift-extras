@@ -1654,6 +1654,8 @@ configure_selinux_policy_on_node()
 
   restorecon -rv /var/run
   restorecon -rv /var/lib/openshift /etc/httpd/conf.d/openshift
+  # disallow gear users from seeing what other gears exist
+  chmod 0751 /var/lib/openshift
 }
 
 configure_pam_on_node()
