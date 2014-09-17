@@ -1762,6 +1762,10 @@ configure_sysctl_on_node()
   set_sysctl net.ipv4.ip_forward 1 'Enable forwarding for the OpenShift port proxy.'
 
   set_sysctl net.ipv4.conf.all.route_localnet 1 'Allow the OpenShift port proxy to route using loopback addresses.'
+
+  # As recommended elsewhere and investigated at length in https://bugzilla.redhat.com/show_bug.cgi?id=1085115
+  # this is a safe, effective way to keep lots of short requests from exhausting the connection table.
+  set_sysctl net.ipv4.tcp_tw_reuse 1 'Reuse closed connections quickly.' 
 }
 
 
