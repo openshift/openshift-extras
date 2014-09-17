@@ -1,5 +1,5 @@
 #!/bin/bash -x
-# -*- mode: sh; sh-basic-offset: 2 -*-
+# -*- mode: bash; sh-basic-offset: 2 -*-
 # This script configures a single host with OpenShift components. It may
 # be used either as a RHEL6 kickstart script, or the %post section may
 # be extracted and run directly to deploy on an installed RHEL6 image.
@@ -2538,6 +2538,7 @@ options {
         statistics-file "/var/named/data/named_stats.txt";
         memstatistics-file "/var/named/data/named_mem_stats.txt";
 	allow-query     { any; };
+        allow-transfer  { "none"; }; # default to no zone transfers
 
 	/* Path to ISC DLV key */
 	bindkeys-file "/etc/named.iscdlv.key";

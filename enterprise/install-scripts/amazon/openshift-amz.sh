@@ -1695,6 +1695,7 @@ options {
         statistics-file "/var/named/data/named_stats.txt";
         memstatistics-file "/var/named/data/named_mem_stats.txt";
 	allow-query     { any; };
+        allow-transfer  { "none"; }; # default to no zone transfers
 
 	/* Path to ISC DLV key */
 	bindkeys-file "/etc/named.iscdlv.key";
