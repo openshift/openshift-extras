@@ -811,6 +811,8 @@ configure_selinux_policy_on_node()
 
   restorecon -rv /var/run
   restorecon -rv /var/lib/openshift /etc/httpd/conf.d/openshift
+  # disallow gear users from seeing what other gears exist
+  chmod 0751 /var/lib/openshift
 }
 
 configure_pam_on_node()
@@ -919,6 +921,10 @@ configure_sysctl_on_node()
   set_sysctl net.ipv4.ip_forward 1 'Enable forwarding for the OpenShift port proxy.'
 
   set_sysctl net.ipv4.conf.all.route_localnet 1 'Allow the OpenShift port proxy to route using loopback addresses.'
+
+  # As recommended elsewhere and investigated at length in https://bugzilla.redhat.com/show_bug.cgi?id=1085115
+  # this is a safe, effective way to keep lots of short requests from exhausting the connection table.
+  set_sysctl net.ipv4.tcp_tw_reuse 1 'Reuse closed connections quickly.' 
 }
 
 
@@ -1695,6 +1701,7 @@ options {
         statistics-file "/var/named/data/named_stats.txt";
         memstatistics-file "/var/named/data/named_mem_stats.txt";
 	allow-query     { any; };
+        allow-transfer  { "none"; }; # default to no zone transfers
 
 	/* Path to ISC DLV key */
 	bindkeys-file "/etc/named.iscdlv.key";
