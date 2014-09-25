@@ -1913,20 +1913,23 @@ configure_datastore_add_replicants()
   wait_for_mongod
 
   # initiate the replica set with just this host
-  execute_mongodb "$(
-    echo 'rs.initiate()'
-  )" '"ok" : 1' || abort_install "OpenShift: Failed to form MongoDB replica set; please do this manually."
+  execute_mongodb 'rs.initiate()' '"ok" : 1' ||
+    abort_install "OpenShift: Failed to form MongoDB replica set; please do this manually."
+
+  master_out="$(echo 'while (rs.isMaster().primary == null) { sleep(5); }; print("host="+rs.isMaster().primary)' | mongo | grep 'host=')" ||
+    abort_install "OpenShift: Failed to query the MongoDB replica set master; please verify the replica set configuration manually."
 
   configure_datastore_add_users
 
   # Configure the replica set.
   for replicant in ${datastore_replicants//,/ }
   do
-    if [[ ! "$replicant" =~ "$datastore_hostname" ]]
+    if [[ "$replicant" != "${master_out#host=}" ]]
     then
-      # verify connectivity to $replicant before attempting to add it to the replica set
-      # looks like we can rely on attempt to use mongo shell to connect, even if not
-      # auth'd it appears to return a 0 exit code on successful connect
+      # Verify connectivity to $replicant before attempting to add it to the
+      # replica set.  We can simply attempt to use the mongo shell to connect:
+      # even if we don't authenticate, it appears to return a 0 exit code on
+      # successful connect.
       for i in {1..10}
       do
         echo "Attempting to connect to ${replicant}..."
@@ -1937,9 +1940,8 @@ configure_datastore_add_replicants()
         sleep 60
       done
 
-      execute_mongodb "$(
-        echo "rs.add(\"${replicant}\")"
-      )" '"ok" : 1' ${mongodb_admin_user} ${mongodb_admin_password} || abort_install "OpenShift: Failed to add ${repicant} to replica set; please verify the replica set manually"
+      execute_mongodb "rs.add(\"${replicant}\")" '"ok" : 1' ${mongodb_admin_user} ${mongodb_admin_password} ||
+        abort_install "OpenShift: Failed to add ${replicant} to replica set; please verify the replica set manually"
     fi
   done
 
