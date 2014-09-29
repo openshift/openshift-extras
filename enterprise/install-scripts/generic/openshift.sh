@@ -12,6 +12,7 @@
 
 # Table of contents:
 #
+# RECENT CHANGES
 # SPECIFYING PARAMETERS
 # INSTALLATION REPOSITORIES
 # OTHER IMPORTANT NOTES
@@ -26,6 +27,23 @@
 # - Redundant MongoDB and ActiveMQ
 # - Node hosts
 # - Parameters for "yum" install method
+
+# RECENT CHANGES
+#
+# 1. During the lifetime of the 2.1 installer, it was altered to create
+#    randomized service passwords instead of consistent defaults. In
+#    order to use this script effectively in a multi-host deployment,
+#    service passwords should be specified consistently across all hosts
+#    (see the "Service users and passwords" section).
+#
+# 2. Previous to 2.2, the installer defaulted to installing all known
+#    cartridges shipped for OSE. Beginning with this 2.2, the default
+#    set of cartridges will not include JBoss EAP or any other cartridges
+#    that require an add-on subscription (including Fuse and AM-Q).
+#    Customers with the necessary subscriptions can specify extra
+#    cartridges desired with the CONF_CARTRIDGES parameter, e.g.:
+#      # export CONF_CARTRIDGES=standard,jbosseap,fuse,amq
+#    Deprecated NO_JBOSSEAP/EWS options are now removed entirely.
 
 # SPECIFYING PARAMETERS
 #
@@ -656,12 +674,17 @@
 # cartridges / CONF_CARTRIDGES
 #   Comma-separated selections from the following:
 #     all - all cartridges;
-#     standard - all cartridges except for JBossEWS or JBossEAP;
+#     standard - all cartridges that do not require a premium subscription;
+#     stdframework - all framework cartridges from "standard";
+#     stdaddon - all add-on cartridges from "standard";
+#     premium - all cartridges that do require a premium subscription;
 #     cron - embedded cron support;
 #     diy - do-it-yourself cartridge;
 #     haproxy - haproxy support for scalable apps;
+#     fuse - Fuse support; (a premium subscription)
+#     amq - AM-Q support; (a premium subscription)
 #     jbossews - JBossEWS support;
-#     jobsseap - JBossEAP support;
+#     jbosseap - JBossEAP support; (a premium subscription)
 #     jboss - alias for jbossews and jbosseap;
 #     jenkins - Jenkins client and server for continuous integration;
 #     mongodb - MongoDB;
@@ -675,7 +698,7 @@
 #     ruby - Ruby Rack support running on Phusion Passenger.
 #
 #   You may prepend a minus sign '-' to any one of the above to negate it.
-#   For example, all,-jbossews enables all cartridges except for jbossews.
+#   E.g.: standard,-jbossews enables standard cartridges except for jbossews.
 #
 #   You may also specify a package name; any selection that is not in the above
 #   list will be assumed to be a package name and will be added to (or removed
@@ -687,10 +710,10 @@
 #   all,jbossews,-jboss would install all cartridges except for JBoss cartridges
 #   (so neither JBossEWS nor JBossEAP will be installed).
 #
-#   If JBossEAP support is selected, this script will ensure that the required
-#   channels or repositories are enabled.
-#
-#   Default: all
+#   If support for premium cartridges is selected, this script will
+#   ensure that the required channels or repositories are enabled,
+#   and fail if they are not available under your subscription.
+#   Default: standard
 
 # metapkgs / CONF_METAPKGS
 #   Default: recommended
@@ -700,11 +723,6 @@
 #     recommended - Install only the recommended cart dep metapackages
 #     optional - Install the optional AND recommended cart dep metapackages
 # CONF_METAPKGS=optional
-
-# no_jbossews / CONF_NO_JBOSSEWS
-# no_jbosseap / CONF_NO_JBOSSEAP
-#   Deprecated; see CONF_CARTRIDGES. Setting to true has the same
-#   effect as negating the corresponding cartridge in the list.
 
 # Various node front end proxies for accessing gears.
 #
@@ -784,8 +802,8 @@
 #
 # To use this layout, simply set the CDN base URL below. Alternatively,
 # set repository URLs individually if they are in different locations.
-# RHEL, Optional, and JBoss yum repositories will be created if defined;
-# otherwise they should already be configured for installation to succeed.
+# yum repository definitions will be created with any parameters provided;
+# otherwise they should already be defined for installation to succeed.
 #
 # The nightly OSE build repositories use a different layout from CDN.
 # If the location of these is different from the CDN base and CONF_CDN_LAYOUT
@@ -838,6 +856,10 @@
 #   the same priority. The value of this option sets the "baseurl"
 #   setting for the defined repo. Useful for testing prerelease
 #   content
+
+# fuse_extra_repo / CONF_FUSE_EXTRA_REPO
+# amq_extra_repo / CONF_AMQ_EXTRA_REPO
+#   If set, will define a yum repo under the yum,rhsm,rhn install methods.
 
 # rhscl_repo_base / CONF_RHSCL_REPO_BASE
 #   The base URL for the SCL repositories used with the "yum"
@@ -952,13 +974,14 @@ configure_repos()
   # functions.
 
   # Make need_${repo}_repo return false by default.
-  for repo in optional infra node jbosseap_cartridge client_tools jbosseap jbossews extra; do
+  for repo in optional infra node client_tools extra \
+              fuse_cartridge amq_cartridge jbosseap_cartridge jbosseap jbossews; do
       eval "need_${repo}_repo() { false; }"
   done
 
   is_true "$CONF_OPTIONAL_REPO" && need_optional_repo() { :; }
 
-  if [ -n "${CONF_JBOSSEWS_EXTRA_REPO}${CONF_JBOSSEAP_EXTRA_REPO}${CONF_RHEL_OPTIONAL_REPO}${CONF_RHSCL_EXTRA_REPO}" ]; then
+  if [ -n "${jbossews_extra_repo}${jbosseap_extra_repo}${rhel_optional_repo}${rhscl_extra_repo}${fuse_extra_repo}${amq_extra_repo}" ]; then
     need_extra_repo() { :; }
   fi
 
@@ -986,12 +1009,16 @@ configure_repos()
 
     # The jbosseap and jbossas cartridges require the jbossas packages
     # in the jbappplatform channel.
-    is_false "${CONF_NO_JBOSSEAP}" \
+    is_true "${need_jbosseap}" \
              && need_jbosseap_cartridge_repo() { :; } \
              && need_jbosseap_repo() { :; }
 
     # The jbossews cartridge requires the tomcat packages in the jb-ews channel.
-    is_false "${CONF_NO_JBOSSEWS}" && need_jbossews_repo() { :; }
+    is_true "${need_jbossews}" && need_jbossews_repo() { :; }
+
+    # The fuse/amq cartridges require their own channels.
+    is_true "${need_fuse}" && need_fuse_cartridge_repo() { :; }
+    is_true "${need_amq}" && need_amq_cartridge_repo() { :; }
 
     # The rhscl channel is needed for several cartridge platforms.
     need_rhscl_repo() { :; }
@@ -1171,61 +1198,35 @@ configure_extra_repos()
       echo > "${extra_repo_file}"
   fi
 
-  if [ "${rhel_extra_repo}x" != "x" ]; then
-    cat <<YUM >> "${extra_repo_file}"
-[rhel_extra]
-name=rhel_extra
-baseurl=${rhel_extra_repo}
+  local -A priority=(
+    [rhscl_extra_repo]=10
+    [rhel_extra_repo]=20
+    [jbosseap_extra_repo]=30
+    [jbossews_extra_repo]=30
+    [fuse_extra_repo]=30
+    [amq_extra_repo]=30
+  )
+  local -A exclude=(
+    [rhel_extra_repo]='tomcat6*'
+  )
+
+  local repo
+  for repo in "${!priority[@]}"; do
+    local url=$(eval echo '${'$repo'}')
+    if [ "${url}x" != "x" ]; then
+      cat <<YUM >> "${extra_repo_file}"
+[${repo}]
+name=${repo}
+baseurl=${url}
 enabled=1
 gpgcheck=0
-priority=20
+priority=${priority[$repo]}
 sslverify=false
-exclude=tomcat6* ${CONF_YUM_EXCLUDE_PKGS}
+exclude=${exclude[$repo]} ${CONF_YUM_EXCLUDE_PKGS}
 
 YUM
-  fi
-
-  if [ "x${jbosseap_extra_repo}" != "x" ]; then
-    cat <<YUM >> "${extra_repo_file}"
-[jbosseap_extra]
-name=jbosseap_extra
-baseurl=${jbosseap_extra_repo}
-enabled=1
-priority=30
-gpgcheck=0
-exclude= ${CONF_YUM_EXCLUDE_PKGS}
-
-YUM
-
-  fi
-
-  if [ "x${jbossews_extra_repo}" != "x" ]; then
-    cat <<YUM >> "${extra_repo_file}"
-[jbossews_extra]
-name=jbossews_extra
-baseurl=${jbossews_extra_repo}
-enabled=1
-priority=30
-gpgcheck=0
-exclude= ${CONF_YUM_EXCLUDE_PKGS}
-
-YUM
-
-  fi
-
-  if [ "x${rhscl_extra_repo}" != "x" ]; then
-    cat <<YUM >> "${extra_repo_file}"
-[rhscl_extra]
-name=rhscl_extra
-baseurl=${rhscl_extra_repo}
-enabled=1
-priority=10
-gpgcheck=0
-exclude= ${CONF_YUM_EXCLUDE_PKGS}
-
-YUM
-
-  fi
+    fi
+  done
 }
 
 configure_subscription()
@@ -1240,6 +1241,8 @@ configure_subscription()
    need_client_tools_repo && roles="$roles --role client"
    need_node_repo && roles="$roles --role node"
    need_jbosseap_cartridge_repo && roles="$roles --role node-eap"
+   #need_fuse_cartridge_repo && roles="$roles --role node-fuse"
+   #need_amq_cartridge_repo && roles="$roles --role node-amq"
    oo-admin-yum-validator -o 2.1 --fix-all $roles # when fixing, rc is always false
    oo-admin-yum-validator -o 2.1 $roles || abort_install # so check when fixes are done
 
@@ -1277,6 +1280,8 @@ configure_rhn_channels()
     need_node_repo && repos+=('rhel-x86_64-server-6-ose-2.1-node' 'jb-ews-2-x86_64-server-6-rpm')
     need_client_tools_repo && repos+=('rhel-x86_64-server-6-ose-2.1-rhc')
     need_jbosseap_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.1-jbosseap' 'jbappplatform-6-x86_64-server-6-rpm')
+    #need_fuse_cartridge_repo && repos+=('rhel-x86_64-server-6-???')
+    #need_amq_cartridge_repo && repos+=('rhel-x86_64-server-6-???')
 
     set +x # don't log password
     for repo in "${repos[@]}"; do
@@ -1437,30 +1442,43 @@ remove_abrt_addon_python()
 #
 #   install_cart_pkgs - space-delimited string of packages to install; intended to be
 #     used by install_cartridges.
-#   CONF_NO_JBOSSEAP - Boolean value indicating whether or not JBossEAP will be
-#     installed; intended to be used by configure_repos.
-#   CONF_NO_JBOSSEWS - Boolean value indicating whether or not JBossEWS will be
-#     installed; intended to be used by configure_repos.
+#   (the following are intended to be used by configure_repos:)
+#   need_jbosseap - Boolean value indicating whether JBossEAP will be installed
+#   need_jbossews - Boolean value indicating whether JBossEWS will be installed
+#   need_fuse     - Boolean value indicating whether Fuse will be installed
+#   need_amq      - Boolean value indicating whether AM-Q will be installed
 parse_cartridges()
 {
   # $p maps a cartridge specification to a comma-delimited list a packages.
-  local -A p=(
-    [cron]=openshift-origin-cartridge-cron
+  local -A premium=(
+    [amq]=openshift-origin-cartridge-amq
+    [fuse]=openshift-origin-cartridge-fuse
+    [jbosseap]=openshift-origin-cartridge-jbosseap
+  )
+  local -A stdframework=(
     [diy]=openshift-origin-cartridge-diy
     [haproxy]=openshift-origin-cartridge-haproxy
     [jbossews]=openshift-origin-cartridge-jbossews
-    [jbosseap]=openshift-origin-cartridge-jbosseap
-    [jenkins]='openshift-origin-cartridge-jenkins-client openshift-origin-cartridge-jenkins'
-    [mongodb]=openshift-origin-cartridge-mongodb
-    [mysql]=openshift-origin-cartridge-mysql
     [nodejs]=openshift-origin-cartridge-nodejs
     [perl]=openshift-origin-cartridge-perl
     [php]=openshift-origin-cartridge-php
-    [postgresql]=openshift-origin-cartridge-postgresql
     [python]=openshift-origin-cartridge-python
     [ruby]=openshift-origin-cartridge-ruby
   )
+  local -A stdaddon=(
+    [cron]=openshift-origin-cartridge-cron
+    [jenkins]='openshift-origin-cartridge-jenkins-client openshift-origin-cartridge-jenkins'
+    [mongodb]=openshift-origin-cartridge-mongodb
+    [mysql]=openshift-origin-cartridge-mysql
+    [postgresql]=openshift-origin-cartridge-postgresql
+  )
+  local -A p=( )
+  local k
+  for k in "${!premium[@]}"     ; do p[$k]="${premium[$k]}"; done
+  for k in "${!stdframework[@]}"; do p[$k]="${stdframework[$k]}"; done
+  for k in "${!stdaddon[@]}"    ; do p[$k]="${stdaddon[$k]}"; done
 
+  # for those with optional/recommended dependencies
   local -a meta=(
     jbossas
     jbosseap
@@ -1477,20 +1495,13 @@ parse_cartridges()
   local -a all=( ${p[@]} )
 
   # Set some package groups and aliases to provide shortcuts to the user.
-  p[standard]="${all[@]//*jboss*}"
+  p[all]="${all[@]}"
+  p[premium]="${premium[@]}"
+  p[stdframework]="${stdframework[@]}"
+  p[stdaddon]="${stdaddon[@]}"
+  p[standard]="${stdframework[@]} ${stdaddon[@]}"
   p[jboss]="${p[jbossews]} ${p[jbosseap]}"
   p[postgres]="${p[postgresql]}"
-  p[all]="${all[@]}"
-
-  # replicate previous CONF_NO_JBOSS* behavior by removing corresponding carts
-  if is_true "$CONF_NO_JBOSSEAP" ; then
-    echo 'WARNING: CONF_NO_JBOSSEAP is deprecated.  Use CONF_CARTRIDGES instead.'
-    cartridges="$cartridges,-jbosseap"
-  fi
-  if is_true "$CONF_NO_JBOSSEWS" ; then
-    echo 'WARNING: CONF_NO_JBOSSEWS is deprecated.  Use CONF_CARTRIDGES instead.'
-    cartridges="$cartridges,-jbossews"
-  fi
 
   # Build the list of packages to install ($pkgs) based on the list of
   # cartridges that the user instructs us to install ($cartridges).  See
@@ -1529,17 +1540,13 @@ parse_cartridges()
     done
   fi
 
-  # Set CONF_NO_JBOSSEAP=0 if $pkgs includes the JBossEAP cartridges,
-  # CONF_NO_JBOSSEAP=1 otherwise, so that configure_repos will enable
+  # Set need_<cart>=1 if $pkgs includes the relevant cartridge,
+  # need_<cart>=0 otherwise, so that configure_repos will enable
   # only the appropriate channels.
-  [[ "${pkgs[@]}" = *"${p[jbosseap]}"* ]]
-  CONF_NO_JBOSSEAP=$?
-
-  # Set CONF_NO_JBOSSEWS=0 if $pkgs includes the JBossEWS cartridges,
-  # CONF_NO_JBOSSEWS=1 otherwise, so that configure_repos will enable
-  # only the appropriate channels.
-  [[ "${pkgs[@]}" = *"${p[jbossews]}"* ]]
-  CONF_NO_JBOSSEWS=$?
+  need_jbosseap=0; [[ "${pkgs[@]}" = *"${p[jbosseap]}"* ]] && need_jbosseap=1
+  need_jbossews=0; [[ "${pkgs[@]}" = *"${p[jbossews]}"* ]] && need_jbossews=1
+  need_fuse=0;     [[ "${pkgs[@]}" = *"${p[fuse]}"* ]] && need_fuse=1
+  need_amq=0;      [[ "${pkgs[@]}" = *"${p[amq]}"* ]] && need_amq=1
 
   # Uniquify (and, as a side effect, sort) pkgs and assign the result to
   # install_cart_pkgs for install_cartridges to use.
@@ -3301,7 +3308,8 @@ set_defaults()
   # The declare statement below is generated by the following command:
   #
   #   echo declare -A valid_settings=\( $(grep -o 'CONF_[0-9A-Z_]\+' openshift.ks |sort -u |grep -v -F -e CONF_BAZ -e CONF_FOO |sed -e 's/.*/[&]=/') \)
-  declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]= [CONF_ACTIVEMQ_ADMIN_PASSWORD]= [CONF_ACTIVEMQ_AMQ_USER_PASSWORD]= [CONF_ACTIVEMQ_HOSTNAME]= [CONF_ACTIVEMQ_REPLICANTS]= [CONF_BIND_KEY]= [CONF_BIND_KEYALGORITHM]= [CONF_BIND_KEYSIZE]= [CONF_BIND_KEYVALUE]= [CONF_BIND_KRB_KEYTAB]= [CONF_BIND_KRB_PRINCIPAL]= [CONF_BROKER_AUTH_SALT]= [CONF_BROKER_HOSTNAME]= [CONF_BROKER_IP_ADDR]= [CONF_BROKER_KRB_AUTH_REALMS]= [CONF_BROKER_KRB_SERVICE_NAME]= [CONF_BROKER_SESSION_SECRET]= [CONF_CARTRIDGES]= [CONF_CDN_LAYOUT]= [CONF_CDN_REPO_BASE]= [CONF_CONSOLE_SESSION_SECRET]= [CONF_DATASTORE_HOSTNAME]= [CONF_DATASTORE_REPLICANTS]= [CONF_DEFAULT_DISTRICTS]= [CONF_DEFAULT_GEAR_CAPABILITIES]= [CONF_DEFAULT_GEAR_SIZE]= [CONF_DISTRICT_FIRST_UID]= [CONF_DISTRICT_MAPPINGS]= [CONF_DOMAIN]= [CONF_FORWARD_DNS]= [CONF_HOSTS_DOMAIN]= [CONF_HOSTS_DOMAIN_KEYFILE]= [CONF_IDLE_INTERVAL]= [CONF_INSTALL_COMPONENTS]= [CONF_INSTALL_METHOD]= [CONF_INTERFACE]= [CONF_JBOSSEAP_EXTRA_REPO]= [CONF_JBOSSEWS_EXTRA_REPO]= [CONF_JBOSS_REPO_BASE]= [CONF_KEEP_HOSTNAME]= [CONF_KEEP_NAMESERVERS]= [CONF_MCOLLECTIVE_PASSWORD]= [CONF_MCOLLECTIVE_USER]= [CONF_METAPKGS]= [CONF_METRICS_INTERVAL]= [CONF_MONGODB_ADMIN_PASSWORD]= [CONF_MONGODB_ADMIN_USER]= [CONF_MONGODB_BROKER_PASSWORD]= [CONF_MONGODB_BROKER_USER]= [CONF_MONGODB_KEY]= [CONF_MONGODB_NAME]= [CONF_MONGODB_PASSWORD]= [CONF_MONGODB_REPLSET]= [CONF_NAMED_ENTRIES]= [CONF_NAMED_HOSTNAME]= [CONF_NAMED_IP_ADDR]= [CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST]= [CONF_NODE_APACHE_FRONTEND]= [CONF_NODE_HOSTNAME]= [CONF_NODE_HOST_TYPE]= [CONF_NODE_IP_ADDR]= [CONF_NODE_LOG_CONTEXT]= [CONF_NODE_PROFILE]= [CONF_NO_JBOSS]= [CONF_NO_JBOSSEAP]= [CONF_NO_JBOSSEWS]= [CONF_NO_NTP]= [CONF_NO_SCRAMBLE]= [CONF_OPENSHIFT_PASSWORD]= [CONF_OPENSHIFT_PASSWORD1]= [CONF_OPENSHIFT_USER]= [CONF_OPENSHIFT_USER1]= [CONF_OPTIONAL_REPO]= [CONF_OSE_ERRATA_BASE]= [CONF_OSE_EXTRA_REPO_BASE]= [CONF_OSE_REPO_BASE]= [CONF_PORTS_PER_GEAR]= [CONF_ENABLE_SNI_PROXY]= [CONF_SNI_FIRST_PORT]= [CONF_SNI_PROXY_PORTS]= [CONF_PROFILE_NAME]= [CONF_REPOS_BASE]= [CONF_RHEL_EXTRA_REPO]= [CONF_RHEL_OPTIONAL_REPO]= [CONF_RHEL_REPO]= [CONF_RHN_PASS]= [CONF_RHN_REG_ACTKEY]= [CONF_RHN_REG_NAME]= [CONF_RHN_REG_OPTS]= [CONF_RHN_REG_PASS]= [CONF_RHN_USER]= [CONF_RHSCL_EXTRA_REPO]= [CONF_RHSCL_REPO_BASE]= [CONF_ROUTING_PLUGIN]= [CONF_ROUTING_PLUGIN_PASS]= [CONF_ROUTING_PLUGIN_USER]= [CONF_SM_REG_NAME]= [CONF_SM_REG_PASS]= [CONF_SM_REG_POOL]= [CONF_SYSLOG]= [CONF_VALID_GEAR_SIZES]= [CONF_YUM_EXCLUDE_PKGS]= [CONF_BROKER_AUTH_PRIV_KEY]=)
+declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]= [CONF_ACTIVEMQ_ADMIN_PASSWORD]= [CONF_ACTIVEMQ_AMQ_USER_PASSWORD]= [CONF_ACTIVEMQ_HOSTNAME]= [CONF_ACTIVEMQ_REPLICANTS]= [CONF_AMQ_EXTRA_REPO]= [CONF_BIND_KEY]= [CONF_BIND_KEYALGORITHM]= [CONF_BIND_KEYSIZE]= [CONF_BIND_KEYVALUE]= [CONF_BIND_KRB_KEYTAB]= [CONF_BIND_KRB_PRINCIPAL]= [CONF_BROKER_AUTH_PRIV_KEY]= [CONF_BROKER_AUTH_SALT]= [CONF_BROKER_HOSTNAME]= [CONF_BROKER_IP_ADDR]= [CONF_BROKER_KRB_AUTH_REALMS]= [CONF_BROKER_KRB_SERVICE_NAME]= [CONF_BROKER_SESSION_SECRET]= [CONF_CARTRIDGES]= [CONF_CDN_LAYOUT]= [CONF_CDN_REPO_BASE]= [CONF_CONSOLE_SESSION_SECRET]= [CONF_DATASTORE_HOSTNAME]= [CONF_DATASTORE_REPLICANTS]= [CONF_DEFAULT_DISTRICTS]= [CONF_DEFAULT_GEAR_CAPABILITIES]= [CONF_DEFAULT_GEAR_SIZE]= [CONF_DISTRICT_FIRST_UID]= [CONF_DISTRICT_MAPPINGS]= [CONF_DOMAIN]= [CONF_ENABLE_SNI_PROXY]= [CONF_FORWARD_DNS]= [CONF_FUSE_EXTRA_REPO]= [CONF_HOSTS_DOMAIN]= [CONF_HOSTS_DOMAIN_KEYFILE]= [CONF_IDLE_INTERVAL]= [CONF_INSTALL_COMPONENTS]= [CONF_INSTALL_METHOD]= [CONF_INTERFACE]= [CONF_JBOSSEAP_EXTRA_REPO]= [CONF_JBOSSEWS_EXTRA_REPO]= [CONF_JBOSS_REPO_BASE]= [CONF_KEEP_HOSTNAME]= [CONF_KEEP_NAMESERVERS]= [CONF_MCOLLECTIVE_PASSWORD]= [CONF_MCOLLECTIVE_USER]= [CONF_METAPKGS]= [CONF_METRICS_INTERVAL]= [CONF_MONGODB_ADMIN_PASSWORD]= [CONF_MONGODB_ADMIN_USER]= [CONF_MONGODB_BROKER_PASSWORD]= [CONF_MONGODB_BROKER_USER]= [CONF_MONGODB_KEY]= [CONF_MONGODB_NAME]= [CONF_MONGODB_PASSWORD]= [CONF_MONGODB_REPLSET]= [CONF_NAMED_ENTRIES]= [CONF_NAMED_HOSTNAME]= [CONF_NAMED_IP_ADDR]= [CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST]= [CONF_NODE_APACHE_FRONTEND]= [CONF_NODE_HOSTNAME]= [CONF_NODE_HOST_TYPE]= [CONF_NODE_IP_ADDR]= [CONF_NODE_LOG_CONTEXT]= [CONF_NODE_PROFILE]= [CONF_NO_NTP]= [CONF_NO_SCRAMBLE]= [CONF_OPENSHIFT_PASSWORD]= [CONF_OPENSHIFT_PASSWORD1]= [CONF_OPENSHIFT_USER]= [CONF_OPENSHIFT_USER1]= [CONF_OPTIONAL_REPO]= [CONF_OSE_ERRATA_BASE]= [CONF_OSE_EXTRA_REPO_BASE]= [CONF_OSE_REPO_BASE]= [CONF_PORTS_PER_GEAR]= [CONF_PROFILE_NAME]= [CONF_REPOS_BASE]= [CONF_RHEL_EXTRA_REPO]= [CONF_RHEL_OPTIONAL_REPO]= [CONF_RHEL_REPO]= [CONF_RHN_PASS]= [CONF_RHN_REG_ACTKEY]= [CONF_RHN_REG_NAME]= [CONF_RHN_REG_OPTS]= [CONF_RHN_REG_PASS]= [CONF_RHN_USER]= [CONF_RHSCL_EXTRA_REPO]= [CONF_RHSCL_REPO_BASE]= [CONF_ROUTING_PLUGIN]= [CONF_ROUTING_PLUGIN_PASS]= [CONF_ROUTING_PLUGIN_USER]= [CONF_SM_REG_NAME]= [CONF_SM_REG_PASS]= [CONF_SM_REG_POOL]= [CONF_SNI_FIRST_PORT]= [CONF_SNI_PROXY_PORTS]= [CONF_SYSLOG]= [CONF_VALID_GEAR_SIZES]= [CONF_YUM_EXCLUDE_PKGS]= )
+
   for setting in "${!CONF_@}"
   do
     if ! [[ ${valid_settings[$setting]+1} ]]
@@ -3362,7 +3370,7 @@ set_defaults()
   # Following are some settings used in subsequent steps.
 
   # The list of packages to install.
-  cartridges="${CONF_CARTRIDGES:-all}"
+  cartridges="${CONF_CARTRIDGES:-standard}"
 
   # There a no defaults for these. Customers should be using
   # subscriptions via RHN. Internally we use private systems.
@@ -3371,6 +3379,8 @@ set_defaults()
   jboss_repo_base="${CONF_JBOSS_REPO_BASE%/}"
   jbosseap_extra_repo="${CONF_JBOSSEAP_EXTRA_REPO%/}"
   jbossews_extra_repo="${CONF_JBOSSEWS_EXTRA_REPO%/}"
+  fuse_extra_repo="${CONF_FUSE_EXTRA_REPO%/}"
+  amq_extra_repo="${CONF_AMQ_EXTRA_REPO%/}"
   rhscl_repo_base="${CONF_RHSCL_REPO_BASE%/}"
   rhscl_extra_repo="${CONF_RHSCL_EXTRA_REPO%/}"
   rhel_optional_repo="${CONF_RHEL_OPTIONAL_REPO%/}"
