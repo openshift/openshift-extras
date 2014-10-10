@@ -728,8 +728,8 @@
 #
 # Node httpd proxy frontend. Valid options are vhost and mod_rewrite.
 # mod_rewrite is intended for nodes with thousands of gears (mostly idle).
-# vhost is not as scalable but more extensible.
-#CONF_NODE_APACHE_FRONTEND=mod_rewrite
+# vhost is not as scalable but is more extensible and performant.
+#CONF_NODE_APACHE_FRONTEND=vhost
 #
 # enable_sni_proxy / CONF_ENABLE_SNI_PROXY
 #   Default: false (but true for "xpaas" profile)
@@ -3044,10 +3044,10 @@ PORTS_PER_USER=${ports_per_gear}
 
   case "$node_apache_frontend" in
     mod_rewrite)
-      # No-op.  node.conf uses mod_rewrite by default
+      sed -i -e "/OPENSHIFT_FRONTEND_HTTP_PLUGINS/ s/vhost/mod-rewrite/" $conf
       ;;
     vhost)
-      sed -i -e "s/mod-rewrite/vhost/" $conf
+      sed -i -e "/OPENSHIFT_FRONTEND_HTTP_PLUGINS/ s/mod-rewrite/vhost/" $conf
       ;;
   esac
 
@@ -3459,7 +3459,7 @@ declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS
   # how to label the system when subscribing
   profile_name="${CONF_PROFILE_NAME:-OpenShift-${hostname}-${cur_ip_addr}-${CONF_RHN_USER}}"
 
-  node_apache_frontend="${CONF_NODE_APACHE_FRONTEND:-mod_rewrite}"
+  node_apache_frontend="${CONF_NODE_APACHE_FRONTEND:-vhost}"
 
   # Unless otherwise specified, the named service, data store, and
   # ActiveMQ service are assumed to be the current host if we are
