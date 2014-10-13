@@ -27,7 +27,7 @@
 # - Node hosts
 # - Parameters for "yum" install method
 
-# RECENT CHANGES
+# RECENT CHANGES - very important when adding to existing deployments.
 #
 # 1. During the lifetime of the 2.1 installer, it was altered to create
 #    randomized service passwords instead of consistent defaults. In
@@ -36,13 +36,22 @@
 #    (see the "Service users and passwords" section).
 #
 # 2. Previous to 2.2, the installer defaulted to installing all known
-#    cartridges shipped for OSE. Beginning with this 2.2, the default
+#    cartridges shipped for OSE. Beginning with OSE 2.2, the default
 #    set of cartridges will not include JBoss EAP or any other cartridges
 #    that require an add-on subscription (including Fuse and AM-Q).
 #    Customers with the necessary subscriptions can specify extra
 #    cartridges desired with the CONF_CARTRIDGES parameter, e.g.:
 #      # export CONF_CARTRIDGES=standard,jbosseap,fuse,amq
 #    Deprecated NO_JBOSSEAP/EWS options are now removed entirely.
+#
+# 3. While mod_rewrite was the default node host frontend for OSE 2.1,
+#    vhost is the default in OSE 2.2 and mod_rewrite is considered
+#    deprecated. It is not recommended to deploy nodes with different
+#    frontends within the same deployment, as moving gears between
+#    these nodes may be problematic. Consult http://red.ht/1sau3Tq for
+#    directions on how to change the frontend for an existing node host.
+#    You must set CONF_NODE_APACHE_FRONTEND=mod_rewrite if you wish to
+#    install a node using the deprecated frontend.
 
 # SPECIFYING PARAMETERS
 #
@@ -727,7 +736,14 @@
 #
 # Node httpd proxy frontend. Valid options are vhost and mod_rewrite.
 # mod_rewrite is intended for nodes with thousands of gears (mostly idle).
-# vhost is not as scalable but is more extensible and performant.
+# vhost is not as scalable but more extensible and under typical usage,
+# more performant.
+# NOTE: While mod_rewrite was the default for OSE 2.1, vhost is
+# the default in OSE 2.2 and mod_rewrite is considered
+# deprecated. It is not recommended to deploy nodes with different
+# frontends within the same deployment, as moving gears between
+# these nodes may be problematic. Consult http://red.ht/1sau3Tq for
+# directions on how to change the frontend for an existing node host.
 #CONF_NODE_APACHE_FRONTEND=vhost
 #
 # enable_sni_proxy / CONF_ENABLE_SNI_PROXY
