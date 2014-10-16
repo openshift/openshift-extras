@@ -2940,10 +2940,17 @@ EOF
 }
 
 # if the broker and node are on the same machine we need to manually update the
-# nodes.db
+# config so that node doesn't intercept broker requests
 fix_broker_routing()
 {
-  cat <<EOF >> /var/lib/openshift/.httpd.d/nodes.txt
+  case "$node_apache_frontend" in
+    vhost)
+      # node vhost obscures the broker vhost with same ServerName; not really needed, so remove it.
+      sed -i -e '/<VirtualHost \*:443>/,/<\/VirtualHost/ s/^/#/' /etc/httpd/conf.d/000001_openshift_origin_frontend_vhost.conf
+      ;;
+    mod_rewrite)
+      # node vhost obscures the broker vhost still, but can let specific requests past
+      cat <<EOF >> /var/lib/openshift/.httpd.d/nodes.txt
 __default__ REDIRECT:/console
 __default__/rsync_id_rsa.pub NOPROXY
 __default__/console TOHTTPS:127.0.0.1:8118/console
@@ -2952,9 +2959,15 @@ __default__/admin-console TOHTTPS:127.0.0.1:8080/admin-console
 __default__/assets TOHTTPS:127.0.0.1:8080/assets
 EOF
 
-  httxt2dbm -f DB -i /etc/httpd/conf.d/openshift/nodes.txt -o /etc/httpd/conf.d/openshift/nodes.db
-  chown root:apache /etc/httpd/conf.d/openshift/nodes.txt /etc/httpd/conf.d/openshift/nodes.db
-  chmod 750 /etc/httpd/conf.d/openshift/nodes.txt /etc/httpd/conf.d/openshift/nodes.db
+      httxt2dbm -f DB -i /etc/httpd/conf.d/openshift/nodes.txt -o /etc/httpd/conf.d/openshift/nodes.db
+      chown root:apache /etc/httpd/conf.d/openshift/nodes.txt /etc/httpd/conf.d/openshift/nodes.db
+      chmod 750 /etc/httpd/conf.d/openshift/nodes.txt /etc/httpd/conf.d/openshift/nodes.db
+      ;;
+    *)
+      echo "Invalid value: CONF_NODE_APACHE_FRONTEND=${node_apache_frontend}"
+      abort_install
+      ;;
+  esac
 }
 
 configure_access_keys_on_broker()
