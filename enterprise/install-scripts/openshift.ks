@@ -1422,7 +1422,7 @@ yum_install_or_exit()
 {
   echo "OpenShift: yum install $*"
   COUNT=0
-  while true; do
+  time while true; do
     yum install -y $* $disable_plugin
     if [ $? -eq 0 ]; then
       return
@@ -1707,14 +1707,14 @@ configure_selinux_policy_on_broker()
 
     # Allow the broker to communicate with the named service.
     echo boolean -m --on allow_ypbind
-  ) | semanage -i -
+  ) | time semanage -i -
 
   fixfiles -R ruby193-rubygem-passenger restore
   fixfiles -R ruby193-mod_passenger restore
 
   restorecon -rv /var/run
   # This should cover everything in the SCL, including passenger
-  restorecon -rv /opt
+  time restorecon -rv /opt
 }
 
 # Fix up SELinux policy on the node.
@@ -1747,11 +1747,11 @@ configure_selinux_policy_on_node()
     # Enable rules to keep gears from binding where they should not
     local last_port=6999; let "last_port=$district_first_uid+5999"
     is_true "$isolate_gears" && oo-gear-firewall -s output -b "$district_first_uid" -e "$last_port"
-  ) | semanage -i -
+  ) | time semanage -i -
 
 
   restorecon -rv /var/run
-  restorecon -rv /var/lib/openshift /etc/httpd/conf.d/openshift
+  time restorecon -rv /var/lib/openshift /etc/httpd/conf.d/openshift
   # disallow gear users from seeing what other gears exist
   chmod 0751 /var/lib/openshift
 }
@@ -1819,14 +1819,14 @@ configure_quotas_on_node()
 
     # External mounts, esp. at /var/lib/openshift, may often be created
     # with an incorrect context and quotacheck hits SElinux denials.
-    restorecon "${geardata_mnt}"
+    time restorecon "${geardata_mnt}"
     # Generate user quota info for the mount point.
-    quotacheck -cmug "${geardata_mnt}"
+    time quotacheck -cmug "${geardata_mnt}"
     # fix up selinux label on created quota file
     restorecon "${geardata_mnt}"/aquota.user
 
     # (re)enable quotas
-    quotaon "${geardata_mnt}"
+    time quotaon "${geardata_mnt}"
   fi
 }
 
@@ -1935,7 +1935,7 @@ configure_datastore_add_users()
   set +x  # just confusing to have everything re-echo
   wait_for_mongod
 
-  execute_mongodb "$(
+  time execute_mongodb "$(
     if [[ ${datastore_replicants} =~ , ]]
     then
       echo 'while (rs.isMaster().primary == null) { sleep(5); }'
@@ -1965,7 +1965,7 @@ configure_datastore_add_replicants()
   wait_for_mongod
 
   # initiate the replica set with just this host
-  execute_mongodb 'rs.initiate()' '"ok" : 1' ||
+  time execute_mongodb 'rs.initiate()' '"ok" : 1' ||
     abort_install "OpenShift: Failed to form MongoDB replica set; please do this manually."
 
   master_out="$(echo 'while (rs.isMaster().primary == null) { sleep(5); }; print("host="+rs.isMaster().primary)' | mongo | grep 'host=')" ||
@@ -1992,7 +1992,7 @@ configure_datastore_add_replicants()
         sleep 60
       done
 
-      execute_mongodb "rs.add(\"${replicant}\")" '"ok" : 1' ${mongodb_admin_user} ${mongodb_admin_password} ||
+      time execute_mongodb "rs.add(\"${replicant}\")" '"ok" : 1' ${mongodb_admin_user} ${mongodb_admin_password} ||
         abort_install "OpenShift: Failed to add ${replicant} to replica set; please verify the replica set manually"
     fi
   done
@@ -4033,9 +4033,11 @@ restart_services()
 run_diagnostics()
 {
   echo "OpenShift: Begin running oo-diagnostics."
+  date +%Y-%m-%d-%H:%M:%S
   # prepending the output of oo-diagnostics breaks the ansi color coding
   # remove all ansi escape sequences from oo-diagnostics output
   oo-diagnostics |& sed -u -e 's/\x1B\[[0-9;]*[JKmsu]//g' -e 's/^/OpenShift: oo-diagnostics output - /g'
+  date +%Y-%m-%d-%H:%M:%S
   echo "OpenShift: Completed running oo-diagnostics."
 }
 
@@ -4048,6 +4050,7 @@ reboot_after()
 configure_districts()
 {
   echo "OpenShift: Configuring districts."
+  date +%Y-%m-%d-%H:%M:%S
 
   local restart=$RESTART_NEEDED
   if is_true "$default_districts"; then
@@ -4083,6 +4086,7 @@ configure_districts()
   # configuring districts should not normally require a service restart
   RESTART_NEEDED=$restart
 
+  date +%Y-%m-%d-%H:%M:%S
   echo "OpenShift: Completed configuring districts."
 }
 
@@ -4153,11 +4157,13 @@ declare -A firewall_allow
 
 set_defaults
 
+date +%Y-%m-%d-%H:%M:%S
 for action in ${actions//,/ }
 do
   [ "$(type -t "$action")" = function ] || abort_install "Invalid action: ${action}"
   "$action"
 done
+date +%Y-%m-%d-%H:%M:%S
 
 # In the case of a kickstart, some services will not be able to start, and the
 # host will automatically reboot anyway after the kickstart script completes.
