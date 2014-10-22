@@ -35,7 +35,7 @@
 #    service passwords should be specified consistently across all hosts
 #    (see the "Service users and passwords" section).
 #
-# 2. Previous to 2.2, the installer defaulted to installing all known
+# 2. Prior to 2.2, the installer defaulted to installing all known
 #    cartridges shipped for OSE. Beginning with OSE 2.2, the default
 #    set of cartridges will not include JBoss EAP or any other cartridges
 #    that require an add-on subscription (including Fuse and AM-Q).
@@ -52,6 +52,14 @@
 #    directions on how to change the frontend for an existing node host.
 #    You must set CONF_NODE_APACHE_FRONTEND=mod_rewrite if you wish to
 #    install a node using the deprecated frontend.
+#
+# 4. Prior to 2.2, network isolation for gears was not applied by default.
+#    Without isolation, gears could bind and connect to localhost as well
+#    as IPs belonging to other gears. Beginning with 2.2, oo-gear-firewall
+#    is invoked by default at installation in order to prevent this.
+#    Note that this is done prior to districting, so you may need to re-run
+#    oo-gear-firewall after the node has been put in a district if it has
+#    a non-standard UID range. See CONF_ISOLATE_GEARS for details.
 
 # SPECIFYING PARAMETERS
 #
@@ -490,6 +498,8 @@
 #   Districts will be created on the broker with a pool of gear UIDs
 #   beginning at this number. Should be between 1000 and 500,000.
 #   These UIDs will be used for gears on nodes.
+#   If specified for a node install, gear isolation rules will start at
+#   this UID as well.
 
 # routing_plugin / CONF_ROUTING_PLUGIN
 # routing_plugin_user / CONF_ROUTING_PLUGIN_USER
@@ -794,6 +804,17 @@
 #   This is used for the node to specify a public IP, if different from the
 #   one on its NIC.
 #CONF_NODE_IP_ADDR=10.10.10.10
+
+# isolate_gears / CONF_ISOLATE_GEARS
+#   Default: true
+#   If true, the node will be configured with network isolation such that
+#   gears cannot bind or connect to internal IPs belonging to other gears.
+#   The UID range covered begins at CONF_DISTRICT_FIRST_UID and ends 6000
+#   later, which is the standard size of the gear UID range.
+#   Note that this is done prior to districting, so you may need to re-run
+#   oo-gear-firewall after the node has been put in a district if it has
+#   a non-standard UID range.
+#CONF_ISOLATE_GEARS=false
 
 #----------------------------------------------------------#
 #           Parameters for "yum" install method            #
@@ -1401,7 +1422,7 @@ yum_install_or_exit()
 {
   echo "OpenShift: yum install $*"
   COUNT=0
-  while true; do
+  time while true; do
     yum install -y $* $disable_plugin
     if [ $? -eq 0 ]; then
       return
@@ -1686,14 +1707,14 @@ configure_selinux_policy_on_broker()
 
     # Allow the broker to communicate with the named service.
     echo boolean -m --on allow_ypbind
-  ) | semanage -i -
+  ) | time semanage -i -
 
   fixfiles -R ruby193-rubygem-passenger restore
   fixfiles -R ruby193-mod_passenger restore
 
   restorecon -rv /var/run
   # This should cover everything in the SCL, including passenger
-  restorecon -rv /opt
+  time restorecon -rv /opt
 }
 
 # Fix up SELinux policy on the node.
@@ -1701,6 +1722,7 @@ configure_selinux_policy_on_node()
 {
   # We combine these setsebool commands into a single semanage command
   # because separate commands take a long time to run.
+  ulimit -n 131071  # semanage runs out of file descriptors at normal ulimit
   (
     # Allow the node to write files in the http file context.
     echo boolean -m --on httpd_unified
@@ -1721,11 +1743,15 @@ configure_selinux_policy_on_node()
 
     # Enable polyinstantiation for gear data.
     echo boolean -m --on allow_polyinstantiation
-  ) | semanage -i -
+
+    # Enable rules to keep gears from binding where they should not
+    local last_port=6999; let "last_port=$district_first_uid+5999"
+    is_true "$isolate_gears" && oo-gear-firewall -s output -b "$district_first_uid" -e "$last_port"
+  ) | time semanage -i -
 
 
   restorecon -rv /var/run
-  restorecon -rv /var/lib/openshift /etc/httpd/conf.d/openshift
+  time restorecon -rv /var/lib/openshift /etc/httpd/conf.d/openshift
   # disallow gear users from seeing what other gears exist
   chmod 0751 /var/lib/openshift
 }
@@ -1793,14 +1819,14 @@ configure_quotas_on_node()
 
     # External mounts, esp. at /var/lib/openshift, may often be created
     # with an incorrect context and quotacheck hits SElinux denials.
-    restorecon "${geardata_mnt}"
+    time restorecon "${geardata_mnt}"
     # Generate user quota info for the mount point.
-    quotacheck -cmug "${geardata_mnt}"
+    time quotacheck -cmug "${geardata_mnt}"
     # fix up selinux label on created quota file
     restorecon "${geardata_mnt}"/aquota.user
 
     # (re)enable quotas
-    quotaon "${geardata_mnt}"
+    time quotaon "${geardata_mnt}"
   fi
 }
 
@@ -1909,7 +1935,7 @@ configure_datastore_add_users()
   set +x  # just confusing to have everything re-echo
   wait_for_mongod
 
-  execute_mongodb "$(
+  time execute_mongodb "$(
     if [[ ${datastore_replicants} =~ , ]]
     then
       echo 'while (rs.isMaster().primary == null) { sleep(5); }'
@@ -1939,7 +1965,7 @@ configure_datastore_add_replicants()
   wait_for_mongod
 
   # initiate the replica set with just this host
-  execute_mongodb 'rs.initiate()' '"ok" : 1' ||
+  time execute_mongodb 'rs.initiate()' '"ok" : 1' ||
     abort_install "OpenShift: Failed to form MongoDB replica set; please do this manually."
 
   master_out="$(echo 'while (rs.isMaster().primary == null) { sleep(5); }; print("host="+rs.isMaster().primary)' | mongo | grep 'host=')" ||
@@ -1966,7 +1992,7 @@ configure_datastore_add_replicants()
         sleep 60
       done
 
-      execute_mongodb "rs.add(\"${replicant}\")" '"ok" : 1' ${mongodb_admin_user} ${mongodb_admin_password} ||
+      time execute_mongodb "rs.add(\"${replicant}\")" '"ok" : 1' ${mongodb_admin_user} ${mongodb_admin_password} ||
         abort_install "OpenShift: Failed to add ${replicant} to replica set; please verify the replica set manually"
     fi
   done
@@ -2881,13 +2907,12 @@ configure_controller()
 configure_messaging_plugin()
 { # 1 optional arg - ports per gear
   local ports="${1:-$ports_per_gear}"
-  local first_uid="${CONF_DISTRICT_FIRST_UID:-1000}"
   local pool_size=6000
   let "pool_size=30000/$ports"
 
   local file=/etc/openshift/plugins.d/openshift-origin-msg-broker-mcollective.conf
   cp "$file"{.example,}
-  sed -i -e "s/DISTRICTS_FIRST_UID=.*/DISTRICTS_FIRST_UID=${first_uid}/
+  sed -i -e "s/DISTRICTS_FIRST_UID=.*/DISTRICTS_FIRST_UID=${district_first_uid}/
              s/DISTRICTS_MAX_CAPACITY=.*/DISTRICTS_MAX_CAPACITY=${pool_size}/
             " $file
   RESTART_NEEDED=true
@@ -3383,7 +3408,7 @@ set_defaults()
   # The declare statement below is generated by the following command:
   #
   #   echo declare -A valid_settings=\( $(grep -o 'CONF_[0-9A-Z_]\+' openshift.ks |sort -u |grep -v -F -e CONF_BAZ -e CONF_FOO |sed -e 's/.*/[&]=/') \)
-declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]= [CONF_ACTIVEMQ_ADMIN_PASSWORD]= [CONF_ACTIVEMQ_AMQ_USER_PASSWORD]= [CONF_ACTIVEMQ_HOSTNAME]= [CONF_ACTIVEMQ_REPLICANTS]= [CONF_AMQ_EXTRA_REPO]= [CONF_BIND_KEY]= [CONF_BIND_KEYALGORITHM]= [CONF_BIND_KEYSIZE]= [CONF_BIND_KEYVALUE]= [CONF_BIND_KRB_KEYTAB]= [CONF_BIND_KRB_PRINCIPAL]= [CONF_BROKER_AUTH_PRIV_KEY]= [CONF_BROKER_AUTH_SALT]= [CONF_BROKER_HOSTNAME]= [CONF_BROKER_IP_ADDR]= [CONF_BROKER_KRB_AUTH_REALMS]= [CONF_BROKER_KRB_SERVICE_NAME]= [CONF_BROKER_SESSION_SECRET]= [CONF_CARTRIDGES]= [CONF_CDN_LAYOUT]= [CONF_CDN_REPO_BASE]= [CONF_CONSOLE_SESSION_SECRET]= [CONF_DATASTORE_HOSTNAME]= [CONF_DATASTORE_REPLICANTS]= [CONF_DEFAULT_DISTRICTS]= [CONF_DEFAULT_GEAR_CAPABILITIES]= [CONF_DEFAULT_GEAR_SIZE]= [CONF_DISTRICT_FIRST_UID]= [CONF_DISTRICT_MAPPINGS]= [CONF_DOMAIN]= [CONF_ENABLE_SNI_PROXY]= [CONF_FORWARD_DNS]= [CONF_FUSE_EXTRA_REPO]= [CONF_HOSTS_DOMAIN]= [CONF_HOSTS_DOMAIN_KEYFILE]= [CONF_IDLE_INTERVAL]= [CONF_INSTALL_COMPONENTS]= [CONF_INSTALL_METHOD]= [CONF_INTERFACE]= [CONF_JBOSSEAP_EXTRA_REPO]= [CONF_JBOSSEWS_EXTRA_REPO]= [CONF_JBOSS_REPO_BASE]= [CONF_KEEP_HOSTNAME]= [CONF_KEEP_NAMESERVERS]= [CONF_MCOLLECTIVE_PASSWORD]= [CONF_MCOLLECTIVE_USER]= [CONF_METAPKGS]= [CONF_METRICS_INTERVAL]= [CONF_MONGODB_ADMIN_PASSWORD]= [CONF_MONGODB_ADMIN_USER]= [CONF_MONGODB_BROKER_PASSWORD]= [CONF_MONGODB_BROKER_USER]= [CONF_MONGODB_KEY]= [CONF_MONGODB_NAME]= [CONF_MONGODB_PASSWORD]= [CONF_MONGODB_REPLSET]= [CONF_NAMED_ENTRIES]= [CONF_NAMED_HOSTNAME]= [CONF_NAMED_IP_ADDR]= [CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST]= [CONF_NODE_APACHE_FRONTEND]= [CONF_NODE_HOSTNAME]= [CONF_NODE_HOST_TYPE]= [CONF_NODE_IP_ADDR]= [CONF_NODE_LOG_CONTEXT]= [CONF_NODE_PROFILE]= [CONF_NO_NTP]= [CONF_NO_SCRAMBLE]= [CONF_OPENSHIFT_PASSWORD]= [CONF_OPENSHIFT_PASSWORD1]= [CONF_OPENSHIFT_USER]= [CONF_OPENSHIFT_USER1]= [CONF_OPTIONAL_REPO]= [CONF_OSE_ERRATA_BASE]= [CONF_OSE_EXTRA_REPO_BASE]= [CONF_OSE_REPO_BASE]= [CONF_PORTS_PER_GEAR]= [CONF_PROFILE_NAME]= [CONF_REPOS_BASE]= [CONF_RHEL_EXTRA_REPO]= [CONF_RHEL_OPTIONAL_REPO]= [CONF_RHEL_REPO]= [CONF_RHN_PASS]= [CONF_RHN_REG_ACTKEY]= [CONF_RHN_REG_NAME]= [CONF_RHN_REG_OPTS]= [CONF_RHN_REG_PASS]= [CONF_RHN_USER]= [CONF_RHSCL_EXTRA_REPO]= [CONF_RHSCL_REPO_BASE]= [CONF_ROUTING_PLUGIN]= [CONF_ROUTING_PLUGIN_PASS]= [CONF_ROUTING_PLUGIN_USER]= [CONF_SM_REG_NAME]= [CONF_SM_REG_PASS]= [CONF_SM_REG_POOL]= [CONF_SNI_FIRST_PORT]= [CONF_SNI_PROXY_PORTS]= [CONF_SYSLOG]= [CONF_VALID_GEAR_SIZES]= [CONF_YUM_EXCLUDE_PKGS]= )
+declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]= [CONF_ACTIVEMQ_ADMIN_PASSWORD]= [CONF_ACTIVEMQ_AMQ_USER_PASSWORD]= [CONF_ACTIVEMQ_HOSTNAME]= [CONF_ACTIVEMQ_REPLICANTS]= [CONF_AMQ_EXTRA_REPO]= [CONF_BIND_KEY]= [CONF_BIND_KEYALGORITHM]= [CONF_BIND_KEYSIZE]= [CONF_BIND_KEYVALUE]= [CONF_BIND_KRB_KEYTAB]= [CONF_BIND_KRB_PRINCIPAL]= [CONF_BROKER_AUTH_PRIV_KEY]= [CONF_BROKER_AUTH_SALT]= [CONF_BROKER_HOSTNAME]= [CONF_BROKER_IP_ADDR]= [CONF_BROKER_KRB_AUTH_REALMS]= [CONF_BROKER_KRB_SERVICE_NAME]= [CONF_BROKER_SESSION_SECRET]= [CONF_CARTRIDGES]= [CONF_CDN_LAYOUT]= [CONF_CDN_REPO_BASE]= [CONF_CONSOLE_SESSION_SECRET]= [CONF_DATASTORE_HOSTNAME]= [CONF_DATASTORE_REPLICANTS]= [CONF_DEFAULT_DISTRICTS]= [CONF_DEFAULT_GEAR_CAPABILITIES]= [CONF_DEFAULT_GEAR_SIZE]= [CONF_ISOLATE_GEARS]= [CONF_DISTRICT_FIRST_UID]= [CONF_DISTRICT_MAPPINGS]= [CONF_DOMAIN]= [CONF_ENABLE_SNI_PROXY]= [CONF_FORWARD_DNS]= [CONF_FUSE_EXTRA_REPO]= [CONF_HOSTS_DOMAIN]= [CONF_HOSTS_DOMAIN_KEYFILE]= [CONF_IDLE_INTERVAL]= [CONF_INSTALL_COMPONENTS]= [CONF_INSTALL_METHOD]= [CONF_INTERFACE]= [CONF_JBOSSEAP_EXTRA_REPO]= [CONF_JBOSSEWS_EXTRA_REPO]= [CONF_JBOSS_REPO_BASE]= [CONF_KEEP_HOSTNAME]= [CONF_KEEP_NAMESERVERS]= [CONF_MCOLLECTIVE_PASSWORD]= [CONF_MCOLLECTIVE_USER]= [CONF_METAPKGS]= [CONF_METRICS_INTERVAL]= [CONF_MONGODB_ADMIN_PASSWORD]= [CONF_MONGODB_ADMIN_USER]= [CONF_MONGODB_BROKER_PASSWORD]= [CONF_MONGODB_BROKER_USER]= [CONF_MONGODB_KEY]= [CONF_MONGODB_NAME]= [CONF_MONGODB_PASSWORD]= [CONF_MONGODB_REPLSET]= [CONF_NAMED_ENTRIES]= [CONF_NAMED_HOSTNAME]= [CONF_NAMED_IP_ADDR]= [CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST]= [CONF_NODE_APACHE_FRONTEND]= [CONF_NODE_HOSTNAME]= [CONF_NODE_HOST_TYPE]= [CONF_NODE_IP_ADDR]= [CONF_NODE_LOG_CONTEXT]= [CONF_NODE_PROFILE]= [CONF_NO_NTP]= [CONF_NO_SCRAMBLE]= [CONF_OPENSHIFT_PASSWORD]= [CONF_OPENSHIFT_PASSWORD1]= [CONF_OPENSHIFT_USER]= [CONF_OPENSHIFT_USER1]= [CONF_OPTIONAL_REPO]= [CONF_OSE_ERRATA_BASE]= [CONF_OSE_EXTRA_REPO_BASE]= [CONF_OSE_REPO_BASE]= [CONF_PORTS_PER_GEAR]= [CONF_PROFILE_NAME]= [CONF_REPOS_BASE]= [CONF_RHEL_EXTRA_REPO]= [CONF_RHEL_OPTIONAL_REPO]= [CONF_RHEL_REPO]= [CONF_RHN_PASS]= [CONF_RHN_REG_ACTKEY]= [CONF_RHN_REG_NAME]= [CONF_RHN_REG_OPTS]= [CONF_RHN_REG_PASS]= [CONF_RHN_USER]= [CONF_RHSCL_EXTRA_REPO]= [CONF_RHSCL_REPO_BASE]= [CONF_ROUTING_PLUGIN]= [CONF_ROUTING_PLUGIN_PASS]= [CONF_ROUTING_PLUGIN_USER]= [CONF_SM_REG_NAME]= [CONF_SM_REG_PASS]= [CONF_SM_REG_POOL]= [CONF_SNI_FIRST_PORT]= [CONF_SNI_PROXY_PORTS]= [CONF_SYSLOG]= [CONF_VALID_GEAR_SIZES]= [CONF_YUM_EXCLUDE_PKGS]= )
 
   for setting in "${!CONF_@}"
   do
@@ -3585,9 +3610,11 @@ declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS
   # Set $node_profile to $CONF_NODE_PROFILE
   node && node_profile="${CONF_NODE_PROFILE:-small}"
   node && node_host_type="${CONF_NODE_HOST_TYPE:-m3.xlarge}"
-  # determine node port proxy settings
+  # determine node port and UID settings
   local def_ports=5; is_xpaas && def_ports=15
   ports_per_gear="${CONF_PORTS_PER_GEAR:-$def_ports}"
+  district_first_uid="${CONF_DISTRICT_FIRST_UID:-1000}"
+  isolate_gears="${CONF_ISOLATE_GEARS:-true}"
   # determine node sni proxy settings
   local def_enable="false"; is_xpaas && def_enable="true"
   enable_sni_proxy="${CONF_ENABLE_SNI_PROXY:-$def_enable}"
@@ -3911,6 +3938,14 @@ configure_firewall_add_rules()
   sed -i -e $'/-A INPUT -j REJECT/i \\\n'"${rules:3}" /etc/sysconfig/iptables
 }
 
+configure_gear_isolation_firewall()
+{
+  if is_true "$isolate_gears"; then
+    local last_port=6999; let "last_port=$district_first_uid+5999"
+    oo-gear-firewall -i conf -b "$district_first_uid" -e "$last_port"
+  fi
+}
+
 configure_openshift()
 {
   echo "OpenShift: Begin configuring OpenShift."
@@ -3951,6 +3986,7 @@ configure_openshift()
   node && install_rsync_pub_key
 
   configure_firewall_add_rules
+  node && configure_gear_isolation_firewall
 
   sysctl -p
   restorecon -rv /etc/openshift
@@ -3997,9 +4033,11 @@ restart_services()
 run_diagnostics()
 {
   echo "OpenShift: Begin running oo-diagnostics."
+  date +%Y-%m-%d-%H:%M:%S
   # prepending the output of oo-diagnostics breaks the ansi color coding
   # remove all ansi escape sequences from oo-diagnostics output
   oo-diagnostics |& sed -u -e 's/\x1B\[[0-9;]*[JKmsu]//g' -e 's/^/OpenShift: oo-diagnostics output - /g'
+  date +%Y-%m-%d-%H:%M:%S
   echo "OpenShift: Completed running oo-diagnostics."
 }
 
@@ -4012,6 +4050,7 @@ reboot_after()
 configure_districts()
 {
   echo "OpenShift: Configuring districts."
+  date +%Y-%m-%d-%H:%M:%S
 
   local restart=$RESTART_NEEDED
   if is_true "$default_districts"; then
@@ -4047,6 +4086,7 @@ configure_districts()
   # configuring districts should not normally require a service restart
   RESTART_NEEDED=$restart
 
+  date +%Y-%m-%d-%H:%M:%S
   echo "OpenShift: Completed configuring districts."
 }
 
@@ -4117,11 +4157,13 @@ declare -A firewall_allow
 
 set_defaults
 
+date +%Y-%m-%d-%H:%M:%S
 for action in ${actions//,/ }
 do
   [ "$(type -t "$action")" = function ] || abort_install "Invalid action: ${action}"
   "$action"
 done
+date +%Y-%m-%d-%H:%M:%S
 
 # In the case of a kickstart, some services will not be able to start, and the
 # host will automatically reboot anyway after the kickstart script completes.
