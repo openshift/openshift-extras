@@ -1440,7 +1440,7 @@ install_node_pkgs()
   if [[ "$CONF_SYSLOG" = *gears* ]]; then
     pkgs="$pkgs rsyslog7 rsyslog7-mmopenshift"
 
-    if rpm -q rsyslog
+    if rpm -q rsyslog ; then
       # RHEL 6.6's rsyslog7 package conflicts with the originaly RHEL 6 package
       yum erase -y rsyslog
     fi
