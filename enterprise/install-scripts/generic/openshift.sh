@@ -1437,7 +1437,14 @@ install_node_pkgs()
   pkgs="$pkgs rubygem-openshift-origin-frontend-haproxy-sni-proxy"
   # technically not needed unless $CONF_SYSLOG includes gears, but it
   # does not hurt to have them available:
-  pkgs="$pkgs rsyslog7 rsyslog7-mmopenshift"
+  if [[ "$CONF_SYSLOG" = *gears* ]]; then
+    pkgs="$pkgs rsyslog7 rsyslog7-mmopenshift"
+
+    if rpm -q rsyslog
+      # RHEL 6.6's rsyslog7 package conflicts with the originaly RHEL 6 package
+      yum erase -y rsyslog
+    fi
+  fi
 
   case "$node_apache_frontend" in
     mod_rewrite)
