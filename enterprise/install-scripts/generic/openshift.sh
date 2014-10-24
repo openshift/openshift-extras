@@ -1438,11 +1438,13 @@ install_node_pkgs()
   # technically not needed unless $CONF_SYSLOG includes gears, but it
   # does not hurt to have them available:
   if [[ "$CONF_SYSLOG" = *gears* ]]; then
-    pkgs="$pkgs rsyslog7 rsyslog7-mmopenshift"
-
     if rpm -q rsyslog ; then
       # RHEL 6.6's rsyslog7 package conflicts with the originaly RHEL 6 package
-      yum erase -y rsyslog
+      yum shell --disableplugin=priorities -y <<YUM
+erase rsyslog
+install rsyslog7 rsyslog7-mmopenshift
+transaction run
+YUM
     fi
   fi
 
@@ -2064,10 +2066,9 @@ configure_gears()
       /ModLoad imjournal/ s/^/#/    # imjournal module is not even available...
       /IMJournalStateFile/ s/^/#/
       /OmitLocalLogging/ s/^/#/
-      s/syslog.d/syslog7.d/         # use separate conf directory from regular syslog
-    ' /etc/rsyslog7.conf
+    ' /etc/rsyslog.conf
     # enable custom log format via imuxsock
-    cat <<'LOGCONF' >> /etc/rsyslog7.d/imuxsock-and-openshift-gears.conf
+    cat <<'LOGCONF' >> /etc/rsyslog.d/imuxsock-and-openshift-gears.conf
 # load the modules as necessary for gear logs to be annotated
 module(load="imuxsock" SysSock.Annotate="on" SysSock.ParseTrusted="on" SysSock.UsePIDFromSystem="on")
 module(load="mmopenshift")
@@ -2103,10 +2104,8 @@ else
 
 LOGCONF
     configure_mmopenshift_selinux_policy
-    service rsyslog stop
-    chkconfig rsyslog off
-    chkconfig rsyslog7 on
-    service rsyslog7 start
+    chkconfig rsyslog on
+    service rsyslog restart
   fi
 }
 
@@ -3154,7 +3153,6 @@ PLATFORM_SYSLOG_THRESHOLD=LOG_INFO\
 PLATFORM_SYSLOG_TRACE_ENABLED=1
     ' /etc/openshift/node.conf
     echo 'local0.*  /var/log/messages' > /etc/rsyslog.d/openshift-node-platform.conf
-    echo 'local0.*  /var/log/messages' > /etc/rsyslog7.d/openshift-node-platform.conf
   fi
   if [[ "$CONF_SYSLOG" = *frontend* ]]; then
     # send the frontend logs to syslog (in addition to file)
