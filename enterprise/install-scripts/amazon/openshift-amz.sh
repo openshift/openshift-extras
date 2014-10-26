@@ -167,11 +167,10 @@ configure_repos()
 configure_yum_repos()
 {
 #  configure_rhel_repo
-
-  for repo in optional jbosseap jbossews rhscl; do
-    eval "need_${repo}_repo && configure_${repo}_repo"
-  done
+  need_optional_repo && configure_optional_repo
+  need_rhscl_repo && configure_rhscl_repo
   configure_ose_yum_repos
+  configure_cart_repos
   configure_extra_repos
   yum clean metadata
   yum_install_or_exit openshift-enterprise-release
@@ -262,45 +261,6 @@ exclude= ${CONF_YUM_EXCLUDE_PKGS}
 YUM
 }
 
-configure_jbosseap_repo()
-{
-  # The JBossEAP cartridge depends on Red Hat's JBoss packages.
-
-  if [ "x${jboss_repo_base}" != "x" ]; then
-    cat <<YUM > /etc/yum.repos.d/jbosseap.repo
-[jbosseap]
-name=jbosseap
-baseurl=${jboss_repo_base}/jbeap/6/os
-enabled=1
-priority=30
-gpgcheck=0
-sslverify=false
-exclude= ${CONF_YUM_EXCLUDE_PKGS}
-
-YUM
-
-  fi
-}
-
-configure_jbossews_repo()
-{
-  # The JBossEWS cartridge depends on Red Hat's JBoss packages.
-  if [ "x${jboss_repo_base}" != "x" ]; then
-    cat <<YUM > /etc/yum.repos.d/jbossews.repo
-[jbossews]
-name=jbossews
-baseurl=${jboss_repo_base}/jbews/2/os
-enabled=1
-priority=30
-gpgcheck=0
-sslverify=false
-exclude= ${CONF_YUM_EXCLUDE_PKGS}
-
-YUM
-
-  fi
-}
-
 configure_rhscl_repo()
 {
   if [ "x${rhscl_repo_base}" != "x" ]; then
@@ -319,8 +279,37 @@ YUM
   fi
 }
 
+configure_cart_repos()
+{ # add cartridge (or dependency) repo as needed
+  local -A url=(
+          [jbosseap]="${jboss_repo_base}/jbeap/6/os"
+          [jbossews]="${jboss_repo_base}/jbews/2/os"
+    [fuse_cartridge]="${jboss_repo_base}/ose-jbossfuse/2.1/os"
+     [amq_cartridge]="${jboss_repo_base}/ose-jbossamq/2.1/os"
+  )
+  # Using jboss_repo_base for amq/fuse might seem a little odd in the future;
+  # in which case, add a repo base just for them. Use extras if needed for now.
+
+  local repo
+  for repo in "${!url[@]}"; do
+    eval "need_${repo}_repo" || continue
+    cat <<YUM > "/etc/yum.repos.d/${repo}.repo"
+[${repo}]
+name=${repo}
+baseurl=${url[$repo]}
+enabled=1
+gpgcheck=0
+sslverify=false
+priority=30
+sslverify=false
+exclude= ${CONF_YUM_EXCLUDE_PKGS}
+
+YUM
+  done
+}
+
 configure_extra_repos()
-{
+{ # add all defined extra repos in one file
   extra_repo_file=/etc/yum.repos.d/ose_extra.repo
   if [ -e "${extra_repo_file}" ]; then
       echo > "${extra_repo_file}"
@@ -370,8 +359,8 @@ configure_subscription()
    need_client_tools_repo && roles="$roles --role client"
    need_node_repo && roles="$roles --role node"
    need_jbosseap_cartridge_repo && roles="$roles --role node-eap"
-   #need_fuse_cartridge_repo && roles="$roles --role node-fuse"
-   #need_amq_cartridge_repo && roles="$roles --role node-amq"
+   need_fuse_cartridge_repo && roles="$roles --role node-fuse"
+   need_amq_cartridge_repo && roles="$roles --role node-amq"
    oo-admin-yum-validator -o 2.1 --fix-all $roles # when fixing, rc is always false
    oo-admin-yum-validator -o 2.1 $roles || abort_install # so check when fixes are done
 
@@ -409,8 +398,8 @@ configure_rhn_channels()
     need_node_repo && repos+=('rhel-x86_64-server-6-ose-2.1-node' 'jb-ews-2-x86_64-server-6-rpm')
     need_client_tools_repo && repos+=('rhel-x86_64-server-6-ose-2.1-rhc')
     need_jbosseap_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.1-jbosseap' 'jbappplatform-6-x86_64-server-6-rpm')
-    #need_fuse_cartridge_repo && repos+=('rhel-x86_64-server-6-???')
-    #need_amq_cartridge_repo && repos+=('rhel-x86_64-server-6-???')
+    need_fuse_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.1-jbossfuse')
+    need_amq_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.1-jbossamq')
 
     set +x # don't log password
     for repo in "${repos[@]}"; do
@@ -576,7 +565,7 @@ remove_abrt_addon_python()
 #   cartridges - comma-delimited list of cartridges to install; should
 #     be set by set_defaults (see also CONF_CARTRIDGES / cartridges).
 #
-# The following variable will be assigned:
+# The following variables will be assigned:
 #
 #   install_cart_pkgs - space-delimited string of packages to install; intended to be
 #     used by install_cartridges.
@@ -591,6 +580,7 @@ parse_cartridges()
   local -A premium=(
     [amq]=openshift-origin-cartridge-amq
     [fuse]=openshift-origin-cartridge-fuse
+    [fuse-builder]=openshift-origin-cartridge-fuse-builder
     [jbosseap]=openshift-origin-cartridge-jbosseap
   )
   local -A stdframework=(
@@ -683,7 +673,10 @@ parse_cartridges()
   # only the appropriate channels.
   need_jbosseap=0; [[ "${pkgs[@]}" = *"${p[jbosseap]}"* ]] && need_jbosseap=1
   need_jbossews=0; [[ "${pkgs[@]}" = *"${p[jbossews]}"* ]] && need_jbossews=1
-  need_fuse=0;     [[ "${pkgs[@]}" = *"${p[fuse]}"* ]] && need_fuse=1
+    # fuse is "special" because there's also a fuse-builder cart that can be used with
+    # either fuse or amq and doesn't necessarily imply either. It comes from either of
+    # those two channels; assume if desired they will have one of those channels already.
+  need_fuse=0;     [[ "${pkgs[@]}" =~ openshift-origin-cartridge-fuse( |$) ]] && need_fuse=1
   need_amq=0;      [[ "${pkgs[@]}" = *"${p[amq]}"* ]] && need_amq=1
 
   # Uniquify (and, as a side effect, sort) pkgs and assign the result to
