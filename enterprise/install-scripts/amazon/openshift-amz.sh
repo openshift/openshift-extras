@@ -800,8 +800,8 @@ configure_selinux_policy_on_node()
     echo boolean -m --on allow_polyinstantiation
 
     # Enable rules to keep gears from binding where they should not
-    local last_port=6999; let "last_port=$district_first_uid+5999"
-    is_true "$isolate_gears" && oo-gear-firewall -s output -b "$district_first_uid" -e "$last_port"
+    # Note: relies on node code loading, must load after node.conf has correct frontend configured
+    is_true "$isolate_gears" && oo-gear-firewall -s output -b "$district_first_uid" -e "$district_last_uid"
   ) | time semanage -i -
 
 
@@ -1241,8 +1241,7 @@ enable_services_on_node()
 
   # Allow connections to openshift-sni-proxy
   if is_true "$enable_sni_proxy"; then
-    local last_port; let "last_port=$sni_first_port+$sni_proxy_ports-1"
-    firewall_allow[sni]="tcp:${sni_first_port}:${last_port}"
+    firewall_allow[sni]="tcp:${sni_first_port}:${sni_last_port}"
     chkconfig openshift-sni-proxy on
   else
     chkconfig openshift-sni-proxy off
@@ -2207,8 +2206,7 @@ PORTS_PER_USER=${ports_per_gear}
     # configure in the sni proxy
     grep -q 'OPENSHIFT_FRONTEND_HTTP_PLUGINS=.*sni-proxy' $conf || \
       sed -i -e '/OPENSHIFT_FRONTEND_HTTP_PLUGINS/ s/=/=openshift-origin-frontend-haproxy-sni-proxy,/' $conf
-    local last_port; let "last_port=$sni_first_port+$sni_proxy_ports-1"
-    local port_list=$(seq -s, "$sni_first_port" "$last_port")
+    local port_list=$(seq -s, "$sni_first_port" "$sni_last_port")
     sed -i -e "/PROXY_PORTS/ cPROXY_PORTS=${port_list}" /etc/openshift/node-plugins.d/openshift-origin-frontend-haproxy-sni-proxy.conf
   fi
 
@@ -2665,6 +2663,8 @@ declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS
   local def_ports=5; is_xpaas && def_ports=15
   ports_per_gear="${CONF_PORTS_PER_GEAR:-$def_ports}"
   district_first_uid="${CONF_DISTRICT_FIRST_UID:-1000}"
+  let "district_uid_pool=30000/$ports_per_gear"
+  let "district_last_uid=$district_first_uid+$district_uid_pool-1"
   isolate_gears="${CONF_ISOLATE_GEARS:-true}"
   # determine node sni proxy settings
   local def_enable="false"; is_xpaas && def_enable="true"
@@ -2672,6 +2672,7 @@ declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS
   sni_first_port="${CONF_SNI_FIRST_PORT:-2303}"
   def_ports=5; is_xpaas && def_ports=10
   sni_proxy_ports="${CONF_SNI_PROXY_PORTS:-$def_ports}"
+  let "sni_last_port=$sni_first_port+$sni_proxy_ports-1"
 
   # Set $default_districts to $CONF_DEFAULT_DISTRICTS
   broker && default_districts=${CONF_DEFAULT_DISTRICTS:-true}
@@ -2991,10 +2992,7 @@ configure_firewall_add_rules()
 
 configure_gear_isolation_firewall()
 {
-  if is_true "$isolate_gears"; then
-    local last_port=6999; let "last_port=$district_first_uid+5999"
-    oo-gear-firewall -i conf -b "$district_first_uid" -e "$last_port"
-  fi
+  is_true "$isolate_gears" && oo-gear-firewall -i conf -b "$district_first_uid" -e "$district_last_uid"
 }
 
 configure_openshift()
@@ -3014,7 +3012,6 @@ configure_openshift()
   node && configure_cgroups_on_node
   node && configure_quotas_on_node
   broker && configure_selinux_policy_on_broker
-  node && configure_selinux_policy_on_node
   node && configure_sysctl_on_node
   node && configure_sshd_on_node
   node && configure_idler_on_node
@@ -3030,6 +3027,7 @@ configure_openshift()
   node && configure_port_proxy
   node && configure_gears
   node && configure_node
+  node && configure_selinux_policy_on_node # must run after configure_node
   node && configure_wildcard_ssl_cert_on_node
   node && update_openshift_facts_on_node
 
