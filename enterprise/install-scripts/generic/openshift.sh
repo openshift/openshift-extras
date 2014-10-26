@@ -3125,12 +3125,6 @@ PORTS_PER_USER=${ports_per_gear}
   echo $broker_hostname > /etc/openshift/env/OPENSHIFT_BROKER_HOST
   echo $domain > /etc/openshift/env/OPENSHIFT_CLOUD_DOMAIN
 
-  if is_true "$node_v1_enable"
-  then
-    mkdir -p /var/lib/openshift/.settings
-    touch /var/lib/openshift/.settings/v1_cartridge_format
-  fi
-
   # Set the ServerName for httpd
   sed -i -e "s/ServerName .*$/ServerName ${hostname}/" \
       /etc/httpd/conf.d/000001_openshift_origin_node_servername.conf
