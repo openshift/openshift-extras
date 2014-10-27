@@ -841,8 +841,8 @@
 # <base>/ose-node/2.2/os
 # <base>/ose-rhc/2.2/os
 # <base>/ose-jbosseap/2.2/os  - JBoss EAP cartridge
-# <base>/ose-jbossamq/2.1/os  - JBoss AMQ cartridge
-# <base>/ose-jbossfuse/2.1/os - JBoss Fuse cartridge
+# <base>/ose-jbossamq/2.2/os  - JBoss AMQ cartridge
+# <base>/ose-jbossfuse/2.2/os - JBoss Fuse cartridge
 # <base>/rhscl/1/os/        - RH software collections
 #
 # To use this layout, simply set the CDN base URL below. Alternatively,
@@ -1204,8 +1204,8 @@ configure_cart_repos()
   local -A url=(
           [jbosseap]="${jboss_repo_base}/jbeap/6/os"
           [jbossews]="${jboss_repo_base}/jbews/2/os"
-    [fuse_cartridge]="${jboss_repo_base}/ose-jbossfuse/2.1/os"
-     [amq_cartridge]="${jboss_repo_base}/ose-jbossamq/2.1/os"
+    [fuse_cartridge]="${jboss_repo_base}/ose-jbossfuse/2.2/os"
+     [amq_cartridge]="${jboss_repo_base}/ose-jbossamq/2.2/os"
   )
   # Using jboss_repo_base for amq/fuse might seem a little odd in the future;
   # in which case, add a repo base just for them. Use extras if needed for now.
@@ -1279,8 +1279,8 @@ configure_subscription()
    need_jbosseap_cartridge_repo && roles="$roles --role node-eap"
    need_fuse_cartridge_repo && roles="$roles --role node-fuse"
    need_amq_cartridge_repo && roles="$roles --role node-amq"
-   oo-admin-yum-validator -o 2.1 --fix-all $roles # when fixing, rc is always false
-   oo-admin-yum-validator -o 2.1 $roles || abort_install # so check when fixes are done
+   oo-admin-yum-validator -o 2.2 --fix-all $roles # when fixing, rc is always false
+   oo-admin-yum-validator -o 2.2 $roles || abort_install # so check when fixes are done
 
    # Normally we could just install o-e-release and it would pull in yum-validator;
    # however it turns out the ruby dependencies can sometimes be pulled in from the
@@ -1311,13 +1311,13 @@ configure_rhn_channels()
     # Enable the node or infrastructure channel to enable installing the release RPM
     repos=('rhel-x86_64-server-6-rhscl-1')
     if ! need_node_repo || need_infra_repo ; then
-      repos+=('rhel-x86_64-server-6-ose-2.1-infrastructure')
+      repos+=('rhel-x86_64-server-6-ose-2.2-infrastructure')
     fi
-    need_node_repo && repos+=('rhel-x86_64-server-6-ose-2.1-node' 'jb-ews-2-x86_64-server-6-rpm')
-    need_client_tools_repo && repos+=('rhel-x86_64-server-6-ose-2.1-rhc')
-    need_jbosseap_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.1-jbosseap' 'jbappplatform-6-x86_64-server-6-rpm')
-    need_fuse_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.1-jbossfuse')
-    need_amq_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.1-jbossamq')
+    need_node_repo && repos+=('rhel-x86_64-server-6-ose-2.2-node' 'jb-ews-2-x86_64-server-6-rpm')
+    need_client_tools_repo && repos+=('rhel-x86_64-server-6-ose-2.2-rhc')
+    need_jbosseap_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.2-jbosseap' 'jbappplatform-6-x86_64-server-6-rpm')
+    need_fuse_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.2-jbossfuse')
+    need_amq_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.2-jbossamq')
 
     set +x # don't log password
     for repo in "${repos[@]}"; do
@@ -1357,8 +1357,8 @@ configure_rhsm_channels()
   done
 
   # Enable the node or infrastructure repo to enable installing the release RPM
-  if need_node_repo; then subscription-manager repos --enable=rhel-6-server-ose-2.1-node-rpms || abort_install
-  else subscription-manager repos --enable=rhel-6-server-ose-2.1-infra-rpms || abort_install
+  if need_node_repo; then subscription-manager repos --enable=rhel-6-server-ose-2.2-node-rpms || abort_install
+  else subscription-manager repos --enable=rhel-6-server-ose-2.2-infra-rpms || abort_install
   fi
   configure_subscription
 }
@@ -3726,12 +3726,12 @@ validate_preflight()
   # test that subscription parameters are available if needed
   if [[ "$CONF_INSTALL_METHOD" = rhn ]]; then
     # Check whether we are already registered with RHN and already have
-    # ose-2.1 channels added.  If we are not, we will need RHN
+    # ose-2.2 channels added.  If we are not, we will need RHN
     # credentials so that we can register and add channels ourselves.
     #
     # Note: With RHN, we need credentials both for registration and
     # adding channels.
-    if ! [[ -f /etc/sysconfig/rhn/systemid ]] || ! rhn-channel -l | grep -q '^rhel-x86_64-server-6-ose-2.1-\(node\|infrastructure\)'
+    if ! [[ -f /etc/sysconfig/rhn/systemid ]] || ! rhn-channel -l | grep -q '^rhel-x86_64-server-6-ose-2.2-\(node\|infrastructure\)'
     then
       set +x # don't log password
       if [ ! "$CONF_RHN_USER" -o ! "$CONF_RHN_PASS" ]; then
@@ -3758,7 +3758,7 @@ validate_preflight()
     fi
 
     # If we are not given a pool id, we will not be able to attach any
-    # pools, so make sure we already have access to the ose-2.1 repos,
+    # pools, so make sure we already have access to the ose-2.2 repos,
     # and we also need to make sure that we have NOT been given RHN
     # credentials because that would cause configure_rhsm_channels to
     # re-register and lose access to those repos.
@@ -3769,7 +3769,7 @@ validate_preflight()
     # a harmless but possibly alarming "Broken pipe" error message.
     if [[ ! "$CONF_SM_REG_POOL" ]] &&
         ( [[ "$CONF_RHN_USER" && "$CONF_RHN_PASS" ]] ||
-          ! subscription-manager repos | tac | grep -q '\<rhel-6-server-ose-2.1-\(infra\|node\)-rpms$' ); then
+          ! subscription-manager repos | tac | grep -q '\<rhel-6-server-ose-2.2-\(infra\|node\)-rpms$' ); then
       echo "OpenShift: Install method rhsm requires a poolid."
       preflight_failure=1
     fi
