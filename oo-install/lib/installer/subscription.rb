@@ -4,8 +4,13 @@ module Installer
   class Subscription
     include Installer::Helpers
 
-    @repo_attrs = [:repos_base, :jboss_repo_base, :jenkins_repo_base, :scl_repo, :os_repo, :os_optional_repo, :puppet_repo_rpm]
-    @object_attrs = [:subscription_type, :rh_username, :rh_password, :sm_reg_pool, :rhn_reg_actkey].concat(@repo_attrs)
+    @extra_repo_attrs = [:ose_repo_base, :rhel_extra_repo, :jbosseap_extra_repo,
+                         :jbossews_extra_repo, :rhscl_extra_repo, :ose_extra_repo]
+    @repo_attrs = [:repos_base, :jenkins_repo_base, :scl_repo,
+                   :os_repo, :os_optional_repo, :puppet_repo_rpm, :cdn_repo_base,
+                   :rhel_repo, :jboss_repo_base, :rhscl_repo_base].concat(@extra_repo_attrs)
+    @object_attrs = [:subscription_type, :rh_username, :rh_password, :sm_reg_pool,
+                     :rhn_reg_actkey].concat(@repo_attrs)
 
     attr_reader :config, :type
     attr_accessor *@object_attrs
@@ -19,6 +24,21 @@ module Installer
         @repo_attrs
       end
 
+      def extra_repo_attrs
+        @extra_repo_attrs
+      end
+
+      def extra_attr_info
+        return {
+          :ose_repo_base => 'The base URL for the OpenShift yum repositories ((ends in /6Server/x86_64/))',
+          :rhel_extra_repo => 'Additional base RHEL channel (Useful for testing pre-release content)',
+          :jbosseap_extra_repo => 'Additional JBossEAP channel (Useful for testing pre-release content)',
+          :jbossews_extra_repo => 'Additional JBossEWS channel (Useful for testing pre-release content)',
+          :rhscl_extra_repo => 'Additional SCL channel (Useful for testing pre-release content)',
+          :ose_extra_repo => 'Additional OSE channel (Useful for testing pre-release content)',
+        }
+      end
+
       def subscription_info(type)
         case type
         when :none
@@ -28,21 +48,27 @@ module Installer
             :attr_order => [],
           }
         when :yum
-          return {
+          sub_info = {
             :desc => 'Get packages from yum and do not use a subscription',
             :attrs => {
+              :cdn_repo_base => 'Default base URL for all repositories (uses the CDN layout)',
               :repos_base => 'The base URL for the OpenShift repositories',
-              :jboss_repo_base => 'The base URL for a JBoss repository',
+              :ose_repo_base => 'The base URL for the OpenShift yum repositories ((ends in /6Server/x86_64/))',
+              :jboss_repo_base => 'The base URL for the JBoss repositories (ends in /6Server/x86_64)',
               :jenkins_repo_base => 'The base URL for a Jenkins repository',
               :scl_repo => 'The base URL for an SCL repository',
+              :rhscl_repo_base => 'The base URL for the SCL repositories (ends in /6Server/x86_64)',
               :os_repo => 'The URL of a yum repository for the operating system',
+              :rhel_repo => 'The URL for a RHEL 6 repository (ends in /6Server/x86_64/os/)',
               :os_optional_repo => 'The URL for an "Optional" repository for the operating system',
               :puppet_repo_rpm => 'The URL for a Puppet Labs repository RPM',
-            },
+           },
             :attr_order => repo_attrs,
           }
+          sub_info[:attrs].merge!(extra_attr_info)
+          return sub_info
         when :rhsm
-          return {
+          sub_info = {
             :desc => 'Use Red Hat Subscription Manager',
             :attrs => {
               :rh_username => 'Red Hat Login username',
@@ -51,8 +77,13 @@ module Installer
             },
             :attr_order => [:rh_username,:rh_password,:sm_reg_pool],
           }
+          if advanced_repo_config?
+            sub_info[:attrs].merge!(extra_attr_info)
+            sub_info[:attr_order].concat(extra_repo_attrs)
+          end
+          return sub_info
         when :rhn
-          return {
+          sub_info = {
             :desc => 'Use Red Hat Network',
             :attrs => {
               :rh_username => 'Red Hat Login username',
@@ -61,6 +92,11 @@ module Installer
             },
             :attr_order => [:rh_username,:rh_password,:rhn_reg_actkey],
           }
+          if advanced_repo_config?
+            sub_info[:attrs].merge!(extra_attr_info)
+            sub_info[:attr_order].concat(extra_repo_attrs)
+          end
+          return sub_info
         else
           raise Installer::SubscriptionTypeNotRecognizedException.new("Subscription type '#{type}' is not recognized.")
         end
@@ -111,6 +147,15 @@ module Installer
           self.send("#{attr.to_s}=".to_sym, value)
         end
       end
+    end
+
+    def is_advanced?
+      self.class.subscription_info(subscription_type)[:attrs].each_key do |attr|
+        if self.class.extra_repo_attrs.include?(attr) and !self.send(attr).nil?
+          return true
+        end
+      end
+      return advanced_repo_config?
     end
 
     def subscription_types

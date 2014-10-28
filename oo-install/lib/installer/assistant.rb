@@ -6,8 +6,9 @@ require 'installer/helpers'
 require 'installer/host_instance'
 require 'installer/subscription'
 require 'installer/workflow'
-require 'terminal-table'
+require 'ipaddr'
 require 'securerandom'
+require 'terminal-table'
 
 module Installer
   class Assistant
@@ -69,6 +70,11 @@ module Installer
         # Check the Workflow settings
         @workflow = Installer::Workflow.find(workflow_id)
         @workflow_cfg = config.get_workflow_cfg(workflow_id)
+
+        if @workflow_cfg.empty?
+          ui_workflow workflow_id
+        end
+
         if workflow.questions.length > 0
           say "\n" + translate(:info_workflow_validation) + " "
           errors = workflow.is_valid_config?(workflow_cfg, deployment, :full)
@@ -201,6 +207,10 @@ module Installer
           ui_show_deployment
         end
         if force_edit_deployment
+          puts ""
+          deployment.is_valid?(:full).each do |error|
+            puts "Deployment error: #{error.message}"
+          end
           ui_edit_deployment
         else
           show_host_details = false
@@ -329,27 +339,19 @@ module Installer
         say "#{role_item} Configuration"
         puts horizontal_rule
 
-        # Determine if the user is describing previously configured instances or brand new ones.
-        instances_exist = false
         if use_origin_vm_as_broker
           if role == :broker
             # We've already set up the Broker; move along.
             say "You've specified this Origin VM as the Broker for your new deployment. Now we'll gather information about where the other roles will be deployed."
             next
           end
-        else
-          instances_exist = concur("Do you already have a running #{role_item}?")
         end
 
         # Multi-host loop.
         first_role_host = true
         loop do
           if first_role_host
-            if instances_exist
-              say "\nOkay. I'm going to need you to tell me about the host where the #{role_item} is installed."
-            else
-              say "\nOkay. I'm going to need you to tell me about the host where you want to install the #{role_item}."
-            end
+            say "\nOkay. I'm going to need you to tell me about the host where you want to install the #{role_item}."
           else
             puts "\n" + horizontal_rule
             say "#{role_item} Configuration"
@@ -376,18 +378,15 @@ module Installer
                     menu.choice(host_instance.summarize) do
                       say "Okay. Adding the #{role_item} role to #{host_instance.host}"
                       host_instance.add_role(role)
-                      if role == :node
-                        ui_add_node_host_to_district host_instance
-                      end
                     end
                   end
                 end
-              end
+              end unless role == :node
             end
           end
           if create_host_instance
             say "\nOkay, please provide information about this #{role_item} host." if deployment.hosts.length > 0
-            ui_edit_host_instance(nil, role, instances_exist, true)
+            ui_edit_host_instance(nil, role, false, true)
           end
           # We don't add hosts when there is an existing host instance.
           say "\nThat's everything we need to know right now for this #{role_item}."
@@ -753,7 +752,7 @@ module Installer
               deployment.save_to_disk!
               say "\nRole #{target_name} has been added to #{host_instance.host}."
             }
-          end
+          end unless deployment.hosts.length > 1 and target_role == :node
           menu.choice("Create a new host") { ui_edit_host_instance(nil, target_role) }
           menu.hidden("q") { return }
         end
@@ -769,7 +768,7 @@ module Installer
           menu.prompt = "#{translate(:menu_prompt)} "
           hosts_without_role.each do |host_instance|
             menu.choice(host_instance.summarize) { target_host = host_instance }
-          end
+          end unless target_role == :node
           menu.choice("Create a new host") { create_new = true }
           menu.hidden("q") { return }
         end
@@ -807,7 +806,7 @@ module Installer
               end
               ui_modify_account_info
             }
-          end
+          end unless deployment.hosts.length > 1 and role == :node
           menu.choice("Add a new host") { ui_edit_host_instance(nil, role) }
         end
       else
@@ -932,6 +931,8 @@ module Installer
                 q.default = deployment.dns.component_domain
               elsif seen_domains.length > 0
                 q.default = seen_domains[0]
+              elsif get_context == :ose
+                q.default = "hosts.#{deployment.dns.app_domain}"
               end
               q.validate = lambda { |p| is_valid_domain?(p) }
               q.responses[:not_valid] = "Enter a valid domain"
@@ -1021,80 +1022,61 @@ module Installer
 
     def ui_modify_ha
       if deployment.brokers.length > 1
-        load_balancers                 = deployment.load_balancers
-        new_load_balancer              = nil
-        broker_cluster_virtual_ip_addr = nil
-        broker_cluster_virtual_host    = nil
-        if load_balancers.length == 1
-          broker_cluster_virtual_ip_addr = load_balancers[0].broker_cluster_virtual_ip_addr
-          broker_cluster_virtual_host    = load_balancers[0].broker_cluster_virtual_host
-        end
-        if load_balancers.length != 1 or concur("\nYou have currently selected #{load_balancers[0].host} as your load-balancing Broker. Do you want to change that?")
-          choose do |menu|
-            menu.header = "\nSelect a Broker to serve as the primary load-balancing Broker"
-            menu.prompt = "#{translate(:menu_prompt)} "
-            deployment.brokers.sort_by{ |h| h.summarize }.each do |host_instance|
-              menu.choice(host_instance.summarize) { new_load_balancer = host_instance }
-            end
-            menu.hidden("q") { return }
-          end
+        if get_context == :ose
+          deployment.broker_global.broker_hostname = edit_host_fqdn(deployment.broker_global.broker_hostname ,true)
         else
-          new_load_balancer = load_balancers[0]
-        end
-        broker_cluster_virtual_host = edit_host_fqdn(broker_cluster_virtual_host,true)
-        broker_cluster_virtual_ip_addr = ask("\nWhat virtual IP address should the Broker load balancer listen on? ") { |q|
-          if not broker_cluster_virtual_ip_addr.nil?
-            q.default = broker_cluster_virtual_ip_addr
+          load_balancers                 = deployment.load_balancers
+          new_load_balancer              = nil
+          broker_cluster_virtual_ip_addr = nil
+          broker_cluster_virtual_host    = nil
+          if load_balancers.length == 1
+            broker_cluster_virtual_ip_addr = load_balancers[0].broker_cluster_virtual_ip_addr
+            broker_cluster_virtual_host    = load_balancers[0].broker_cluster_virtual_host
           end
-          q.validate = lambda { |p| is_valid_ip_addr?(p) }
-          q.responses[:not_valid] = "Enter a valid IP address"
-        }.to_s
-        deployment.set_load_balancer(new_load_balancer,broker_cluster_virtual_ip_addr,broker_cluster_virtual_host)
-        deployment.save_to_disk!
-      end
-      if deployment.dbservers.length > 1
-        db_primaries   = deployment.hosts.select{ |h| h.is_db_replica_primary? }
-        new_db_primary = nil
-        db_replica_key = nil
-        if db_primaries.length == 1
-          db_replica_key = db_primaries[0].mongodb_replica_key
-        end
-        if db_primaries.length != 1 or concur("\nYou have currently selected #{db_primaries[0].host} as your DB replication primary. Do you want to change that?")
-          choose do |menu|
-            menu.header = "Select a host to serve as the DB replication primary"
-            menu.prompt = "#{translate(:menu_prompt)} "
-            deployment.dbservers.sort_by{ |h| h.summarize }.each do |host_instance|
-              menu.choice(host_instance.summarize) { new_db_primary = host_instance }
+          if load_balancers.length != 1 or concur("\nYou have currently selected #{load_balancers[0].host} as your load-balancing Broker. Do you want to change that?")
+            choose do |menu|
+              menu.header = "\nSelect a Broker to serve as the primary load-balancing Broker"
+              menu.prompt = "#{translate(:menu_prompt)} "
+              deployment.brokers.sort_by{ |h| h.summarize }.each do |host_instance|
+                menu.choice(host_instance.summarize) { new_load_balancer = host_instance }
+              end
+              menu.hidden("q") { return }
             end
-            menu.hidden("q") { return }
+          else
+            new_load_balancer = load_balancers[0]
           end
-        else
-          new_db_primary = db_primaries[0]
+          broker_cluster_virtual_host = edit_host_fqdn(broker_cluster_virtual_host,true)
+          broker_cluster_virtual_ip_addr = ask("\nWhat virtual IP address should the Broker load balancer listen on? ") { |q|
+            if not broker_cluster_virtual_ip_addr.nil?
+              q.default = broker_cluster_virtual_ip_addr
+            end
+            q.validate = lambda { |p| is_valid_ip_addr?(p) }
+            q.responses[:not_valid] = "Enter a valid IP address"
+          }.to_s
+          deployment.set_load_balancer(new_load_balancer,broker_cluster_virtual_ip_addr,broker_cluster_virtual_host)
         end
-        replica_key_q = "\nWhat replica key value should the DB servers use? "
-        if db_replica_key.nil?
-          replica_key_q << ' Press <enter> to accept the auto-generated key or type in a new one. '
-          db_replica_key = SecureRandom.base64.delete('+/=')
-        end
-        db_replica_key = ask(replica_key_q) { |q|
-          q.default = db_replica_key
-          q.validate = lambda { |p| is_valid_string?(p) }
-          q.responses[:not_valid] = "Enter a valid replica key value"
-        }.to_s
-        deployment.set_db_replica_primary(new_db_primary,db_replica_key)
         deployment.save_to_disk!
       end
-      if deployment.msgservers.length > 1
-        new_cluster_password = deployment.msgservers[0].msgserver_cluster_password.nil? ?
-          SecureRandom.base64.delete('+/=') : deployment.msgservers[0].msgserver_cluster_password
-        new_cluster_password = ask("\nWhat password should the MsgServer cluster use for inter-cluster communication? ") { |q|
-          q.default  = new_cluster_password
-          q.validate = lambda { |p| is_valid_string?(p) }
-          q.responses[:not_valid] = "Enter a valid MsgServer cluster password value."
-        }.to_s
-        deployment.set_msgserver_cluster_password(new_cluster_password)
-        deployment.save_to_disk!
+
+      ha_service_accounts_info.keys.sort_by{ |k| ha_service_accounts_info[k][:order] }.each do |ha_service_param|
+        param_info  = ha_service_accounts_info[ha_service_param]
+        show_q = false
+        param_info[:roles].each do |role|
+          show_q = true if deployment.get_hosts_by_role(role).count > 1
+        end
+        if show_q
+          current_val = deployment.get_synchronized_attr ha_service_param
+          default_val = param_info[:value]
+          new_val     = nil
+          new_val = ask(param_info[:question]) { |q|
+            q.default = current_val.nil? ? default_val : current_val
+            q.validate = lambda { |p| is_valid_string?(p) }
+            q.responses[:not_valid] = "#{param_info[:name]} must be a non-empty string."
+          }.to_s
+          deployment.set_synchronized_ha_attr(ha_service_param, new_val)
+        end
       end
+      deployment.save_to_disk!
     end
 
     def ui_modify_broker_global
@@ -1437,14 +1419,14 @@ module Installer
         end
       elsif role == :dbserver and dbserver_count == 2
         if concur("\nWhen you remove this Datastore role, only one Datastore instance will remain in the deployment. Is it okay to proceed and remove all Datastore replication settings for the deployment?")
-          deployment.unset_db_replica_primary
+          deployment.unset_synchronized_ha_attr_by_role :dbserver
         else
           say cancel_text
           return false
         end
       elsif role == :msgserver and msgserver_count == 2
         if concur("\nWhen you remove this MsgServer role, only one MsgServer instance will remain in the deployment. Is it okay to proceed and remove the MsgServer replication settings for the deployment?")
-          deployment.unset_msgserver_cluster_password
+          deployment.unset_synchronized_ha_attr_by_role :msgserver
         else
           say cancel_text
           return false
@@ -1524,10 +1506,10 @@ module Installer
         deployment.unset_load_balancer
       end
       if clear_ha_dbserver
-        deployment.unset_db_replica_primary
+        unset_synchronized_ha_attr_by_role :dbserver
       end
       if clear_ha_msgserver
-        deployment.unset_msgserver_cluster_password
+        unset_synchronized_ha_attr_by_role :msgserver
       end
       deployment.remove_host_instance! host_instance
       true
@@ -1565,10 +1547,10 @@ module Installer
             deployment.unset_load_balancer
           end
           if ha_dbservers_before and not ha_dbservers_now
-            deployment.unset_db_replica_primary
+            deployment.unset_synchronized_ha_attr_by_role :dbserver
           end
           if ha_msgservers_before and not ha_msgservers_now
-            deployment.unset_msgserver_cluster_password
+            deployment.unset_synchronized_ha_attr_by_role :msgserver
           end
         end
       else
@@ -1594,8 +1576,11 @@ module Installer
           }.to_s
           if not host_instance.localhost?
             host_instance.user = ask("\nUsername for SSH access to #{host_instance.ssh_host}: ") { |q|
+              seen_users = deployment.hosts.map{ |i| i.user }.compact.uniq
               if not host_instance.user.nil?
                 q.default = host_instance.user
+              elsif seen_users.count > 0
+                q.default = seen_users.first
               elsif get_context == :ose
                 q.default = 'root'
               end
@@ -1666,7 +1651,7 @@ module Installer
                 ip_addrs.each do |info|
                   ip_interface = info[0]
                   ip_addr = info[1]
-                  menu.choice("#{ip_addr} on interface #{ip_interface}") { host_instance.ip_addr = ip_addr; host_instance.ip_interface = ip_interface if host_instance.is_node? }
+                  menu.choice("#{ip_addr} on interface #{ip_interface}") { host_instance.ip_addr = ip_addr; host_instance.ip_interface = ip_interface }
                 end
                 menu.hidden("?") { say "The current host instance has mutliple IP options. Select the one that it will use to connect to other OpenShift components." }
                 menu.hidden("q") { return_to_main_menu }
@@ -1692,26 +1677,31 @@ module Installer
               elsif current_roles.length > 1
                 question = "\nThis host now has the following roles: #{current_roles.join(', ')}."
               end
-              if first_pass or concur("#{question}\nDo you want to add another role?")
-                choose do |menu|
-                  menu.header = "Choose a role to add to this host"
-                  menu.prompt = "#{translate(:menu_prompt)} "
-                  Installer::Deployment.role_map.sort_by{ |k,v| v }.each do |key, name|
-                    next if host_instance.has_role?(key)
-                    next if not advanced_mode? and [:dbserver,:msgserver].include?(key)
-                    menu.choice(name.chop) {
-                      if key == :nameserver and deployment.nameservers.length > 0
-                        dns_host = deployment.nameservers[0]
-                        if concur("Host #{dns_host.host} is already configured as the DNS host. Do you want to move the NameServer role to this host instead?")
-                          dns_host.remove_role(key)
+              if first_pass or (not host_instance.roles.include? :node and concur("#{question}\nDo you want to add another role?"))
+                begin
+                  choose do |menu|
+                    menu.header = "Choose a role to add to this host"
+                    menu.prompt = "#{translate(:menu_prompt)} "
+                    Installer::Deployment.role_map.sort_by{ |k,v| v }.each do |key, name|
+                      next if host_instance.has_role?(key)
+                      next if not host_instance.roles.empty? and key == :node
+                      next if not advanced_mode? and [:dbserver,:msgserver].include?(key)
+                      menu.choice(name.chop) {
+                        if key == :nameserver and deployment.nameservers.length > 0
+                          dns_host = deployment.nameservers[0]
+                          if concur("Host #{dns_host.host} is already configured as the DNS host. Do you want to move the NameServer role to this host instead?")
+                            dns_host.remove_role(key)
+                            host_instance.add_role(key)
+                          end
+                        else
                           host_instance.add_role(key)
                         end
-                      else
-                        host_instance.add_role(key)
-                      end
-                    }
+                      }
+                    end
+                    menu.hidden("q") { return_to_main_menu }
                   end
-                  menu.hidden("q") { return_to_main_menu }
+                rescue NoMethodError
+                  # if all possible roles are excluded, we don't want to stack trace
                 end
               else
                 break
@@ -1790,7 +1780,10 @@ module Installer
             say "Appending component domain '#{deployment.dns.component_domain}' to hostname."
             new_value = new_value + "." + deployment.dns.component_domain
             break
-          elsif not new_value.match(/#{deployment.dns.component_domain}$/)
+          elsif not new_value.match(/#{deployment.dns.component_domain}$/i)
+            say "\nThe hostname #{new_value} is not part of the domain that was specified for OpenShift hosts (#{deployment.dns.component_domain})."
+            new_value = nil
+          elsif new_value.downcase == deployment.dns.component_domain.downcase
             say "\nThe hostname #{new_value} is not part of the domain that was specified for OpenShift hosts (#{deployment.dns.component_domain})."
             new_value = nil
           else
@@ -1831,7 +1824,7 @@ module Installer
     end
 
     def manual_ip_info_for_host_instance(host_instance, ip_addrs)
-      addr_question = "\nSpecify the IP address that Nodes will use to connect to this host"
+      addr_question = "\nSpecify the IP address that other hosts will use to connect to this host"
       if host_instance.is_node?
         addr_question = "\nSpecify the public IP address for this Node"
       end
@@ -1842,19 +1835,31 @@ module Installer
       host_instance.ip_addr = ask(addr_question) { |q|
         if not host_instance.ip_addr.nil?
           q.default = host_instance.ip_addr
+        elsif !(IPAddr.new(host_instance.ssh_host) rescue nil).nil?
+          q.default = host_instance.ssh_host
         end
         q.validate = lambda { |p| is_valid_ip_addr?(p) }
         q.responses[:not_valid] = "Enter a valid IP address"
       }.to_s
-      if [:origin,:origin_vm].include?(get_context) and host_instance.is_node?
+      manual_int_info_for_host_instance(host_instance, ip_addrs)
+    end
+
+    def manual_int_info_for_host_instance(host_instance, ip_addrs)
+      int_question = "Specify the network interface that other hosts will use to connect to this host"
+      if host_instance.is_node?
         int_question = "Specify the network interface that this Node will use to route Application traffic"
+      end
+      if defined?(int_question)
+        detected_ints = ip_addrs.map{ |i| i[0] }
         if ip_addrs.length > 0
-          int_question << " (Detected #{ip_addrs.map{ |i| "'#{i[0]}'" }.join(', ')})"
+          int_question << " (Detected #{detected_ints.map{ |i| "'#{i}'" }.join(', ')})"
         end
         int_question << ": "
         host_instance.ip_interface = ask(int_question) { |q|
           if not host_instance.ip_interface.nil?
             q.default = host_instance.ip_interface
+          elsif not detected_ints.empty?
+            q.default = detected_ints.first
           end
           q.validate = lambda { |p| is_valid_string?(p) }
           q.responses[:not_valid] = "Enter a valid IP interface ID"
@@ -1938,21 +1943,27 @@ module Installer
       say "\nHigh Availability Configuration"
       table = Terminal::Table.new do |t|
         if deployment.brokers.length > 1
-          if deployment.load_balancers.length > 0
-            t.add_row ['Broker Load Balancer',deployment.load_balancers[0].host]
-            t.add_row ['Broker Virtual IP',deployment.load_balancers[0].broker_cluster_virtual_ip_addr]
+          if get_context == :ose
+            t.add_row ['HA Broker DNS',deployment.broker_global.broker_hostname]
           else
-            t.add_row ['Broker Load balancer','[unset]']
-            t.add_row ['Broker Virtual IP','[unset]']
+            if deployment.load_balancers.length > 0
+              t.add_row ['Broker Load Balancer',deployment.load_balancers[0].host]
+              t.add_row ['Broker Virtual IP',deployment.load_balancers[0].broker_cluster_virtual_ip_addr]
+            else
+              t.add_row ['Broker Load balancer','[unset]']
+              t.add_row ['Broker Virtual IP','[unset]']
+            end
           end
         end
-        if deployment.dbservers.length > 1
-          if deployment.db_replica_primaries.length > 0
-            t.add_row ['DB Replica Primary',deployment.db_replica_primaries[0].host]
-            t.add_row ['DB Replication Key',deployment.db_replica_primaries[0].mongodb_replica_key]
-          else
-            t.add_row ['DB Replica Primary','[unset]']
-            t.add_row ['DB Replication Key','[unset]']
+        ha_service_accounts_info.keys.sort_by{ |k| ha_service_accounts_info[k][:order] }.each do |ha_service_param|
+          param_info = ha_service_accounts_info[ha_service_param]
+          show_param = false
+          param_info[:roles].each do |role|
+            show_param = true if deployment.get_hosts_by_role(role).length > 1
+          end
+          if show_param
+            attr = deployment.get_synchronized_attr ha_service_param
+            t.add_row [param_info[:name], attr.nil? ? '[unset]' : attr]
           end
         end
       end
