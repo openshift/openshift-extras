@@ -499,6 +499,10 @@ install_broker_pkgs()
   pkgs="$pkgs rubygem-openshift-origin-admin-console"
   is_true "$CONF_ROUTING_PLUGIN" && pkgs="$pkgs rubygem-openshift-origin-routing-activemq"
 
+  # We use semanage in configure_selinux_policy_on_broker, so we need to
+  # install policycoreutils-python.
+  pkgs="$pkgs policycoreutils-python"
+
   yum_install_or_exit $pkgs
 }
 
@@ -509,8 +513,8 @@ install_node_pkgs()
   pkgs="$pkgs openshift-origin-node-util"
   pkgs="$pkgs ruby193-mcollective openshift-origin-msg-node-mcollective"
 
-  # We use semanage in this script, so we need to install
-  # policycoreutils-python.
+  # We use semanage in configure_selinux_policy_on_node, so we need to
+  # install policycoreutils-python.
   pkgs="$pkgs policycoreutils-python"
 
   pkgs="$pkgs rubygem-openshift-origin-container-selinux"
