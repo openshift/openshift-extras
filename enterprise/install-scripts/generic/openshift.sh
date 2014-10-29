@@ -1407,7 +1407,7 @@ configure_rhc()
 # Install broker-specific packages.
 install_broker_pkgs()
 {
-  pkgs="openshift-origin-broker"
+  local pkgs="openshift-origin-broker"
   pkgs="$pkgs openshift-origin-broker-util"
   pkgs="$pkgs rubygem-openshift-origin-msg-broker-mcollective"
   pkgs="$pkgs ruby193-mcollective-client"
