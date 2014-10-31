@@ -1421,13 +1421,6 @@ install_broker_pkgs()
   # install policycoreutils-python.
   pkgs="$pkgs policycoreutils-python"
 
-  # We use the time command on the right-hand side of a pipeline in
-  # configure_selinux_policy_on_broker, which means that we need the
-  # external time command provided in the time package (Bash only allows
-  # builtins to be used on the left-hand side of a pipeline).  See
-  # <https://bugzilla.redhat.com/show_bug.cgi?id=1158019>.
-  pkgs="$pkgs time"
-
   yum_install_or_exit $pkgs
 }
 
