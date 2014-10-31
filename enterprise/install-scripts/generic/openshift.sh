@@ -1407,7 +1407,7 @@ configure_rhc()
 # Install broker-specific packages.
 install_broker_pkgs()
 {
-  pkgs="openshift-origin-broker"
+  local pkgs="openshift-origin-broker"
   pkgs="$pkgs openshift-origin-broker-util"
   pkgs="$pkgs rubygem-openshift-origin-msg-broker-mcollective"
   pkgs="$pkgs ruby193-mcollective-client"
@@ -1416,6 +1416,17 @@ install_broker_pkgs()
   pkgs="$pkgs openshift-origin-console"
   pkgs="$pkgs rubygem-openshift-origin-admin-console"
   is_true "$CONF_ROUTING_PLUGIN" && pkgs="$pkgs rubygem-openshift-origin-routing-activemq"
+
+  # We use semanage in configure_selinux_policy_on_broker, so we need to
+  # install policycoreutils-python.
+  pkgs="$pkgs policycoreutils-python"
+
+  # We use the time command on the right-hand side of a pipeline in
+  # configure_selinux_policy_on_broker, which means that we need the
+  # external time command provided in the time package (Bash only allows
+  # builtins to be used on the left-hand side of a pipeline).  See
+  # <https://bugzilla.redhat.com/show_bug.cgi?id=1158019>.
+  pkgs="$pkgs time"
 
   yum_install_or_exit $pkgs
 }
@@ -1427,8 +1438,8 @@ install_node_pkgs()
   pkgs="$pkgs openshift-origin-node-util"
   pkgs="$pkgs ruby193-mcollective openshift-origin-msg-node-mcollective"
 
-  # We use semanage in this script, so we need to install
-  # policycoreutils-python.
+  # We use semanage in configure_selinux_policy_on_node, so we need to
+  # install policycoreutils-python.
   pkgs="$pkgs policycoreutils-python"
 
   pkgs="$pkgs rubygem-openshift-origin-container-selinux"
