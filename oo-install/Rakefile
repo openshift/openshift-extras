@@ -67,6 +67,12 @@ task :package do
       :context => :ose,
       :branch => 'enterprise-2.1',
     },
+    { :version => 'ose-2.2',
+      :version_text => 'OpenShift Enterprise 2.2',
+      :ose_launcher => 'https://raw.githubusercontent.com/openshift/openshift-extras/enterprise-2.2/enterprise/install-scripts/generic/openshift.sh',
+      :context => :ose,
+      :branch => 'enterprise-2.2',
+    },
     { :version => 'ose-2.1',
       :version_text => 'OpenShift Enterprise 2.1',
       :ose_launcher => 'https://raw.githubusercontent.com/openshift/openshift-extras/enterprise-2.1/enterprise/install-scripts/generic/openshift.sh',
@@ -170,7 +176,7 @@ task :package do
     unless ENV['APP_URL'].nil?
       system "#{@sed_cmd}.bak 's/install.openshift.com/#{ENV['APP_URL']}/g' #{pkgdir}/index.html"
       system 'rm', "#{pkgdir}/index.html.bak"
-     
+
     end
 
     if build.has_key?(:base) and build[:base]
