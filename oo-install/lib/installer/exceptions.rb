@@ -85,6 +85,12 @@ module Installer
     end
   end
 
+  class DeploymentHAMisconfiguredException < Exception
+    def initialize(message="The HA configuration check was not successful. See above for specific issues.", code=1)
+      super(message, code)
+    end
+  end
+
   class DeploymentCheckFailedException < Exception
     def initialize(message="The deployment check was not successful. See above for specific issues.", code=1)
       super(message, code)

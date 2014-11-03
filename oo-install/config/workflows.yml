@@ -135,17 +135,23 @@ Contexts:
 Targets:
   - rhel
 Summary: Install OpenShift Enterprise
-Description: If you currently have no OpenShift Enterprise 2.1 system, select this option to deploy OpenShift Enterprise to one or more target hosts.
+Description: If you currently have no OpenShift Enterprise 2.2 system, select this option to deploy OpenShift Enterprise to one or more target hosts.
 ID: enterprise_deploy
 WorkflowDir: enterprise_deploy
 Executable: <workflow_path>/launcher.rb
 RemoteDeployment: y
 SubscriptionCheck: y
 Repositories:
-  - repos_base
+  - cdn_repo_base
   - jboss_repo_base
-  - os_repo
-  - os_optional_repo
+  - rhel_repo
+  - rhscl_repo_base
+  - ose_repo_base
+  - rhel_extra_repo
+  - jbosseap_extra_repo
+  - jbossews_extra_repo
+  - rhscl_extra_repo
+  - ose_extra_repo
 ---
 Name: OE Node-Instance Deployment
 Contexts:
@@ -153,7 +159,7 @@ Contexts:
 Targets:
   - rhel
 Summary: Add a Node to OpenShift Enterprise
-Description: If you have already deployed an OpenShift Enterprise 2.1 system, use this option to add a new Node host to the existing system.
+Description: If you have already deployed an OpenShift Enterprise 2.2 system, use this option to add a new Node host to the existing system.
 ID: enterprise_add_node
 WorkflowDir: enterprise_deploy
 Questions:
@@ -164,7 +170,13 @@ Executable: <workflow_path>/launcher.rb <q:rolehost>
 RemoteDeployment: y
 SubscriptionCheck: y
 Repositories:
-  - repos_base
+  - cdn_repo_base
   - jboss_repo_base
-  - os_repo
-  - os_optional_repo
+  - rhel_repo
+  - rhscl_repo_base
+  - ose_repo_base
+  - rhel_extra_repo
+  - jbosseap_extra_repo
+  - jbossews_extra_repo
+  - rhscl_extra_repo
+  - ose_extra_repo

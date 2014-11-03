@@ -54,7 +54,7 @@ module Installer
       dns_config = deployment.has_key?('DNS') ? deployment['DNS'] : {}
       @dns = Installer::DNSConfig.new(dns_config)
       broker_global_config = deployment.has_key?('Global') ? deployment['Global'] :
-        { 'valid_gear_sizes' => 'small,medium,large', 'user_default_gear_sizes' => 'small,medium', 'default_gear_size' => 'small' }
+        { 'valid_gear_sizes' => 'small', 'user_default_gear_sizes' => 'small', 'default_gear_size' => 'small' }
       @broker_global = Installer::BrokerGlobalConfig.new(broker_global_config)
       @districts = []
       if deployment.has_key?('Districts') and not deployment['Districts'].nil? and deployment['Districts'].length > 0
@@ -90,10 +90,6 @@ module Installer
       hosts.select{ |h| h.is_load_balancer? }
     end
 
-    def db_replica_primaries
-      hosts.select{ |h| h.is_db_replica_primary? }
-    end
-
     def set_load_balancer(lb_host_instance=nil,broker_cluster_virtual_ip_addr=nil,broker_cluster_virtual_host=nil)
       brokers.each do |host_instance|
         if not lb_host_instance.nil? and host_instance == lb_host_instance
@@ -111,37 +107,6 @@ module Installer
     def unset_load_balancer
       # Calling set_load_balancer without args purges the load balancer settings completely
       set_load_balancer
-    end
-
-    def set_db_replica_primary(rp_host_instance=nil,db_replica_key=nil)
-      dbservers.each do |host_instance|
-        if not rp_host_instance.nil? and host_instance == rp_host_instance
-          host_instance.mongodb_replica_primary = true
-          host_instance.mongodb_replica_key     = db_replica_key
-        else
-          host_instance.mongodb_replica_primary = false
-          host_instance.mongodb_replica_key     = db_replica_key
-        end
-      end
-    end
-
-    def unset_db_replica_primary
-      # Calling set_db_replica_primary without args purges the DB replication settings completely
-      set_db_replica_primary
-    end
-
-    def set_msgserver_cluster_password(password=nil)
-      hosts.each do |host_instance|
-        if host_instance.is_msgserver?
-          host_instance.msgserver_cluster_password = password
-        else
-          host_instance.msgserver_cluster_password = nil
-        end
-      end
-    end
-
-    def unset_msgserver_cluster_password
-      set_msgserver_cluster_password
     end
 
     def get_host_instance_by_hostname hostname
@@ -193,18 +158,22 @@ module Installer
       hosts.each do |host_instance|
         dns_host = host_instance.has_role?(:nameserver)
         if host_instance.roles.include?(:broker)
-          # Broker hosts (which may also contain a node) get msgserver and dbserver as well
+          # Broker hosts (which may also contain a node and/or nameserver) get msgserver and dbserver as well
           host_instance.roles = [:msgserver,:dbserver].concat(host_instance.roles).uniq
         elsif host_instance.roles.include?(:node)
-          # Node hosts (which don't include brokers) get any other roles removed
+          # Node hosts (which don't include brokers) get roles other than nameserver removed
           host_instance.roles = dns_host ? [:node,:nameserver] : [:node]
+        elsif dns_host
+          # If the DNS host is not on a broker or node, just make sure that the
+          # other roles are stripped off.
+          host_instance.roles = [:nameserver]
         else
           # Other hosts get nuked.
-          to_delete << host_instance.id
+          to_delete << host_instance.object_id
         end
       end
       if to_delete.length > 0
-        hosts.delete_if{ |h| to_delete.include?(h.id) }
+        hosts.delete_if{ |h| to_delete.include?(h.object_id) }
       end
       save_to_disk!
     end
@@ -242,7 +211,11 @@ module Installer
           seen_domains = hosts.map{ |h| get_domain_from_fqdn(h.host) }.uniq
           if seen_domains.length == 1 and not seen_domains[0] == dns.component_domain
             return false if check == :basic
-            errors << Installer::DeploymentCheckFailedException.new("The implied host domain '#{seen_domains[0]}' does not match the specified host domain of '#{dns.component_domain}' for DNS")
+            if seen_domains[0] == ''
+              errors << Installer::DeploymentCheckFailedException.new("Hostname definitions are missing the domain, host definitions should be Fully Qualified Domain Names")
+            else
+              errors << Installer::DeploymentCheckFailedException.new("The implied host domain '#{seen_domains[0]}' does not match the specified host domain of '#{dns.component_domain}' for DNS")
+            end
           elsif seen_domains.length > 1
             return false if check == :basic
             errors << Installer::DeploymentCheckFailedException.new("The OpenShift hosts are spread across multiple domains (#{seen_domains.join(', ')}), however the deployment is configured to act as DNS server for all hosts under the '#{dns.component_domain}' domain.")
@@ -322,10 +295,10 @@ module Installer
             # In this case, the host should not have this setting.
             next if host_value.nil?
             return false if check == :basic
-            errors << Installer::HostInstanceSettingException.new("Host instance '#{host}' should not have a value for the '#{service_param.to_s}' parameter.")
+            errors << Installer::HostInstanceSettingException.new("Host instance '#{host_instance.host}' should not have a value for the '#{service_param.to_s}' parameter.")
           elsif not is_valid_string?(host_value)
             return false if check == :basic
-            errors << Installer::HostInstanceSettingException.new("Host instance '#{host}' has an invalid value for the '#{service_param.to_s}' parameter.")
+            errors << Installer::HostInstanceSettingException.new("Host instance '#{host_instance.host}' has an invalid value for the '#{service_param.to_s}' parameter.")
           else
             seen_values << host_value
           end
@@ -343,7 +316,7 @@ module Installer
       if districts.select{ |d| not d.is_valid?(:basic,nodes,broker_global) }.length > 0
         return false if check == :basic
         districts.each do |district|
-          errors.concat(district.is_valid?(check),nodes,broker_global)
+          errors.concat(district.is_valid?(check,nodes,broker_global))
         end
       end
       # Make sure no Nodes are in more than one district
@@ -377,18 +350,29 @@ module Installer
         return false if check == :basic
         errors << Installer::DeploymentHAMisconfiguredException.new("A Broker load balancer should not be provided for a single-Broker deployment.")
       end
-      if (brokers.length > 1 and load_balancers.length != 1)
+      if (brokers.length > 1 and load_balancers.length != 1 and get_context != :ose)
         return false if check == :basic
         errors << Installer::DeploymentHAMisconfiguredException.new("There must be one and only one load balancer host for a multi-Broker deployment.")
       end
-      if (dbservers.length == 1 and db_replica_primaries.length != 0)
+      if (brokers.length > 1 and get_context == :ose and
+          (broker_global.broker_hostname.nil? or broker_global.broker_hostname.empty?))
         return false if check == :basic
-        errors << Installer::DeploymentHAMisconfiguredException.new("A DB replica primary should not be provided for a single-DB server deployment.")
+        errors << Installer::DeploymentHAMisconfiguredException.new("A HA DNS entry must be configured for multiple brokers")
       end
-      if (dbservers.length > 1 and db_replica_primaries.length != 1)
+      if (dbservers.length > 1 and not dbservers.count.odd?)
         return false if check == :basic
-        errors << Installer::DeploymentHAMisconfiguredException.new("There must be one and only one DB replica primary for a replicated DB deployment.")
+        errors << Installer::DeploymentHAMisconfiguredException.new("If configuring HA datastore hosts, then there needs to be an odd number of datastore hosts defined")
       end
+      if hosts.length > 1
+        nodes.each do |n|
+          if n.roles.length > 1
+            return false if check == :basic
+            errors << Installer::DeploymentHAMisconfiguredException.new("A node must not have other roles assigned to it")
+          end
+        end
+      end
+
+
       db_replication    = dbservers.length > 1
       seen_db_keys      = {}
       msgserver_cluster = msgservers.length > 1
@@ -416,10 +400,6 @@ module Installer
             return false if check == :basic
             errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host_instance.host}' has a Broker load-balancer virtual hostname set, but it is not configured as a Broker load balancer.")
           end
-        end
-        if host_instance.is_db_replica_primary? and not host_instance.is_dbserver?
-          return false if check == :basic
-          errors << Installer::HostInstanceMismatchedSettingsException.new("Host instance '#{host_instance.host}' is configured as a DB replica primary for a replicated DB deployment, but it is not configured as a DB server.")
         end
         if host_instance.is_dbserver?
           if db_replication
@@ -511,6 +491,20 @@ module Installer
       end
     end
 
+    def unset_synchronized_ha_attr_by_role role
+      ha_service_accounts_info.select {|k,v| v[:roles].include? role}.each do |sa_info|
+        deployment.set_synchronized_ha_attr sa_info, nil
+      end
+    end
+
+    def set_synchronized_ha_attr service_param, value
+      hosts.each do |host_instance|
+        common_roles = ha_service_accounts_info[service_param][:roles] & host_instance.roles
+        host_value   = common_roles.length == 0 ? nil : value
+        host_instance.send("#{service_param.to_s}=".to_sym, host_value)
+      end
+    end
+
     def get_hosts_by_role role
       hosts.select{ |h| h.roles.include?(role) }
     end
@@ -525,11 +519,11 @@ module Installer
 
     # A removable host is not the only host in the deployment,
     # shares its roles with at least one other host, and is not
-    # the Broker load balancer or the DB replica primary
+    # the Broker load balancer
     def get_removable_hosts
       return [] if hosts.length <= 1
       removable_hosts = []
-      hosts.select{ |h| not h.is_load_balancer? and not h.is_db_replica_primary? }.each do |host_instance|
+      hosts.select{ |h| not h.is_load_balancer? }.each do |host_instance|
         removable = true
         host_instance.roles.each do |role|
           next if get_hosts_by_role(role).length > 1
@@ -561,12 +555,6 @@ module Installer
         # with only one Broker, we're okay to remove this.
         if host_instance.is_load_balancer? and brokers.length > 2
           reasons << "is the load-balancing Broker for this multi-Broker deployment"
-          unremovable = true
-        end
-        # If this is the DB replica primary, but removing this host will leave the deployment
-        # with only one DBServer, we're okay to remove this.
-        if host_instance.is_db_replica_primary? and dbservers.length > 2
-          reasons << "is the primary DB instance in this replicated DB deployment"
           unremovable = true
         end
         host_instance.roles.each do |role|

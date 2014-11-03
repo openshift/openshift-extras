@@ -1,8 +1,10 @@
 require 'i18n'
 require 'pathname'
 require 'yaml'
+require 'installer/exceptions'
 require 'installer/version'
 require 'securerandom'
+require 'openssl'
 
 module Installer
   module Helpers
@@ -89,6 +91,14 @@ module Installer
       Installer::KEEP_PUPPET
     end
 
+    def set_advanced_repo_config(advanced_repo_config)
+      Installer.const_set("ADVANCED_REPO_CONFIG", advanced_repo_config)
+    end
+
+    def advanced_repo_config?
+      Installer::ADVANCED_REPO_CONFIG
+    end
+
     def set_force_install(force_install)
       Installer.const_set("FORCE_INSTALL", force_install)
     end
@@ -152,10 +162,35 @@ module Installer
       value.to_s.gsub('_','-')
     end
 
+    def ha_service_accounts_info
+      { :mongodb_replica_key => {
+          :name  => 'MongoDB Replica Key',
+          :question => "\nWhat replica key value should the DB servers use? ",
+          :order => 11,
+          :value => SecureRandom.base64.delete('+/='),
+          :roles => [:dbserver],
+        },
+        :mongodb_replica_name => {
+          :name  => 'MongoDB Replica Set Name',
+          :question => "\nWhat replica set name should the DB servers use? ",
+          :order => 10,
+          :value => 'openshift',
+          :roles => [:dbserver],
+        },
+        :msgserver_cluster_password => {
+          :name  => 'MsgServer Cluster Password',
+          :question => "\nWhat password should the MsgServer cluster use for inter-cluster communication? ",
+          :order => 20,
+          :value => SecureRandom.base64.delete('+/='),
+          :roles => [:msgserver],
+        },
+      }
+    end
+
     def service_accounts_info
       { :mcollective_user => {
           :name  => 'MCollective User',
-          :order => 3,
+          :order => 30,
           :value => 'mcollective',
           :roles => [:broker, :node, :msgserver],
           :description =>
@@ -166,7 +201,7 @@ module Installer
         },
         :mcollective_password => {
           :name  => 'MCollective Password',
-          :order => 4,
+          :order => 31,
           :value => SecureRandom.base64.delete('+/='),
           :roles => [:broker, :node, :msgserver],
           :description =>
@@ -177,7 +212,7 @@ module Installer
         },
         :mongodb_broker_user => {
           :name  => 'MongoDB Broker User',
-          :order => 7,
+          :order => 42,
           :value => 'openshift',
           :roles => [:broker, :dbserver],
           :description =>
@@ -188,7 +223,7 @@ module Installer
         },
         :mongodb_broker_password => {
           :name  => 'MongoDB Broker Password',
-          :order => 8,
+          :order => 43,
           :value => SecureRandom.base64.delete('+/='),
           :roles => [:broker, :dbserver],
           :description =>
@@ -199,7 +234,7 @@ module Installer
         },
         :mongodb_admin_user => {
           :name  => 'MongoDB Admin User',
-          :order => 5,
+          :order => 40,
           :value => 'admin',
           :roles => [:dbserver],
           :description =>
@@ -212,7 +247,7 @@ module Installer
         },
         :mongodb_admin_password => {
           :name  => 'MongoDB Admin Password',
-          :order => 6,
+          :order => 41,
           :value => SecureRandom.base64.delete('+/='),
           :roles => [:dbserver],
           :description =>
@@ -244,6 +279,38 @@ module Installer
              /etc/openshift/htpasswd and used by the
              openshift-origin-auth-remote-user-basic
              authentication plugin.'.gsub(/( |\t|\n)+/, " ")
+        },
+        :broker_session_secret => {
+          :name  => 'Broker Session Secret',
+          :order => 10,
+          :value => SecureRandom.base64.delete('+/='),
+          :roles => [:broker],
+          :description =>
+            'This is the session secret used by the broker rest api'
+        },
+        :console_session_secret => {
+          :name  => 'Console Session Secret',
+          :order => 11,
+          :value => SecureRandom.base64.delete('+/='),
+          :roles => [:broker],
+          :description =>
+            'This is the session secret used by the web console'
+        },
+        :broker_auth_salt => {
+          :name  => 'Broker Auth Salt',
+          :order => 12,
+          :value => SecureRandom.base64.delete('+/='),
+          :roles => [:broker],
+          :description =>
+            'This is the authentication salt used by the broker'
+        },
+        :broker_auth_priv_key => {
+          :name  => 'Broker Auth Private Key',
+          :order => 13,
+          :value => OpenSSL::PKey::RSA.new(2048).to_pem,
+          :roles => [:broker],
+          :description =>
+            'This is the RSA Private Key used for broker access by remote applications (i.e. Jenkins)'
         },
       }
     end

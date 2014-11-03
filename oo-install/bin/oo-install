@@ -29,6 +29,7 @@ options = {
   :rh_username => nil,
   :rh_password => nil,
   :advanced_mode => false,
+  :advanced_repo_config => false,
   :list_workflows => false,
   :debug => false,
   :keep_puppet => false,
@@ -41,6 +42,9 @@ p = OptionParser.new do |opts|
   opts.separator ''
   opts.on('-a', '--advanced-mode', 'Enable access to message server and db server customization.') do |advanced_mode|
     options[:advanced_mode] = advanced_mode
+  end
+  opts.on('-r', '--advanced-repo-config', 'Enable access to advanced repository configuration.') do |advanced_repo_config|
+    options[:advanced_repo_config] = advanced_repo_config
   end
   opts.on('-c', '--config-file FILEPATH', 'The path to an alternate config file') do |filepath|
     options[:config_file] = File.expand_path(filepath)
@@ -101,6 +105,8 @@ set_keep_puppet(options[:keep_puppet])
 
 # Set the 'force install' flag
 set_force_install(options[:force_install])
+
+set_advanced_repo_config(options[:advanced_repo_config])
 
 # Before we go any deeper, splat out workflow IDs and exit if '-l' was passed.
 if options[:list_workflows]
@@ -167,7 +173,6 @@ if not options[:advanced_mode] and @deployment.is_advanced?
 end
 # Now set the interface mode
 set_mode(options[:advanced_mode])
-
 
 # Instantiate the cli-provided subscription info in a subscription object
 cli_subscription = Installer::Subscription.new(@config)
