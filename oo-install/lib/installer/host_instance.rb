@@ -14,9 +14,10 @@ module Installer
                   :broker_cluster_load_balancer,
                   :broker_cluster_virtual_host,
                   :broker_cluster_virtual_ip_addr,
-                  :mongodb_replica_primary,
-                  :mongodb_replica_key,
-                  :msgserver_cluster_password
+                  :mongodb_replica_key,:mongodb_replica_name,
+                  :msgserver_cluster_password, :broker_session_secret,
+                  :console_session_secret, :broker_auth_salt,
+                  :broker_auth_priv_key
 
     def self.attrs
       %w{host roles ssh_host user ip_addr named_ip_addr ip_interface
@@ -24,17 +25,18 @@ module Installer
          mongodb_broker_password mongodb_admin_user mongodb_admin_password
          openshift_user openshift_password broker_cluster_load_balancer
          broker_cluster_virtual_host broker_cluster_virtual_ip_addr
-         mongodb_replica_primary mongodb_replica_key msgserver_cluster_password}.map{ |a| a.to_sym }
+         mongodb_replica_key mongodb_replica_name msgserver_cluster_password
+         broker_session_secret console_session_secret broker_auth_salt
+         broker_auth_priv_key}.map{ |a| a.to_sym }
     end
 
     def initialize(item={}, init_role=nil)
       @roles                        = []
       @install_status               = item.has_key?('state') ? item['state'].to_sym : :new
       @broker_cluster_load_balancer = item.has_key?('load_balancer') && item['load_balancer'].downcase == 'y'
-      @mongodb_replica_primary      = item.has_key?('db_replica_primary') && item['db_replica_primary'].downcase == 'y'
       self.class.attrs.each do |attr|
         # Skip booleans here or their values will be nilled out
-        next if [:install_status,:broker_cluster_load_balancer,:mongodb_replica_primary].include?(attr)
+        next if [:install_status,:broker_cluster_load_balancer].include?(attr)
         value = attr == :roles ? [] : nil
         if item.has_key?(attr.to_s)
           if attr == :roles
@@ -54,7 +56,7 @@ module Installer
     def confirm_access
       info = { :valid_access => true, :error => nil }
       begin
-        result = ssh_exec!(prepare_command("command -v ip"))
+        result = ssh_exec!(prepare_command("command -v ip"), false, false)
         if result[:exit_code] == 0
           @ip_exec_path = result[:stdout].chomp
         else
@@ -144,10 +146,6 @@ module Installer
       broker_cluster_load_balancer
     end
 
-    def is_db_replica_primary?
-      mongodb_replica_primary
-    end
-
     def has_role?(role)
       roles.include?(role)
     end
@@ -235,8 +233,6 @@ module Installer
           output['state'] = self.send(attr).to_s
         elsif attr == :broker_cluster_load_balancer
           output['load_balancer'] = (is_load_balancer? ? 'Y' : 'N')
-        elsif attr == :mongodb_replica_primary
-          output['db_replica_primary'] = (is_db_replica_primary? ? 'Y' : 'N')
         else
           output[attr.to_s] = attr == :roles ? self.send(attr).map{ |r| r.to_s } : self.send(attr)
         end
@@ -253,9 +249,6 @@ module Installer
       if is_load_balancer?
         display_roles << 'Broker Load Balancer'
       end
-      if is_db_replica_primary?
-        display_roles << 'DB Replica Primary'
-      end
       if roles_only
         return display_roles.sort.join("\n")
       end
@@ -266,15 +259,23 @@ module Installer
       @ssh_target ||= lookup_ssh_target
     end
 
-    def get_ssh_session
+    def get_ssh_session(abort_on_error=true)
       if @ssh_session.nil? or @ssh_session.closed?
-        @ssh_session = Net::SSH.start(ssh_host, user, { :auth_methods => ['publickey'], :timeout => 10, :verbose => (debug_mode? ? :debug : :fatal) })
+        begin
+          @ssh_session = Net::SSH.start(ssh_host, user, { :auth_methods => ['publickey'], :timeout => 10, :keepalive => true, :verbose => (debug_mode? ? :debug : :fatal) })
+        rescue => e
+          if abort_on_error
+            abort "\nSSH access to host: #{ssh_host} failed with error message: #{e.message}"
+          else
+            raise e
+          end
+        end
       end
       @ssh_session
     end
 
     def close_ssh_session
-      @ssh_session.close if not @ssh_session.nil?
+      @ssh_session.close unless @ssh_session.nil? or @ssh_session.closed?
     end
 
     def exec_on_host!(command, display_output=false)
@@ -290,11 +291,12 @@ module Installer
     # Credit to:
     # * http://stackoverflow.com/users/11811/flitzwald
     # * http://stackoverflow.com/users/73056/han
-    def ssh_exec!(command, display_output=false, ssh=get_ssh_session)
+    def ssh_exec!(command, display_output=false, abort_on_error=true)
       stdout_data = ""
       stderr_data = ""
       exit_code = nil
       exit_signal = nil
+      ssh=get_ssh_session abort_on_error
       ssh.open_channel do |channel|
         channel.request_pty do |ch, pty_success|
           if pty_success

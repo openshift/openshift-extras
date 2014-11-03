@@ -4,12 +4,13 @@ module Installer
   class BrokerGlobalConfig
     include Installer::Helpers
 
-    attr_accessor :user_default_gear_sizes, :default_gear_size, :valid_gear_sizes
+    attr_accessor :user_default_gear_sizes, :default_gear_size, :valid_gear_sizes, :broker_hostname
 
     def initialize broker_global_config
       @valid_gear_sizes = broker_global_config['valid_gear_sizes'].split(',').map{ |s| s.strip }.uniq
       @user_default_gear_sizes = broker_global_config['user_default_gear_sizes'].split(',').map{ |s| s.strip }.uniq
       @default_gear_size = broker_global_config['default_gear_size']
+      @broker_hostname = broker_global_config['broker_hostname']
     end
 
     def add_valid_gear_size(size)
@@ -59,6 +60,7 @@ module Installer
         'valid_gear_sizes'        => valid_gear_sizes.join(','),
         'user_default_gear_sizes' => user_default_gear_sizes.join(','),
         'default_gear_size'       => default_gear_size,
+        'broker_hostname'         => broker_hostname,
       }
     end
   end
