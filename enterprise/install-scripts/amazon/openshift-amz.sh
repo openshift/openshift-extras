@@ -503,13 +503,6 @@ install_broker_pkgs()
   # install policycoreutils-python.
   pkgs="$pkgs policycoreutils-python"
 
-  # We use the time command on the right-hand side of a pipeline in
-  # configure_selinux_policy_on_broker, which means that we need the
-  # external time command provided in the time package (Bash only allows
-  # builtins to be used on the left-hand side of a pipeline).  See
-  # <https://bugzilla.redhat.com/show_bug.cgi?id=1158019>.
-  pkgs="$pkgs time"
-
   yum_install_or_exit $pkgs
 }
 
@@ -745,7 +738,7 @@ configure_selinux_policy_on_broker()
 {
   # We combine these setsebool commands into a single semanage command
   # because separate commands take a long time to run.
-  (
+  time (
     # Allow console application to access executable and writable memory
     echo boolean -m --on httpd_execmem
 
@@ -766,7 +759,7 @@ configure_selinux_policy_on_broker()
 
     # Allow the broker to communicate with the named service.
     echo boolean -m --on allow_ypbind
-  ) | time semanage -i -
+  ) | semanage -i -
 
   fixfiles -R ruby193-rubygem-passenger restore
   fixfiles -R ruby193-mod_passenger restore
@@ -782,7 +775,7 @@ configure_selinux_policy_on_node()
   # We combine these setsebool commands into a single semanage command
   # because separate commands take a long time to run.
   ulimit -n 131071  # semanage runs out of file descriptors at normal ulimit
-  (
+  time (
     # Allow the node to write files in the http file context.
     echo boolean -m --on httpd_unified
 
@@ -806,7 +799,7 @@ configure_selinux_policy_on_node()
     # Enable rules to keep gears from binding where they should not
     # Note: relies on node code loading, must load after node.conf has correct frontend configured
     is_true "$isolate_gears" && oo-gear-firewall -s output -b "$district_first_uid" -e "$district_last_uid"
-  ) | time semanage -i -
+  ) | semanage -i -
 
 
   restorecon -rv /var/run
