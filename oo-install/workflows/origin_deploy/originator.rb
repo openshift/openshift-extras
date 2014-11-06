@@ -14,7 +14,7 @@ include Installer::Helpers
 ######################################
 
 @puppet_module_name = 'openshift/openshift_origin'
-@puppet_module_ver  = '4.0.10'
+@puppet_module_ver  = '4.0.12'
 @mongodb_port       = 27017
 
 # Check ENV for an alternate config file location.
@@ -93,52 +93,6 @@ end
 ###############################################
 # Stage 3: Define some locally useful methods #
 ###############################################
-
-def env_backup
-  @env_backup ||= ENV.to_hash
-end
-
-def clear_env
-  env_backup
-  ENV.delete_if{ |name,value| not name.nil? }
-end
-
-def restore_env
-  env_backup.each_pair do |name,value|
-    ENV[name] = value
-  end
-end
-
-# This function quietly handles ENV for locally run commands
-def execute_command host_instance, command
-  clear_env if host_instance.localhost?
-  output = host_instance.exec_on_host!(command)
-  restore_env if host_instance.localhost?
-  return output
-end
-
-def is_older_puppet_module(version)
-  # Knock out the easy comparison first
-  return false if version == @puppet_module_ver
-
-  target = @puppet_module_ver.split('.')
-  comp = version.split('.')
-  for i in 0..(target.length - 1)
-    if comp[i].nil? or comp[i].to_i < target[i].to_i
-      # Comp ran out of numbers before target or
-      # current comp version number is less than
-      # target version number: target is newer.
-      return true
-    elsif comp[i].to_i > target[i].to_i
-      # current comp version number is more than
-      # target version number: comp is newer.
-      return false
-    end
-  end
-  # Still here, meaning comp matches target to this point.
-  # comp may be newer, but it is not older.
-  return false
-end
 
 def components_list host_instance
   values = []
@@ -240,7 +194,7 @@ end
 
 def configure_mongodb_replica_set
   puts "\nRegistering MongoDB replica set"
-  db_primary = @deployment.db_replica_primaries[0]
+  db_primary = @deployment.dbservers.first
 
   init_cmd    = "mongo admin -u #{db_primary.mongodb_admin_user} -p #{db_primary.mongodb_admin_password} --quiet --eval \"printjson(rs.initiate())\""
   init_result = db_primary.exec_on_host!(init_cmd)
@@ -373,24 +327,6 @@ if @deployment.msgservers.length == 1
   @puppet_global_config['msgserver_cluster']  = false
   @puppet_global_config['msgserver_hostname'] = @deployment.msgservers[0].host
 end
-if @deployment.nodes.length == 1
-  @puppet_global_config['node_hostname']              = @deployment.nodes[0].host
-  @puppet_global_config['node_ip_addr']               = @deployment.nodes[0].ip_addr
-  @puppet_global_config['conf_node_external_eth_dev'] = @deployment.nodes[0].ip_interface
-end
-
-# These are ensured to be identical on all hosts.
-[:mcollective_user,    :mcollective_password,
- :mongodb_broker_user, :mongodb_broker_password,
- :mongodb_admin_user,  :mongodb_admin_password,
- :openshift_user,      :openshift_password,
-].each do |setting|
-  key = setting.to_s
-  if [:openshift_user,:openshift_password].include?(setting)
-    key = key + '1'
-  end
-  @puppet_global_config[key] = @deployment.hosts[0].send(setting)
-end
 
 # And finally, gear sizes.
 @puppet_global_config['conf_valid_gear_sizes']          = @deployment.broker_global.valid_gear_sizes.join(',')
@@ -417,16 +353,47 @@ ordered_msgservers = @deployment.msgservers.sort_by{ |h| h.host }
 host_installation_order.each do |host_instance|
   puts "\nGenerating template for '#{host_instance.host}'"
 
-  # If we are installing DNS, it will be on the first host out of the gate.
-  if @deployment.dns.deploy_dns? and host_instance.is_nameserver? and not deploy_dns(host_instance)
-    puts "The installer could not succesfully configure a DNS server on #{host_instance.host}. Exiting."
-    exit 1
+  unless @puppet_template_only
+    # If we are installing DNS, it will be on the first host out of the gate.
+    if @deployment.dns.deploy_dns? and host_instance.is_nameserver? and not deploy_dns(host_instance)
+      puts "The installer could not succesfully configure a DNS server on #{host_instance.host}. Exiting."
+      exit 1
+    end
   end
 
   # Now we can start building the host-specific puppet config.
   hostfile                    = "oo_install_configure_#{host_instance.host}.pp"
   host_puppet_config          = @puppet_global_config.clone
   host_puppet_config['roles'] = components_list(host_instance)
+
+  # Broker specific config
+  if host_instance.is_broker?
+    host_puppet_config['conf_broker_auth_salt']       = host_instance.broker_auth_salt
+    host_puppet_config['conf_broker_session_secret']  = host_instance.broker_session_secret
+    host_puppet_config['conf_console_session_secret'] = host_instance.console_session_secret
+    host_puppet_config['conf_broker_auth_private_key']   = host_instance.broker_auth_priv_key
+  end
+
+  # Node specific config
+  if host_instance.is_node?
+     host_puppet_config['node_hostname'] = host_instance.host
+     host_puppet_config['node_ip_addr'] = host_instance.ip_addr
+     host_puppet_config['conf_node_external_eth_dev'] = host_instance.ip_interface
+  end
+
+  # Set usernames/passwords
+  [:mcollective_user, :mcollective_password,
+   :mongodb_broker_user, :mongodb_broker_password,
+   :mongodb_admin_user, :mongodb_admin_password,
+   :openshift_user, :openshift_password,
+  ].each do |setting|
+    key = setting.to_s
+    if [:openshift_user,:openshift_password].include?(setting)
+      key = key + '1'
+    end
+    val = host_instance.send(setting)
+    host_puppet_config[key] = val unless val.nil? or val.empty?
+  end
 
   # Handle HA Brokers
   if @deployment.brokers.length > 1
@@ -463,9 +430,10 @@ host_installation_order.each do |host_instance|
     end
     if host_instance.is_dbserver?
       host_puppet_config['datastore_hostname']              = host_instance.host
-      host_puppet_config['mongodb_replica_primary']         = host_instance.is_db_replica_primary?
-      host_puppet_config['mongodb_replica_primary_ip_addr'] = @deployment.db_replica_primaries[0].ip_addr
-      host_puppet_config['mongodb_key']                     = @deployment.db_replica_primaries[0].mongodb_replica_key
+      host_puppet_config['mongodb_replica_primary']         = host_instance.host == @deployment.dbservers.first.host
+      host_puppet_config['mongodb_replica_primary_ip_addr'] = @deployment.dbservers.first.ip_addr
+      host_puppet_config['mongodb_key']                     = host_instance.mongodb_replica_key
+      host_puppet_config['mongodb_replica_name']            = host_instance.mongodb_replica_name
       #dbserver_idx = 1
       #ordered_dbservers.each do |db_instance|
       #  host_puppet_config["datastore#{dbserver_idx}_ip_addr"] = db_instance.ip_addr

@@ -80,8 +80,8 @@ module Installer
       if not deploy_dns?
         output['dns_host_name'] = dns_host_name
         output['dns_host_ip']   = dns_host_ip
-        output['dnssec_key']    = dnssec_key
       end
+      output['dnssec_key'] = dnssec_key unless dnssec_key.nil?
       output
     end
   end
