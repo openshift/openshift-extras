@@ -1389,7 +1389,7 @@ module Installer
       end
       target_district.add_node_host(node_to_move)
       if delete_source_district
-        deployment.delete_district! source_district
+        deployment.remove_district! source_district
       else
         source_district.remove_node_host(node_to_move)
         deployment.save_to_disk!
