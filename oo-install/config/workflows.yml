@@ -118,7 +118,6 @@ Description: Make a puppet configuration file that you can use to run an OpenShi
 ID: puppet_template
 WorkflowDir: origin_deploy
 Executable: <workflow_path>/originator.rb nil true
-RemoteDeployment: Y
 SubscriptionCheck: Y
 Repositories:
   - repos_base
