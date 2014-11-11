@@ -14,7 +14,7 @@ include Installer::Helpers
 ######################################
 
 @puppet_module_name = 'openshift/openshift_origin'
-@puppet_module_ver  = '4.0.11'
+@puppet_module_ver  = '4.1.0'
 @mongodb_port       = 27017
 
 # Check ENV for an alternate config file location.
@@ -353,10 +353,12 @@ ordered_msgservers = @deployment.msgservers.sort_by{ |h| h.host }
 host_installation_order.each do |host_instance|
   puts "\nGenerating template for '#{host_instance.host}'"
 
-  # If we are installing DNS, it will be on the first host out of the gate.
-  if @deployment.dns.deploy_dns? and host_instance.is_nameserver? and not deploy_dns(host_instance)
-    puts "The installer could not succesfully configure a DNS server on #{host_instance.host}. Exiting."
-    exit 1
+  unless @puppet_template_only
+    # If we are installing DNS, it will be on the first host out of the gate.
+    if @deployment.dns.deploy_dns? and host_instance.is_nameserver? and not deploy_dns(host_instance)
+      puts "The installer could not succesfully configure a DNS server on #{host_instance.host}. Exiting."
+      exit 1
+    end
   end
 
   # Now we can start building the host-specific puppet config.

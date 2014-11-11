@@ -62,10 +62,10 @@ task :package do
       :branch => 'master',
     },
     { :version => 'ose',
-      :version_text => 'OpenShift Enterprise 2.1',
-      :ose_launcher => 'https://raw.githubusercontent.com/openshift/openshift-extras/enterprise-2.1/enterprise/install-scripts/generic/openshift.sh',
+      :version_text => 'OpenShift Enterprise 2.2',
+      :ose_launcher => 'https://raw.githubusercontent.com/openshift/openshift-extras/enterprise-2.2/enterprise/install-scripts/generic/openshift.sh',
       :context => :ose,
-      :branch => 'enterprise-2.1',
+      :branch => 'enterprise-2.2',
     },
     { :version => 'ose-2.2',
       :version_text => 'OpenShift Enterprise 2.2',
@@ -84,12 +84,6 @@ task :package do
       :ose_launcher => 'https://raw.githubusercontent.com/openshift/openshift-extras/enterprise-2.0/enterprise/install-scripts/generic/openshift.sh',
       :context => :ose,
       :branch => 'enterprise-2.0',
-    },
-    { :version => 'ose-1.2',
-      :version_text => 'OpenShift Enterprise 1.2',
-      :ose_launcher => 'https://raw.githubusercontent.com/openshift/openshift-extras/enterprise-1.2/enterprise/install-scripts/generic/openshift.sh',
-      :context => :ose,
-      :branch => 'enterprise-1.2',
     },
     { :version => 'origin',
       :ose_launcher => 'https://raw.githubusercontent.com/openshift/openshift-extras/enterprise-2.2/enterprise/install-scripts/generic/openshift.sh',
@@ -148,7 +142,17 @@ task :package do
     # Copy the installer source to $TMPDIR
     # the -R flag must be capitalized, else cp on OS X fails
     system "cp -RL #{gem_root_dir} #{@tmpdir}"
+    if not $?.exitstatus == 0
+      puts "Failed to copy #{gem_root_dir} to #{@tmpdir}\nExiting."
+      exit 1
+    end
+
     system "mv #{@tmpdir}/oo-install #{@tmpdir}/#{pkgname}"
+    if not $?.exitstatus == 0
+      puts "Failed to move #{@tmpdir}/oo-install to #{@tmpdir}/#{pkgname}\nExiting."
+      exit 1
+    end
+
     ose_launcher_path = "#{@tmpdir}/#{pkgname}/workflows/enterprise_deploy/openshift.sh"
 
     # If there is a replacement openshift.sh file, get it.
@@ -163,38 +167,88 @@ task :package do
         end
       end
       system "rm #{ose_launcher_path}"
+      if not $?.exitstatus == 0
+        puts "Failed to remove #{ose_launcher_path}\nExiting."
+        exit 1
+      end
       File.open(ose_launcher_path, 'w') { |file| file.write(@ose_launchers[launcher_url]) }
       File.chmod(0755, ose_launcher_path)
     end
 
     # Zip up the source and copy it to the package dir
-    system "cd #{@tmpdir} && rm -rf #{pkgname}/package && tar czf #{pkgname}.tgz #{pkgname}"
-    system 'mv', "#{@tmpdir}#{pkgname}.tgz", pkgdir
+    system "cd #{@tmpdir} && rm -rf #{pkgname}/package && tar czf #{pkgdir}/#{pkgname}.tgz #{pkgname}"
+    if not $?.exitstatus == 0
+      puts "Failed to package #{pkgname} as #{pkgdir}/#{pkgname}.tgz\nExiting."
+      exit 1
+    end
 
     # Copy the bootstrap file to the package dir
     system 'cp', 'site_assets/oo-install-bootstrap.sh', "#{pkgdir}/index.html"
-    unless ENV['APP_URL'].nil?
+    if not $?.exitstatus == 0
+      puts "Failed to copy bootstrap script to #{pkgdir}/index.html\nExiting."
+      exit 1
+    end
+
+    unless ENV['APP_URL'] == 'install.openshift.com' or ENV['APP_URL'].nil?
       system "#{@sed_cmd}.bak 's/install.openshift.com/#{ENV['APP_URL']}/g' #{pkgdir}/index.html"
+      if not $?.exitstatus == 0
+        puts "Failed to replace instances of install.openshift.com with #{ENV['APP_URL']}\nExiting."
+        exit 1
+      end
+
       system 'rm', "#{pkgdir}/index.html.bak"
-     
     end
 
     if build.has_key?(:base) and build[:base]
-      system 'cp', 'site_assets/site_info.html', pkgdir
-      system 'cp', 'site_assets/openshift-logo-horizontal-99a90035cbd613be7b6293335eb05563.svg', pkgdir
-      system 'cp', 'vendor/bootstrap/css/bootstrap.min.css', pkgdir
+      system 'cp', 'site_assets/site_info.html',
+        'site_assets/openshift-logo-horizontal-99a90035cbd613be7b6293335eb05563.svg',
+        'vendor/bootstrap/css/bootstrap.min.css', pkgdir
+      if not $?.exitstatus == 0
+        puts "Failed to copy site assets to #{pkgdir}\nExiting."
+        exit 1
+      end
 
       # Replace install.openshift.com with ENV['APP_URL'] if set
       unless ENV['APP_URL'].nil?
         system "#{@sed_cmd}.bak 's/install.openshift.com/#{ENV['APP_URL']}/g' #{pkgdir}/site_info.html"
+        if not $?.exitstatus == 0
+          puts "Failed to replace instances of install.openshift.com with #{ENV['APP_URL']}\nExiting."
+          exit 1
+        end
+
         system 'rm', "#{pkgdir}/site_info.html.bak"
       end
     end
     system "#{@sed_cmd}.bak 's/INSTALLPKGNAME/#{pkgname}/g' #{pkgdir}/index.html"
+    if not $?.exitstatus == 0
+      puts "Failed to replace instances of INSTALLPKGNAME with #{pkgname}\nExiting."
+      exit 1
+    end
+
     system "#{@sed_cmd}.bak 's/INSTALLVERPATH/#{pkgurl}/' #{pkgdir}/index.html"
+    if not $?.exitstatus == 0
+      puts "Failed to replace instances of INSTALLVERPATH with #{pkgurl}\nExiting."
+      exit 1
+    end
+
     system "#{@sed_cmd}.bak 's/OPENSHIFTVERSION/#{build[:version].nil? ? 'base' : build[:version]}/' #{pkgdir}/index.html"
+    if not $?.exitstatus == 0
+      puts "Failed to replace instances of OPENSHIFTVERSION with #{build[:version].nil? ? 'base' : build[:version]}\nExiting."
+      exit 1
+    end
+
     system "#{@sed_cmd}.bak 's/INSTALLVERSION/#{version_text}/' #{pkgdir}/index.html"
+    if not $?.exitstatus == 0
+      puts "Failed to replace instances of INSTALLVERSION #{version_text}\nExiting."
+      exit 1
+    end
+
     system "#{@sed_cmd}.bak 's/INSTALLCONTEXT/#{context}/' #{pkgdir}/index.html"
+    if not $?.exitstatus == 0
+      puts "Failed to replace instances of INSTALLCONTEXT with #{context}\nExiting."
+      exit 1
+    end
+
     system 'rm', "#{pkgdir}/index.html.bak"
 
     # Lastly, make a "portable" package.
@@ -207,11 +261,37 @@ task :package do
       build_name = build[:version]
     end
     system "cd #{pkgdir} && cp index.html #{@portable_dir}/#{launcher_name} && chmod +x #{@portable_dir}/#{launcher_name}"
+    if not $?.exitstatus == 0
+      puts "Failed to create the portable launcher bootstrap for #{launcher_name}\nExiting."
+      exit 1
+    end
+
     system "cd #{pkgdir} && cp #{pkgname}.tgz #{@portable_dir}/#{pkgname}.tgz"
+    if not $?.exitstatus == 0
+      puts "Failed to move the installer tarball to the portable launcher directory #{@portable_dir}\nExiting."
+      exit 1
+    end
+
     system "cp #{@site_assets_dir}/#{@portable_readme} #{@portable_dir}"
+    if not $?.exitstatus == 0
+      puts "Failed to move the portable readme to #{@portable_dir}\nExiting."
+      exit 1
+    end
+
     system "#{@sed_cmd}.bak 's/LAUNCHERNAME/#{launcher_name}/g' #{@portable_dir}/#{@portable_readme}"
+    if not $?.exitstatus == 0
+      puts "Failed to replace LAUNCHERNAME with #{launcher_name} in #{@portable_dir}/#{@portable_readme}\nExiting."
+      exit 1
+    end
+
     system "rm #{@portable_dir}/#{@portable_readme}.bak"
+
     system "cd #{@portable_dir} && tar czf #{launcher_name}.tgz #{launcher_name} #{@portable_readme} #{pkgname}.tgz"
+    if not $?.exitstatus == 0
+      puts "Failed to create the portable launcher package\nExiting."
+      exit 1
+    end
+
     system "cd #{@portable_dir} && rm #{launcher_name} #{pkgname}.tgz #{@portable_readme}"
 
     if build[:portable_only]
