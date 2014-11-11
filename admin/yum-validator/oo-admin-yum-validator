@@ -8,6 +8,8 @@ repositories
 import sys
 from yumvalidator import repo_db
 from yumvalidator.check_sources import CheckSources
+from yumvalidator.check_sources import SUBMAN_OVERRIDE_NVR
+# from yumvalidator.reconcile_rhsm_config import ReconciliationEngine
 from itertools import chain
 from yum import Errors
 import logging
@@ -23,7 +25,7 @@ SUBS_NAME = {UNKNOWN: '', RHSM: 'Red Hat Subscription Manager',
 VALID_SUBS = SUBS_NAME.keys()[1:]
 ATTACH_ENTITLEMENTS_URL = 'https://access.redhat.com/site/articles/522923'
 # VALID_OO_VERSIONS = ['1.2', '2.0']
-VALID_ROLES = ['node', 'broker', 'client', 'node-eap']
+VALID_ROLES = ['node', 'broker', 'client', 'node-eap', 'node-fuse', 'node-amq']
 
 def flatten_uniq(llist):
     """Flatten nested iterables and filter result for uniqueness
@@ -162,7 +164,7 @@ class OpenShiftYumValidator(object):
 
     def _oo_ver(self, version):
         self.opts.oo_version = version
-        self.logger.info('Detected OpenShift version %s' % 
+        self.logger.info('Detected OpenShift version %s' %
                          self.opts.oo_version)
 
     def _sub_ver(self, subscription, version = None):
@@ -355,7 +357,8 @@ class OpenShiftYumValidator(object):
                                       'update '
                                       '/etc/yum/pluginconf.d/rhnplugin.conf '
                                       'with the following changes:')
-                elif self.oscs.repo_is_rhsm(repoid):
+                elif (self.oscs.repo_is_rhsm(repoid)
+                      and not self.oscs.use_override()):
                     self.logger.error('To resolve conflicting repositories, '
                                       'update /etc/yum.repos.d/redhat.repo '
                                       'with the following changes:')
@@ -366,11 +369,14 @@ class OpenShiftYumValidator(object):
                 self.logger.error('    Set priority=%d in the [%s] section' %
                                   (priority, repoid))
             elif self.oscs.repo_is_rhsm(repoid):
-                # TODO: when the next version of sub-man is released
-                # this should read
-                # '# subscription-manager override --repo=%s --add=priority:%d'
-                self.logger.error('    Set priority=%d in the [%s] section' %
-                                  (priority, repoid))                
+                if self.oscs.use_override():
+                    self.logger.error('# subscription-manager repo-override '
+                                      '--repo=%s --add=priority:%d' %
+                                      (repoid, priority))
+                else:
+                    self.logger.error('    Set priority=%d in the '
+                                      '[%s] section' %
+                                      (priority, repoid))
             else:
                 self.logger.error('# yum-config-manager '
                                   '--setopt=%s.priority=%d %s --save' %
@@ -601,10 +607,18 @@ class OpenShiftYumValidator(object):
             self.oscs.merge_excludes(repo.repoid, list(repo.exclude))
         else:
             exc = ' '.join(repo.exclude)
-            if self.opts.subscription == RHN or self.opts.subscription == RHSM:
+            if ' ' in exc:
+                exc = '"%s"' % exc
+            if self.opts.subscription == RHN or (
+                    self.opts.subscription == RHSM and
+                    not self.oscs.use_override()):
                 self.logger.error('Add the following to the [%s] section:' %
                                   (repo.repoid))
                 self.logger.error('    exclude=%s'%exc)
+            elif self.opts.subscription == RHSM and self.oscs.use_override():
+                self.logger.error('# subscription-manager repo-override '
+                                  '--repo=%s --add=exclude:%s' %
+                                  (repo.repoid, exc))
             else:
                 repofile = self.oscs.yum_base.repos.repos[repo.repoid].repofile
                 if repofile:
@@ -640,7 +654,7 @@ class OpenShiftYumValidator(object):
                 if self.opts.subscription == RHN:
                     self.logger.error('Make the following modifications to '
                                       '/etc/yum/pluginconf.d/rhnplugin.conf')
-                elif self.opts.subscription == RHSM:
+                elif self.opts.subscription == RHSM and not self.oscs.use_override():
                     self.logger.error('Make the following modifications to '
                                       '/etc/yum.repos.d/redhat.repo')
                 else:
@@ -704,6 +718,16 @@ class OpenShiftYumValidator(object):
                 return False
         return True
 
+    def reconcile_overrides(self):
+        self.logger.info('Checking for discrepancies between local settings '
+                         'and content overrides')
+        from yumvalidator.reconcile_rhsm_config import ReconciliationEngine
+        r_eng = ReconciliationEngine(self.oscs, self.rdb, self.logger, self.opts)
+        if r_eng.reconcile_overrides():
+            self.problem = True
+            return False
+        return True
+
     def validate_version(self):
         """Check supplied product version against versions available in RepoDB
         object self.rdb
@@ -730,17 +754,9 @@ class OpenShiftYumValidator(object):
             self.guess_role()
         if self.opts.role:
             self.opts.role = [xx.lower() for xx in self.opts.role]
-            if 'node-eap' in self.opts.role and not 'node' in self.opts.role:
-                self.opts.role.append('node')
-            if ('node' in self.opts.role and not 'node-eap' in
-                self.opts.role and (not self.opts.product or
-                                    self.opts.product == 'ose')):
-                # self.problem = True
-                # TODO: Skip this message if the system is running Origin - how to determine?
-                self.logger.warning('If this system will be running OpenShift '
-                                    'Enterprise and providing the JBossEAP '
-                                    'cartridge, re-run this command with the '
-                                    '--role=node-eap argument')
+            for role in ['node-eap', 'node-fuse', 'node-amq']:
+                if role in self.opts.role and not 'node' in self.opts.role:
+                    self.opts.role.append('node')
             if 'broker' in self.opts.role and not 'client' in self.opts.role:
                 self.opts.role.append('client')
                 self.logger.info('Please note: --role=broker implicitly '
@@ -759,7 +775,7 @@ class OpenShiftYumValidator(object):
                 self.logger.error('Please attach an OpenShift subscription to '
                                   'this system using either RHN Classic or Red '
                                   'Hat Subscription Manager by following the '
-                                  'instructions here: %s' % 
+                                  'instructions here: %s' %
                                   ATTACH_ENTITLEMENTS_URL)
             if not self.opts.oo_version:
                 self.logger.error('Could not determine product version. '
@@ -767,6 +783,17 @@ class OpenShiftYumValidator(object):
                                   '--oo-version argument.')
             return False
         print ""
+        if self.opts.reconcile_overrides:
+            if not self.opts.subscription == RHSM or not self.oscs.use_override():
+                self.logger.error('The --reconcile-overrides option only '
+                                  'affects systems with OpenShift '
+                                  'subscriptions managed by Red Hat '
+                                  'Subscription Manager version %s or '
+                                  'higher.' % SUBMAN_OVERRIDE_NVR[1])
+            elif not self.reconcile_overrides():
+                print ""
+                if not self.opts.report_all:
+                    return False
         if not (self.check_version_conflict() or self.opts.report_all):
             return False
         if not (self.check_disabled_repos() or self.opts.report_all):
@@ -843,6 +870,10 @@ def validate_yum():
                       'instead of built-in values')
     USER_REPOS_HELP = ('Requires --repo-config. Blend the repository data '
                        'loaded via --repo-config with the built-in values')
+    RECONCILE_OVERRIDES_HELP = ('Checks RHSM repos for local settings that '
+                                'differ from settings stored remotely as '
+                                'content overrides, and commutes the local '
+                                'values to content overrides.')
 
     # TODO: This is getting unwieldy - time for a wrapper?
     try:
@@ -870,6 +901,8 @@ def validate_yum():
                                 help=REPORT_ALL_HELP)
         opt_parser.add_argument('-c', '--repo-config', default=None,
                                 type=str, help=REPO_CONF_HELP)
+        opt_parser.add_argument('-e', '--reconcile-overrides', action='store_true',
+                                default=False, help=RECONCILE_OVERRIDES_HELP)
         # opt_parser.add_argument('-u', '--blend-user-repos',
         #                         action='store_true', default=True,
         #                         dest='user_repos_only',
@@ -900,6 +933,8 @@ def validate_yum():
                               dest='report_all', help=REPORT_ALL_HELP)
         opt_parser.add_option('-c', '--repo-config', default=None,
                               type='string', help=REPO_CONF_HELP)
+        opt_parser.add_option('-e', '--reconcile-overrides', action='store_true',
+                              default=False, help=RECONCILE_OVERRIDES_HELP)
         # opt_parser.add_option('-u', '--blend-user-repos',
         #                       action='store_true', default=True,
         #                       dest='user_repos_only',
