@@ -59,6 +59,12 @@ OPTIONS
     repo_config instead of the default file
     /etc/yum-validator/repos.ini
 
+  -e|--reconcile-overrides  
+    Checks RHSM repos for local settings that differ from
+    settings stored remotely as content overrides, and
+    commutes the local values to content overrides.
+
+
 APPLICATION USAGE
 
   With no arguments, oo-admin-yum-validator will attempt to guess various details about your system, including:

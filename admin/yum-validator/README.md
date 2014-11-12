@@ -1,6 +1,6 @@
 # check-sources
 
-This directory contains python libraries and tools for examining and repairing Yum repositories on a given system. In particular, `oo-admin-yum-validator` is designed to validate repository priorities and availability, with the goal of ensuring that OpenShift Enterprise (and later Origin) dependencies aren't overwritten by untested/unsupported versions of the same packages from other repositories.
+This directory contains python libraries and tools for examining and repairing Yum repositories on a given system. In particular, `oo-admin-yum-validator` is designed to validate repository priorities and availability, with the goal of ensuring that OpenShift dependencies aren't overwritten by untested/unsupported versions of the same packages from other repositories.
 
 ## Installation
 
@@ -12,13 +12,14 @@ Make sure that this directory is in your load path for Python, either by setting
 
 ### oo-admin-yum-validator
 
-    usage: oo-admin-yum-validator [-h] [-r {node,broker,client,node-eap}]
+    usage: oo-admin-yum-validator [-h]
+                                  [-r {node,broker,client,node-eap,node-fuse,node-amq}]
                                   [-o OO_VERSION] [-s {rhsm,yum,rhn}] [-f] [-a]
-                                  [-p] [-c REPO_CONFIG]
+                                  [-p] [-c REPO_CONFIG] [-e]
     
     optional arguments:
       -h, --help            show this help message and exit
-      -r {node,broker,client,node-eap}, --role {node,broker,client,node-eap}
+      -r, --role {node,broker,client,node-eap,node-fuse,node-amq},
                             OpenShift component role(s) this system will fulfill.
       -o OO_VERSION, --oo_version OO_VERSION, --oo-version OO_VERSION
                             Version of OpenShift in use on this system.
@@ -32,6 +33,10 @@ Make sure that this directory is in your load path for Python, either by setting
       -c REPO_CONFIG, --repo-config REPO_CONFIG
                             Load blessed repository data from the specified file
                             instead of built-in values
+      -e, --reconcile-overrides
+                            Checks RHSM repos for local settings that differ from
+                            settings stored remotely as content overrides, and
+                            commutes the local values to content overrides.
 
 ## Contributing
 

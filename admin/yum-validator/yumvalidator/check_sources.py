@@ -195,11 +195,6 @@ class CheckSources(object):
             option = repo.optionobj(attribute)
             subprocess.call(self.get_update_override_cmd(
                 repo, attribute, value))
-            # subprocess.call([
-            #     '/usr/sbin/subscription-manager',
-            #     'repo-override',
-            #     '--repo=%s'%repo.id,
-            #     '--add=%s:%s'%(attribute, option.tostring(value))])
         else:
             self.backup_config(repo.repofile)
             config.writeRawRepoFile(repo, only=[attribute])
@@ -226,9 +221,10 @@ class CheckSources(object):
         """Given a YumRepository instance or a repoid, try to detect if it's
         from a subscription-manager managed source
 
-        TODO: This will be UNRELIABLE in the next subscription-manager
-        iteration - The is_managed function from here should be used
-        instead:
+        TODO: This still works now that subscription-manager supports
+        content overrides, but there might be a more reliable
+        technique - perhaps the is_managed function from here should
+        be used instead:
         https://github.com/candlepin/subscription-manager/blob/awood/content-override/src/subscription_manager/repolib.py#L46
 
         """
@@ -310,7 +306,6 @@ class CheckSources(object):
         repos -- a List of YumRepository objects
         """
         if not repos:
-            # repos = self.all_repos()
             return []
         return [repo.id for repo in repos]
 
