@@ -10,6 +10,7 @@ import sys
 import os
 # import yum
 from yum import config
+from yum.config import RepoConf
 from yum import plugins
 from yum.Errors import RepoError
 import time
@@ -18,11 +19,16 @@ sys.path.insert(0,'/usr/share/yum-cli')
 from utils import YumUtilBase
 from iniparse import INIConfig
 from optparse import OptionParser
+from os.path import normpath
+import subprocess
+import rpm
 
 NAME = 'oo-admin-check-sources'
 VERSION = '0.1'
 USAGE = 'Apply a thin layer to scalp and sing'
 RHNPLUGINCONF = '/etc/yum/pluginconf.d/rhnplugin.conf'
+
+SUBMAN_OVERRIDE_NVR = ('subscription-manager', '1.10.7', '1')
 
 # TODO Should subclass YumBase?
 class CheckSources(object):
@@ -89,6 +95,21 @@ class CheckSources(object):
             repo = repoid
         return repo
 
+    def use_override(self):
+        try:
+            return self._use_override
+        except AttributeError:
+            pkg_sm = self.installed_package_matching('subscription-manager')
+            if pkg_sm:
+                sm_nvr=(pkg_sm.name, pkg_sm.ver, pkg_sm.rel)
+                self._use_override = (
+                    rpm.labelCompare(sm_nvr,
+                                     SUBMAN_OVERRIDE_NVR) >= 0)
+            else:
+                self._use_override = False
+            return self._use_override
+
+
     def repo_priority(self, repoid):
         """Return the configured priority for the repository identified
         by repoid
@@ -113,25 +134,50 @@ class CheckSources(object):
         priority -- Integer value representing the updated
                     repository priority
         """
-        # repo.setAttribute('priority', priority)
-        # self.backup_config(RHNPLUGINCONF)
-        # cfg = INIConfig(file(RHNPLUGINCONF))
-        # repocfg = getattr(cfg, repo.id)
-        # repocfg.priority = priority
-        # ff = open(RHNPLUGINCONF, 'w')
-        # print >>ff, cfg
-        # ff.close()
         self.set_save_repo_attr(repo, 'priority', priority)
+
+    def get_update_override_cmd(self, repo, attribute, value, for_output=False):
+        """Get the subscription-manager command line needed to set the given
+        attribute on the given repo via repo-override, formatted for
+        subprocess.call or for terminal output
+
+        Arguments:
+        repo -- str representing repoid or rhnplugin.RhnRepo object
+                representing the repository to be updated
+        attribute -- str representing repository configuration
+                     attribute to be updated (e.g. 'priority')
+        value -- updated value for specified attribute, stored as
+                 appropriate type (e.g. list for 'exclude' attribute)
+        for_output -- bool indicating that the return value is for use
+                      with subprocess.call (False, default) or for
+                      terminal output
+        """
+        repo = self._resolve_repoid(repo)
+        option = RepoConf.optionobj(attribute)
+        if isinstance(option, config.ListOption):
+            v_str = ' '.join(value)
+            if ' ' in v_str and for_output:
+                v_str = '"%s"' % v_str
+        else:
+            v_str = option.tostring(value)
+        response = ['/usr/sbin/subscription-manager',
+                    'repo-override',
+                    '--repo=%s'%repo.id,
+                    '--add=%s:%s' % (attribute, v_str)]
+        if for_output:
+            response = ' '.join(response)
+        return response
 
     def set_save_repo_attr(self, repo, attribute, value):
         """Set the priority for the given RHN repo
 
         Arguments:
-        repo -- rhnplugin.RhnRepo object representing the
-                repository to be updated
+        repo -- str representing repoid or rhnplugin.RhnRepo object
+                representing the repository to be updated
         attribute -- str representing repository configuration
                      attribute to be updated (e.g. 'priority')
         value -- updated value for specified attribute
+
         """
         repo = self._resolve_repoid(repo)
         repo.setAttribute(attribute, value)
@@ -145,6 +191,10 @@ class CheckSources(object):
             cfg_file = open(RHNPLUGINCONF, 'w')
             print >> cfg_file, cfg
             cfg_file.close()
+        elif self.repo_is_rhsm(repo) and self.use_override():
+            option = repo.optionobj(attribute)
+            subprocess.call(self.get_update_override_cmd(
+                repo, attribute, value))
         else:
             self.backup_config(repo.repofile)
             config.writeRawRepoFile(repo, only=[attribute])
@@ -171,15 +221,17 @@ class CheckSources(object):
         """Given a YumRepository instance or a repoid, try to detect if it's
         from a subscription-manager managed source
 
-        TODO: This will be UNRELIABLE in the next subscription-manager
-        iteration - The is_managed function from here should be used
-        instead:
+        TODO: This still works now that subscription-manager supports
+        content overrides, but there might be a more reliable
+        technique - perhaps the is_managed function from here should
+        be used instead:
         https://github.com/candlepin/subscription-manager/blob/awood/content-override/src/subscription_manager/repolib.py#L46
 
         """
         repo = self._resolve_repoid(repoid)
-        return (getattr(repo, 'repofile', None) ==
-                '///etc/yum.repos.d/redhat.repo')
+        repofile = getattr(repo, 'repofile', None)
+        return repofile and (normpath(repofile) ==
+                             '/etc/yum.repos.d/redhat.repo')
 
     def repo_is_rhn(self, repoid):
         """Given a YumRepository instance or a repoid, try to detect if it's
@@ -203,17 +255,7 @@ class CheckSources(object):
 
         """
         repo = self._resolve_repoid(repoid)
-        if self.repo_is_rhn(repo):
-            self._rhn_set_repo_priority(repo, priority)
-        else:
-            # repo is a yum/rhsm repo!
-            try:
-                repo.priority = priority
-            except AttributeError:
-                # Not sure if this is needed or if it would even work...
-                repo.setConfigOption('priority', priority)
-            self.backup_config(repo.repofile)
-            config.writeRawRepoFile(repo, only=['priority'])
+        self.set_save_repo_attr(repo, 'priority', priority)
 
     def enable_repo(self, repoid):
         """Enable the repository for the given repoid
@@ -264,7 +306,6 @@ class CheckSources(object):
         repos -- a List of YumRepository objects
         """
         if not repos:
-            # repos = self.all_repos()
             return []
         return [repo.id for repo in repos]
 
