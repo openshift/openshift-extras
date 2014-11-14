@@ -4109,6 +4109,13 @@ PASSWORDS_TO_DISPLAY=false
 RESTART_NEEDED=false
 RESTART_COMPLETED=false
 
+# Make sure /sbin and /usr/sbin are in PATH
+for admin_path in /sbin /usr/sbin; do
+  if [[ :$PATH: != *:"${admin_path}":* ]] ; then
+    PATH=${PATH}:${admin_path}
+  fi
+done
+
 # Initialize associative array to which firewall rules can be added (see
 # configure_firewall_add_rules).  This must be declared here for scoping.
 declare -A firewall_allow
