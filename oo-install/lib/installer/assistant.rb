@@ -1244,18 +1244,18 @@ module Installer
       deployment.remove_district! district
     end
 
-    def ui_modify_district(district=nil)
-      new_district = district.nil?
-      if new_district
-        district = Installer::District.new
-      end
+    def ui_add_district
+      district = Installer::District.new
       district.name = ask("\nWhat is the name of the district? ") { |q|
-        if not district.name.nil?
-          q.default = district.name
-        end
         q.validate = lambda { |p| is_valid_string?(p) and (deployment.districts.select{ |d| d.name == p }.length == 0 or (deployment.districts.select{ |d| d.name == p }.length == 1 and deployment.districts.select{ |d| d.name == p }[0] == district)) }
         q.responses[:not_valid] = "Enter a valid district name that is not already in use."
       }.to_s
+
+      ui_choose_gear_size_for_district(district)
+      return district
+    end
+
+    def ui_choose_gear_size_for_district(district)
       choose do |menu|
         menu.header = "\nWhat gear size will be associated with this district?"
         menu.prompt = "#{translate(:menu_prompt)} "
@@ -1264,6 +1264,20 @@ module Installer
         end
         menu.hidden("q") { return }
       end
+    end
+
+    def ui_modify_district(district=nil)
+      if district.nil?
+        district = ui_add_district
+      else
+        district.name = ask("\nDistrict name is currently #{district.name}, what would you like to name the district? ") { |q|
+          q.default = district.name
+          q.validate = lambda { |p| is_valid_string?(p) and (deployment.districts.select{ |d| d.name == p }.length == 0 or (deployment.districts.select{ |d| d.name == p }.length == 1 and deployment.districts.select{ |d| d.name == p }[0] == district)) }
+          q.responses[:not_valid] = "Enter a valid district name that is not already in use."
+        }.to_s
+        ui_choose_gear_size_for_district(district)
+      end
+
       if deployment.districts.length == 0 or deployment.districts.length == 1 and deployment.districts[0] == district
         say "\nBecause this is the only district in the deployment, all Node hosts will automatically be associated with this district. You can change this later by adding more districts."
         district.node_hosts = deployment.nodes.map{ |h| h.host }
@@ -1298,29 +1312,37 @@ module Installer
           if action == :add
             node_to_add = nil
             source_district = nil
-            choose do |menu|
-              menu.header = "\nChoose a Node host to add to this district"
-              menu.prompt = "#{translate(:menu_prompt)} "
-              deployment.nodes.sort_by{ |h| h.host }.each do |host_instance|
-                current_district = deployment.get_district_by_node(host_instance)
-                next if current_district.name == district.name
-                display_text = "#{host_instance.host}"
-                if not current_district.nil?
-                  display_text << " (current district: #{current_district.name})"
-                end
-                menu.choice(display_text) {
-                  node_to_add = host_instance
-                  source_district = current_district
-                }
-              end
-              menu.hidden("q") { return }
-            end
-            if not source_district.nil?
-              ui_move_district_node_host(node_to_add,source_district,district)
+            host_choices = deployment.nodes.select { |h| !district.node_hosts.include?(h.host) }
+            if host_choices.empty?
+              say "\nNo available hosts to add."
             else
-              district.add_node_host(node_to_add)
+              choose do |menu|
+                menu.header = "\nChoose a Node host to add to this district"
+                menu.prompt = "#{translate(:menu_prompt)} "
+                host_choices.sort_by{ |h| h.host }.each do |host_instance|
+                  current_district = deployment.get_district_by_node(host_instance)
+                  display_text = "#{host_instance.host}"
+                  if not current_district.nil?
+                    display_text << " (current district: #{current_district.name})"
+                  end
+                  menu.choice(display_text) {
+                    node_to_add = host_instance
+                    source_district = current_district
+                  }
+                end
+                menu.hidden("q") { return }
+              end
+              if not source_district.nil?
+                ui_move_district_node_host(node_to_add,source_district,district)
+              else
+                district.add_node_host(node_to_add)
+              end
             end
-            deployment.add_district! district
+            if deployment.districts.select { |d| d == district }.empty?
+              deployment.add_district! district
+            else
+              deployment.save_to_disk!
+            end
           elsif action == :move
             node_to_move = nil
             target_district = nil
@@ -1336,13 +1358,17 @@ module Installer
                 menu.hidden("q") { return }
               end
             end
-            choose do |menu|
-              menu.header = "\nChoose the district where Node host #{node_to_move.host} should be assigned"
-              menu.prompt = "#{translate(:menu_prompt)} "
-              deployment.districts.sort_by{ |d| d.name }.select{ |d| d.name != district.name }.each do |district_choice|
-                menu.choice(district_choice.summarize) { target_district = district_choice }
+            if deployment.districts.count <= 1
+              target_district = ui_add_district
+            else
+              choose do |menu|
+                menu.header = "\nChoose the district where Node host #{node_to_move.host} should be assigned"
+                menu.prompt = "#{translate(:menu_prompt)} "
+                deployment.districts.sort_by{ |d| d.name }.select{ |d| d.name != district.name }.each do |district_choice|
+                  menu.choice(district_choice.summarize) { target_district = district_choice }
+                end
+                menu.hidden("q") { return }
               end
-              menu.hidden("q") { return }
             end
             ui_move_district_node_host(node_to_move,district,target_district)
           end
@@ -1354,7 +1380,12 @@ module Installer
       return if not host_instance.is_node?
       current_district = deployment.get_district_by_node host_instance
       if current_district.nil?
-        if deployment.districts.length == 1
+        if deployment.districts.length == 0
+          new_district = ui_add_district
+          new_district.add_node_host(host_instance)
+          deployment.add_district! new_district
+          return
+        elsif deployment.districts.length == 1
           deployment.districts[0].add_node_host(host_instance)
           return
         end
@@ -1362,19 +1393,28 @@ module Installer
         return
       end
       target_district = nil
-      choose do |menu|
-        menu.header = "\nChoose the district where Node host #{host_instance.host} should be assigned"
-        menu.prompt = "#{translate(:menu_prompt)} "
-        deployment.districts.sort_by{ |d| d.name }.each do |district_choice|
-          next if not current_district.nil? and district_choice.name == current_district.name
-          menu.choice(district_choice.summarize) { target_district = district_choice }
+      if deployment.districts.count == 1
+        target_district = ui_add_district
+      else
+        choose do |menu|
+          menu.header = "\nChoose the district where Node host #{host_instance.host} should be assigned"
+          menu.prompt = "#{translate(:menu_prompt)} "
+          deployment.districts.sort_by{ |d| d.name }.each do |district_choice|
+            next if not current_district.nil? and district_choice.name == current_district.name
+            menu.choice(district_choice.summarize) { target_district = district_choice }
+          end
+          menu.hidden("q") { return }
         end
-        menu.hidden("q") { return }
       end
       if not current_district.nil?
         ui_move_district_node_host(host_instance,current_district,target_district)
       else
         target_district.add_node_host(host_instance)
+        if deployment.districts.select { |d| d == target_district }.empty?
+          deployment.add_district! target_district
+        else
+          deployment.save_to_disk!
+        end
       end
     end
 
@@ -1392,6 +1432,10 @@ module Installer
         deployment.remove_district! source_district
       else
         source_district.remove_node_host(node_to_move)
+      end
+      if deployment.districts.select { |d| d == target_district }.empty?
+        deployment.add_district! target_district
+      else
         deployment.save_to_disk!
       end
     end
@@ -1721,28 +1765,7 @@ module Installer
           host_instance.named_ip_addr = nil
         end
         if host_instance.is_node?
-          current_district = deployment.get_district_by_node host_instance
-          choose_district = false
-          if current_district.nil?
-            if deployment.districts.length == 1
-              # Quietly add this node to the sole district
-              deployment.districts[0].add_node_host(host_instance)
-            else
-              choose_district = true
-            end
-          elsif concur("\nThis Node host is currently associated with the #{current_district.name} district. Do you want to change this district assignment?")
-            choose_district = true
-          end
-          if choose_district
-            choose do |menu|
-              menu.header = "\nSelect a destination district for this Node host"
-              menu.prompt = "#{translate(:menu_prompt)} "
-              deployment.districts.select{ |d| d.name != current_district.name }.sort_by{ |d| d.name }.each do |district|
-                menu.choice(district.summarize) { ui_move_district_node_host(host_instance,current_district,district) }
-              end
-              menu.hidden("q") { return_to_main_menu }
-            end
-          end
+          ui_add_node_host_to_district host_instance
         end
         ui_modify_account_info if not create_mode
         host_instance_is_valid = true
