@@ -61,6 +61,7 @@ module Installer
           @ip_exec_path = result[:stdout].chomp
         else
           info[:valid_access] = false
+          info[:error] = result[:stderr] unless result[:stderr].empty?
         end
       rescue Net::SSH::AuthenticationFailed, SocketError, Timeout::Error, Errno::EHOSTUNREACH => e
         info[:valid_access] = false
@@ -92,11 +93,7 @@ module Installer
     def can_sudo_execute? util
       command = "sudo -l #{util}"
       sudo_check_result = {}
-      if localhost?
-        sudo_check_result = local_exec!(command)
-      else
-        sudo_check_result = ssh_exec!(command)
-      end
+      sudo_check_result = exec_on_host!(command)
       sudo_check_result[:exit_code] == 0
     end
 
@@ -376,12 +373,12 @@ module Installer
     end
 
     def prepare_command command
-      formatted = String.new(command)
+      formatted = "PATH=${PATH}:#{ADMIN_PATHS} #{command}"
       if not root_user?
         if not localhost?
-          formatted = "sudo sh -c \'#{command}\'"
+          formatted = "sudo sh -c \'#{formatted}\'"
         else
-          formatted = "sudo sh -c '#{command}'"
+          formatted = "sudo sh -c '#{formatted}'"
         end
       end
       formatted

@@ -17,6 +17,7 @@ module Installer
     VALID_URL_RE = Regexp.new('^https?:\/\/[\da-z\.-]+:?\d*\/[\w~\/-]*\/?')
     VALID_EMAIL_RE = Regexp.new('@')
     BLANK_STRING_RE = Regexp.new('^\s*$')
+    ADMIN_PATHS = '/sbin:/usr/sbin'
 
     def file_check(filepath)
       # Test for the presence of the config file
@@ -111,7 +112,11 @@ module Installer
     # http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
     def which(cmd)
       exts = ENV['PATHEXT'] ? ENV['PATHEXT'].split(';') : ['']
-      ENV['PATH'].split(File::PATH_SEPARATOR).each do |path|
+      paths = ENV['PATH'].split(File::PATH_SEPARATOR)
+      ADMIN_PATHS.split(':').each do |admin_path|
+        paths << admin_path unless paths.include? admin_path
+      end
+      paths.each do |path|
         exts.each { |ext|
           exe = File.join(path, "#{cmd}#{ext}")
           return exe if File.executable? exe
