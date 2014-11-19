@@ -2982,8 +2982,8 @@ fix_broker_routing()
 {
   case "$node_apache_frontend" in
     vhost)
-      # node vhost obscures the broker vhost with same ServerName; not really needed, so remove it.
-      sed -i -e '/<VirtualHost \*:443>/,/<\/VirtualHost/ s/^/#/' /etc/httpd/conf.d/000001_openshift_origin_frontend_vhost.conf
+      # node vhost obscures the broker vhost unless we bring the broker conf forward
+      ln -s /etc/httpd/conf.d/00000{2,0}_openshift_origin_broker_proxy.conf
       ;;
     mod_rewrite)
       # node vhost obscures the broker vhost still, but can let specific requests past
