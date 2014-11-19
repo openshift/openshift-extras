@@ -1337,7 +1337,7 @@ module Installer
               end
             end
             choose do |menu|
-              menu.header = "\nChoose the district where Node host #{mode_to_move.host} should be assigned"
+              menu.header = "\nChoose the district where Node host #{node_to_move.host} should be assigned"
               menu.prompt = "#{translate(:menu_prompt)} "
               deployment.districts.sort_by{ |d| d.name }.select{ |d| d.name != district.name }.each do |district_choice|
                 menu.choice(district_choice.summarize) { target_district = district_choice }
