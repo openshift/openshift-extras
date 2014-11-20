@@ -168,7 +168,7 @@ class CheckSources(object):
             response = ' '.join(response)
         return response
 
-    def set_save_repo_attr(self, repo, attribute, value):
+    def set_save_repo_attr(self, repo, attribute, value, base_timeout=1, max_retry=3):
         """Set the priority for the given RHN repo
 
         Arguments:
@@ -177,7 +177,14 @@ class CheckSources(object):
         attribute -- str representing repository configuration
                      attribute to be updated (e.g. 'priority')
         value -- updated value for specified attribute
-
+        base_timeout -- number of seconds to sleep between first
+                        failure and first retry. Each subsequent
+                        timeout is twice as long as the last. Only
+                        used for RHSM repos where settings are stored
+                        in content overrides. Default: 1, minimum value: 0.25
+        max_retry -- number of times to retry a failed repo attribute
+                     commit. Only used for RHSM repos where settings
+                     are stored in content overrides. Default: 3
         """
         repo = self._resolve_repoid(repo)
         repo.setAttribute(attribute, value)
@@ -193,8 +200,14 @@ class CheckSources(object):
             cfg_file.close()
         elif self.repo_is_rhsm(repo) and self.use_override():
             option = repo.optionobj(attribute)
-            subprocess.call(self.get_update_override_cmd(
-                repo, attribute, value))
+            retries = -1
+            timeout = max([0.25, base_timeout])
+            while retries < max_retry and (
+                    0 != subprocess.call(self.get_update_override_cmd(
+                        repo, attribute, value))):
+                time.sleep(timeout)
+                retries += 1
+                timeout *= 2
         else:
             self.backup_config(repo.repofile)
             config.writeRawRepoFile(repo, only=[attribute])
