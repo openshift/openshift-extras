@@ -30,6 +30,10 @@ RHNPLUGINCONF = '/etc/yum/pluginconf.d/rhnplugin.conf'
 
 SUBMAN_OVERRIDE_NVR = ('subscription-manager', '1.10.7', '1')
 
+class SubscriptionManagerError(Exception):
+    """subscription-manager failed, but we don't know why. Time to give up!"""
+    pass
+
 # TODO Should subclass YumBase?
 class CheckSources(object):
     """This class provides tools for interacting with a system's Yum
@@ -95,6 +99,14 @@ class CheckSources(object):
             repo = repoid
         return repo
 
+    def _check_rhsm_manage_repos(self):
+        try:
+            from rhsm.config import initConfig
+            CFG = initConfig()
+            return 0 != int(CFG.get('rhsm', 'manage_repos'))
+        except ImportError:
+            return False
+
     def use_override(self):
         try:
             return self._use_override
@@ -103,12 +115,30 @@ class CheckSources(object):
             if pkg_sm:
                 sm_nvr=(pkg_sm.name, pkg_sm.ver, pkg_sm.rel)
                 self._use_override = (
-                    rpm.labelCompare(sm_nvr,
-                                     SUBMAN_OVERRIDE_NVR) >= 0)
+                    rpm.labelCompare(sm_nvr, SUBMAN_OVERRIDE_NVR) >= 0 and
+                                      self._check_rhsm_manage_repos())
             else:
                 self._use_override = False
+            if self._use_override:
+                from yumvalidator.reconcile_rhsm_config import ReconciliationEngine
+                # For now we don't need RepoDB, logging, or opts for r_eng
+                self.r_eng = ReconciliationEngine(self, None, None, None)
             return self._use_override
 
+    def _update_overrides(self):
+        (self._repo_overrides, ovrd_repos) = self.r_eng.get_overrides_and_repos()
+        self._ovrd_age = time.time()
+
+    def repo_overrides(self):
+        cur_time = time.time()
+        if not self.use_override():
+            return {}
+        try:
+            if 30 > cur_time - self._ovrd_age:
+                self._update_overrides()
+        except AttributeError:
+            self._update_overrides()
+        return self._repo_overrides
 
     def repo_priority(self, repoid):
         """Return the configured priority for the repository identified
@@ -168,12 +198,12 @@ class CheckSources(object):
             response = ' '.join(response)
         return response
 
-    def set_save_repo_attr(self, repo, attribute, value, base_timeout=1, max_retry=3):
-        """Set the priority for the given RHN repo
+    def _set_save_repo_attr_override(self, repo, attribute, value, base_timeout=1, max_retry=3):
+        """Set the repo attribute to the given value for the given RHSM repo
+        via content override
 
         Arguments:
-        repo -- str representing repoid or rhnplugin.RhnRepo object
-                representing the repository to be updated
+        repo -- str repoid or suitable Repo object
         attribute -- str representing repository configuration
                      attribute to be updated (e.g. 'priority')
         value -- updated value for specified attribute
@@ -185,6 +215,58 @@ class CheckSources(object):
         max_retry -- number of times to retry a failed repo attribute
                      commit. Only used for RHSM repos where settings
                      are stored in content overrides. Default: 3
+
+        """
+        repo = self._resolve_repoid(repo)
+        retries = -1
+        timeout = max([0.25, base_timeout])
+        update_cmd = self.get_update_override_cmd(repo, attribute, value)
+        while 0 != subprocess.call(update_cmd):
+            retries += 1
+            if retries >= max_retry:
+                raise SubscriptionManagerError(
+                    "subscription-manager failed, with these "
+                    "arguments: %s" %
+                    self.get_update_override_cmd(repo, attribute,
+                                                 value, for_output=True))
+            time.sleep(timeout)
+            timeout *= 2
+        else:
+            self.repo_overrides()[repo.id][attribute] = repo.getAttribute(attribute)
+
+    def _set_save_repo_attr_yum(self, repo, attribute, value):
+        """Set the repo attribute to the given value for the given Yum or
+        Yum-like repo
+
+        Arguments:
+        repo -- str repoid or suitable Repo object
+        attribute -- str representing repository configuration
+                     attribute to be updated (e.g. 'priority')
+        value -- updated value for specified attribute
+
+        """
+        repo = self._resolve_repoid(repo)
+        self.backup_config(repo.repofile)
+        config.writeRawRepoFile(repo, only=[attribute])
+
+    def repo_attr_overridden(self, repo, attribute):
+        repo = self._resolve_repoid(repo)
+        return (self.use_override() and
+                repo.id in self.repo_overrides() and
+                attribute in self.repo_overrides()[repo.id])
+
+    def set_save_repo_attr(self, repo, attribute, value):
+        """Set the repo attribute to the given value for the given repo
+
+        Arguments:
+
+        repo -- str representing repoid or rhnplugin.RhnRepo (or
+                equivalent) object representing the repository to be
+                updated
+        attribute -- str representing repository configuration
+                     attribute to be updated (e.g. 'priority')
+        value -- updated value for specified attribute
+
         """
         repo = self._resolve_repoid(repo)
         repo.setAttribute(attribute, value)
@@ -198,19 +280,11 @@ class CheckSources(object):
             cfg_file = open(RHNPLUGINCONF, 'w')
             print >> cfg_file, cfg
             cfg_file.close()
-        elif self.repo_is_rhsm(repo) and self.use_override():
-            option = repo.optionobj(attribute)
-            retries = -1
-            timeout = max([0.25, base_timeout])
-            while retries < max_retry and (
-                    0 != subprocess.call(self.get_update_override_cmd(
-                        repo, attribute, value))):
-                time.sleep(timeout)
-                retries += 1
-                timeout *= 2
+        elif (self.repo_is_rhsm(repo) and
+              self.repo_attr_overridden(repo, attribute)):
+            self._set_save_repo_attr_override(repo, attribute, value)
         else:
-            self.backup_config(repo.repofile)
-            config.writeRawRepoFile(repo, only=[attribute])
+            self._set_save_repo_attr_yum(repo, attribute, value)
 
     def repo_for_repoid(self, repoid):
         """Return the YumRepository matching the given repoid
@@ -230,6 +304,20 @@ class CheckSources(object):
             new_excl = list(set(repo.exclude + list(excludes)))
         self.set_save_repo_attr(repo, 'exclude', new_excl)
 
+    def repo_act_invoker(self):
+        try:
+            return self._repo_act_invoker
+        except AttributeError:
+            try:
+                if not self.use_override():
+                    from subscription_manager.injectioninit import init_dep_injection
+                    init_dep_injection()
+                from subscription_manager.repolib import RepoActionInvoker
+                self._repo_act_invoker = RepoActionInvoker()
+            except ImportError:
+                self._repo_act_invoker = None
+        return self._repo_act_invoker
+
     def repo_is_rhsm(self, repoid):
         """Given a YumRepository instance or a repoid, try to detect if it's
         from a subscription-manager managed source
@@ -242,9 +330,9 @@ class CheckSources(object):
 
         """
         repo = self._resolve_repoid(repoid)
-        repofile = getattr(repo, 'repofile', None)
-        return repofile and (normpath(repofile) ==
-                             '/etc/yum.repos.d/redhat.repo')
+        if self.repo_act_invoker():
+            return self.repo_act_invoker().is_managed(repo.id)
+        return False
 
     def repo_is_rhn(self, repoid):
         """Given a YumRepository instance or a repoid, try to detect if it's
