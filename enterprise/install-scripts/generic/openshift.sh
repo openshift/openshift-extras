@@ -513,7 +513,7 @@
 #CONF_ROUTING_PLUGIN_USER=routinginfo
 #CONF_ROUTING_PLUGIN_PASS=...
 #   Default: <randomized>
-#   Default with CONF_NO_SCRAMBLE: routinginfopassword
+#   Default with CONF_NO_SCRAMBLE: routinginfopasswd
 
 # Settings for configuring Kerberos as user authentication method
 #
@@ -3675,7 +3675,7 @@ declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS
 
   # auth info for the topic from the sample routing SPI plugin
   routing_plugin_user="${CONF_ROUTING_PLUGIN_USER:-routinginfo}"
-  assign_pass routing_plugin_pass "routinginfopassword" CONF_ROUTING_PLUGIN_PASS
+  assign_pass routing_plugin_pass "routinginfopasswd" CONF_ROUTING_PLUGIN_PASS
 
   # cartridge dependency metapackages
   metapkgs="${CONF_METAPKGS:-recommended}"
