@@ -980,7 +980,7 @@ display_passwords()
   set +x
   for k in "${!passwords[@]}"; do
     out_string=""
-    matching_var=""
+    matchingvar=""
     for postfix in password password1 pass; do
       vprefix=${k%${postfix}}
       [ "$vprefix" != "$k" ] && break
