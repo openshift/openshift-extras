@@ -3018,7 +3018,6 @@ configure_openshift()
   node && update_openshift_facts_on_node
 
   node && broker && fix_broker_routing
-  node && install_rsync_pub_key
 
   configure_firewall_add_rules
   node && configure_gear_isolation_firewall
@@ -3142,6 +3141,8 @@ post_deploy()
 
     configure_districts
   fi
+
+  node && install_rsync_pub_key
 
   echo "OpenShift: Completed post deployment steps."
 }
