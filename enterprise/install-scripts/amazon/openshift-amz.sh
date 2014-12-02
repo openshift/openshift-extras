@@ -41,12 +41,12 @@ assign_pass()
 {
  # If the ENV variable is set, use it
   if [ -n "${!3}" ]; then
-    eval $1=\${!3}
+    printf -v "$1" '%s' "${!3}"
   elif is_true "$no_scramble" ; then
-    eval $1=\$2
+    printf -v "$1" '%s' "$2"
   else
     randomized=$(openssl rand -base64 20)
-    eval $1=\${randomized//[![:alnum:]]}
+    printf -v "$1" '%s' "${randomized//[![:alnum:]]}"
   fi
   passwords[$1]="${!1}"
 }
@@ -182,10 +182,10 @@ configure_ose_yum_repos()
   for repo in infra node jbosseap_cartridge client_tools; do
     if [ "$ose_repo_base" != "" ]; then
       layout=puddle; [ -n "$CONF_CDN_LAYOUT" ] && layout=cdn
-      eval "need_${repo}_repo && def_ose_yum_repo $ose_repo_base $layout $repo"
+      "need_${repo}_repo" && def_ose_yum_repo "$ose_repo_base" "$layout" "$repo"
     fi
     if [ "$ose_extra_repo_base" != "" ]; then
-      eval "need_${repo}_repo && def_ose_yum_repo $ose_extra_repo_base extra $repo"
+      "need_${repo}_repo" && def_ose_yum_repo "$ose_extra_repo_base" 'extra' "$repo"
     fi
   done
 }
@@ -292,7 +292,7 @@ configure_cart_repos()
 
   local repo
   for repo in "${!url[@]}"; do
-    eval "need_${repo}_repo" || continue
+    "need_${repo}_repo" || continue
     cat <<YUM > "/etc/yum.repos.d/${repo}.repo"
 [${repo}]
 name=${repo}
@@ -329,7 +329,7 @@ configure_extra_repos()
 
   local repo
   for repo in "${!priority[@]}"; do
-    local url=$(eval echo '${'$repo'}')
+    local url="${!repo}"
     if [ "${url}x" != "x" ]; then
       cat <<YUM >> "${extra_repo_file}"
 [${repo}]
@@ -376,13 +376,13 @@ configure_rhn_channels()
 {
   if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
     echo "OpenShift: Register to RHN Classic using an activation key"
-    eval "rhnreg_ks --force --activationkey=${CONF_RHN_REG_ACTKEY} --profilename='$profile_name' ${CONF_RHN_REG_OPTS}" || abort_install
+    rhnreg_ks --force "--activationkey=${CONF_RHN_REG_ACTKEY}" "--profilename=$profile_name" ${CONF_RHN_REG_OPTS} || abort_install
   elif [[ "${CONF_RHN_USER}" && "${CONF_RHN_PASS}" ]]
   then
     echo "OpenShift: Register to RHN Classic with username and password"
     set +x # don't log password
-    echo "rhnreg_ks --force --profilename='$profile_name' --username '${CONF_RHN_USER}' ${CONF_RHN_REG_OPTS}"
-    eval "rhnreg_ks --force --profilename='$profile_name' --username '${CONF_RHN_USER}' --password '${CONF_RHN_PASS}' ${CONF_RHN_REG_OPTS}" || abort_install
+    echo "rhnreg_ks --force \"--profilename=$profile_name\" --username \"${CONF_RHN_USER}\" ${CONF_RHN_REG_OPTS}"
+    rhnreg_ks --force "--profilename=$profile_name" --username "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" ${CONF_RHN_REG_OPTS} || abort_install
     set -x
   else
     echo "OpenShift: No credentials given for RHN Classic; assuming already configured"
@@ -417,8 +417,8 @@ configure_rhsm_channels()
   then
     set +x # don't log password
     echo "OpenShift: Register with RHSM"
-    echo "subscription-manager register --force --username='$CONF_RHN_USER' --name '$profile_name' ${CONF_RHN_REG_OPTS}"
-    eval "subscription-manager register --force --username='$CONF_RHN_USER' --password='$CONF_RHN_PASS' --name '$profile_name' ${CONF_RHN_REG_OPTS}" || abort_install
+    echo "subscription-manager register --force \"--username=$CONF_RHN_USER\" --name \"$profile_name\" ${CONF_RHN_REG_OPTS}"
+    subscription-manager register --force "--username=$CONF_RHN_USER" "--password=$CONF_RHN_PASS" --name "$profile_name" ${CONF_RHN_REG_OPTS} || abort_install
     set -x
   else
     echo "OpenShift: No credentials given for RHSM; assuming already configured"
@@ -2299,11 +2299,7 @@ echo_installation_intentions()
 {
   echo "The following components should be installed:"
   for component in $components
-  do
-    if eval $component
-    then
-      printf '\t%s.\n' $component
-    fi
+  do "$component" && printf '\t%s.\n' "$component"
   done
 
   echo "Configuring with broker with hostname ${broker_hostname}."
@@ -2339,7 +2335,7 @@ parse_args()
       (*=*) val="${word#*\=}" ;;
       (*) val=true ;;
     esac
-    eval "CONF_${key^^}"'="$val"'
+    printf -v "CONF_${key^^}" '%s' "$val"
   done
 }
 
@@ -2492,7 +2488,7 @@ declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS
   installing_something=0
   for component in $components
   do
-    if eval $component
+    if "$component"
     then
       installing_something=1
       break
