@@ -2937,8 +2937,7 @@ configure_firewall()
 {
   # Disable lokkit.
   conf='/etc/sysconfig/system-config-firewall'
-  [[ "$(< "$conf")" != --disabled ]] &&
-    mv "$conf" "${conf}.bak"
+  [[ -e "$conf" && "$(< "$conf")" != --disabled ]] && mv "$conf" "${conf}.bak"
   echo '--disabled' > "$conf"
 
   # Configure iptables.
