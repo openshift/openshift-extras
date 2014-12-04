@@ -470,8 +470,8 @@ end
     # host after the configure step has been completed
     next
   when :post_deploy
-    # Post Deploy is only run on the first broker
-    host_lists = [ { step_key => host_instances.select { |i| i.host == @deployment.brokers.first.host } } ]
+    # Post Deploy is only run on the first broker and on node hosts.
+    host_lists = [ { step_key => host_instances.select { |i| i.host == @deployment.brokers.first.host || i.roles.include?(:node) } } ]
 
     # push other hosts to :success_state
     (host_instances - host_lists.first[step_key]).each do |host_instance|
