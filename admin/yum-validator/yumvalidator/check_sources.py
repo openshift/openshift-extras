@@ -23,6 +23,9 @@ from os.path import normpath
 import subprocess
 import rpm
 
+from yumvalidator.reconcile_rhsm_config import SubscriptionManagerNotRegisteredError
+
+
 NAME = 'oo-admin-check-sources'
 VERSION = '0.1'
 USAGE = 'Apply a thin layer to scalp and sing'
@@ -122,7 +125,11 @@ class CheckSources(object):
             if self._use_override:
                 from yumvalidator.reconcile_rhsm_config import ReconciliationEngine
                 # For now we don't need RepoDB, logging, or opts for r_eng
-                self.r_eng = ReconciliationEngine(self, None, None, None)
+                try:
+                    self.r_eng = ReconciliationEngine(self, None, None, None)
+                except SubscriptionManagerNotRegisteredError:
+                    self._use_override = False
+                    raise
             return self._use_override
 
     def _update_overrides(self):
@@ -315,6 +322,8 @@ class CheckSources(object):
                 from subscription_manager.repolib import RepoActionInvoker
                 self._repo_act_invoker = RepoActionInvoker()
             except ImportError:
+                self._repo_act_invoker = None
+            except SubscriptionManagerNotRegisteredError:
                 self._repo_act_invoker = None
         return self._repo_act_invoker
 

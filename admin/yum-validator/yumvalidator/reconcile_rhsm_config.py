@@ -46,6 +46,12 @@ def _read(file_path):
     fd.close()
     return file_content
 
+class SubscriptionManagerNotRegisteredError(Exception):
+    """The subscription key or certificate couldn't be found - the system
+    is probably not registered
+    """
+    pass
+
 class ReconciliationEngine(object):
     def __init__(self, oscs, rdb, logger, opts):
         self.oscs = oscs
@@ -53,8 +59,12 @@ class ReconciliationEngine(object):
         self.logger = logger
         self.opts = opts
         self.rhsmconfig = rhsm.config.initConfig()
-        self.consumer_key = _read(ConsumerIdentity.keypath())
-        self.consumer_cert = _read(ConsumerIdentity.certpath())
+        try:
+            self.consumer_key = _read(ConsumerIdentity.keypath())
+            self.consumer_cert = _read(ConsumerIdentity.certpath())
+        except IOError as ioerr:
+            if 2 == ioerr.errno:
+                raise SubscriptionManagerNotRegisteredError()
         self.consumer_identity = ConsumerIdentity(self.consumer_key, self.consumer_cert)
         self.consumer_uuid = self.consumer_identity.getConsumerId()
         self.cp_provider = inj.require(inj.CP_PROVIDER)
