@@ -984,9 +984,11 @@ synchronize_clock()
 assign_pass()
 {
  # If the ENV variable is set, use it
-  if [[ -n "${!3-}" ]]; then
+  if [[ -n "${!3-}" ]]
+  then
     printf -v "$1" '%s' "${!3}"
-  elif is_true "$no_scramble" ; then
+  elif is_true "$no_scramble"
+  then
     printf -v "$1" '%s' "$2"
   else
     local randomized=$(openssl rand -base64 20)
@@ -1012,23 +1014,28 @@ display_passwords()
   subs[mongodb]="MongoDB"
   subs[activemq]="ActiveMQ"
 
-  for k in "${!passwords[@]}"; do
+  for k in "${!passwords[@]}"
+  do
     out_string=""
     matchingvar=""
-    for postfix in password password1 pass; do
+    for postfix in password password1 pass
+    do
       vprefix=${k%${postfix}}
       [[ "$vprefix" != "$k" ]] && break
     done
 
-    for v in "${vprefix}user" "${vprefix}user1"; do
-      if [[ -n "${!v+x}" ]]; then
+    for v in "${vprefix}user" "${vprefix}user1"
+    do
+      if [[ -n "${!v+x}" ]]
+      then
         matchingvar=$v
         break
       fi
     done
 
     formattedprefix=${vprefix//_/ }
-    for s in ${!subs[@]}; do
+    for s in ${!subs[@]}
+    do
       formattedprefix=${formattedprefix//${s}/${subs[$s]}}
     done
 
@@ -1050,17 +1057,18 @@ configure_repos()
   # Make need_${repo}_repo return false by default.
   local repo
   for repo in optional infra node client_tools extra \
-              fuse_cartridge amq_cartridge jbosseap_cartridge jbosseap jbossews; do
-      eval "need_${repo}_repo() { false; }"
+              fuse_cartridge amq_cartridge jbosseap_cartridge jbosseap jbossews
+  do eval "need_${repo}_repo() { false; }"
   done
 
   is_true "$enable_optional_repo" && need_optional_repo() { :; }
 
-  if [[ -n "${jbossews_extra_repo}${jbosseap_extra_repo}${rhel_optional_repo}${rhscl_extra_repo}${fuse_extra_repo}${amq_extra_repo}" ]]; then
-    need_extra_repo() { :; }
+  if [[ -n "${jbossews_extra_repo}${jbosseap_extra_repo}${rhel_optional_repo}${rhscl_extra_repo}${fuse_extra_repo}${amq_extra_repo}" ]]
+  then need_extra_repo() { :; }
   fi
 
-  if activemq || broker || datastore || named; then
+  if activemq || broker || datastore || named
+  then
     # The ose-infrastructure channel has the activemq, broker, and mongodb
     # packages.  The ose-infrastructure and ose-node channels also include
     # the yum-plugin-priorities package, which is needed for the installation
@@ -1078,7 +1086,8 @@ configure_repos()
   # install the client tools repo along with the infrastructure repo.
   need_infra_repo && need_client_tools_repo() { :; }
 
-  if node; then
+  if node
+  then
     # The ose-node channel has node packages including all the cartridges.
     need_node_repo() { :; }
 
@@ -1134,12 +1143,15 @@ configure_yum_repos()
 configure_ose_yum_repos()
 {
   local repo
-  for repo in infra node jbosseap_cartridge client_tools; do
-    if [[ -n "$ose_repo_base" ]]; then
+  for repo in infra node jbosseap_cartridge client_tools
+  do
+    if [[ -n "$ose_repo_base" ]]
+    then
       local layout=puddle; [[ -n "$cdn_layout" ]] && layout=cdn
       "need_${repo}_repo" && def_ose_yum_repo "$ose_repo_base" "$layout" "$repo"
     fi
-    if [[ -n "$ose_extra_repo_base" ]]; then
+    if [[ -n "$ose_extra_repo_base" ]]
+    then
       "need_${repo}_repo" && def_ose_yum_repo "$ose_extra_repo_base" 'extra' "$repo"
     fi
   done
@@ -1153,7 +1165,8 @@ configure_rhel_repo()
   # installing from RHEL. The post section cannot access the method that
   # was used in the base install. This configures a RHEL yum repo which
   # you must supply.
-if [[ -n "${rhel_repo}" ]]; then
+if [[ -n "${rhel_repo}" ]]
+then
   cat > /etc/yum.repos.d/rhel.repo <<YUM
 [rhel6]
 name=RHEL 6 base OS
@@ -1170,7 +1183,8 @@ fi
 
 configure_optional_repo()
 {
-if [[ -n "${rhel_optional_repo}" ]]; then
+if [[ -n "${rhel_optional_repo}" ]]
+then
   cat > /etc/yum.repos.d/rheloptional.repo <<YUM
 [rhel6_optional]
 name=RHEL 6 Optional
@@ -1218,7 +1232,8 @@ YUM
 
 configure_rhscl_repo()
 {
-  if [[ -n "${rhscl_repo_base}" ]]; then
+  if [[ -n "${rhscl_repo_base}" ]]
+  then
     cat <<YUM > /etc/yum.repos.d/rhscl.repo
 [rhscl]
 name=rhscl
@@ -1246,7 +1261,8 @@ configure_cart_repos()
   # in which case, add a repo base just for them. Use extras if needed for now.
 
   local repo
-  for repo in "${!url[@]}"; do
+  for repo in "${!url[@]}"
+  do
     "need_${repo}_repo" || continue
     cat <<YUM > "/etc/yum.repos.d/${repo}.repo"
 [${repo}]
@@ -1266,7 +1282,8 @@ YUM
 configure_extra_repos()
 {
   local extra_repo_file=/etc/yum.repos.d/ose_extra.repo
-  if [[ -e "${extra_repo_file}" ]]; then
+  if [[ -e "${extra_repo_file}" ]]
+  then
       > "${extra_repo_file}"
   fi
 
@@ -1283,9 +1300,11 @@ configure_extra_repos()
   )
 
   local repo
-  for repo in "${!priority[@]}"; do
+  for repo in "${!priority[@]}"
+  do
     local url="${!repo}"
-    if [[ -n "${url}" ]]; then
+    if [[ -n "${url}" ]]
+    then
       cat <<YUM >> "${extra_repo_file}"
 [${repo}]
 name=${repo}
@@ -1330,7 +1349,8 @@ configure_subscription()
 
 configure_rhn_channels()
 {
-  if [[ -n "$rhn_reg_actkey" ]]; then
+  if [[ -n "$rhn_reg_actkey" ]]
+  then
     echo "OpenShift: Register to RHN Classic using an activation key"
     rhnreg_ks --force "--activationkey=${rhn_reg_actkey}" "--profilename=$rhn_profile_name" ${rhn_reg_opts} || abort_install
   else
@@ -1351,8 +1371,8 @@ configure_rhn_channels()
     # Enable the node or infrastructure channel to enable installing the release
     # RPM.
     local repos=('rhel-x86_64-server-6-rhscl-1')
-    if ! need_node_repo || need_infra_repo ; then
-      repos+=('rhel-x86_64-server-6-ose-2.2-infrastructure')
+    if ! need_node_repo || need_infra_repo
+    then repos+=('rhel-x86_64-server-6-ose-2.2-infrastructure')
     fi
     need_node_repo && repos+=('rhel-x86_64-server-6-ose-2.2-node' 'jb-ews-2-x86_64-server-6-rpm')
     need_client_tools_repo && repos+=('rhel-x86_64-server-6-ose-2.2-rhc')
@@ -1362,8 +1382,8 @@ configure_rhn_channels()
 
     set +x # Don't log password.
     local repo
-    for repo in "${repos[@]}"; do
-      [[ "$(rhn-channel -l)" = *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${rhn_user}" --password "${rhn_pass}" || abort_install
+    for repo in "${repos[@]}"
+    do [[ "$(rhn-channel -l)" = *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${rhn_user}" --password "${rhn_pass}" || abort_install
     done
     set -x
   fi
@@ -1394,13 +1414,15 @@ configure_rhsm_channels()
 
   # If CONF_SM_REG_POOL was not specified, this for loop is a no-op.
   local poolid
-  for poolid in ${sm_reg_pool//[, :+\/-]/ }; do
+  for poolid in ${sm_reg_pool//[, :+\/-]/ }
+  do
     echo "OpenShift: Registering subscription from pool id $poolid"
     subscription-manager attach --pool "$poolid" || abort_install
   done
 
   # Enable the node or infrastructure repo to enable installing the release RPM
-  if need_node_repo; then subscription-manager repos --enable=rhel-6-server-ose-2.2-node-rpms || abort_install
+  if need_node_repo
+  then subscription-manager repos --enable=rhel-6-server-ose-2.2-node-rpms || abort_install
   else subscription-manager repos --enable=rhel-6-server-ose-2.2-infra-rpms || abort_install
   fi
   configure_subscription
@@ -1418,9 +1440,11 @@ yum_install_or_exit()
 {
   echo "OpenShift: yum install $*"
   local count=0
-  time while true; do
+  time while true
+  do
     yum install -y $* $disable_plugin && return
-    if [[ $count -gt 3 ]]; then
+    if [[ $count -gt 3 ]]
+    then
       echo "OpenShift: Command failed: yum install $*"
       echo "OpenShift: Please ensure relevant repos/subscriptions are configured."
       abort_install
@@ -1480,8 +1504,10 @@ install_node_pkgs()
   pkgs="$pkgs rubygem-openshift-origin-frontend-nodejs-websocket"
   pkgs="$pkgs rubygem-openshift-origin-frontend-haproxy-sni-proxy"
 
-  if [[ "$log_to_syslog" = *gears* ]]; then
-    if rpm -q rsyslog ; then
+  if [[ "$log_to_syslog" = *gears* ]]
+  then
+    if rpm -q rsyslog
+    then
       # RHEL 6.6's rsyslog7 package conflicts with the earlier RHEL 6 package.
       yum shell --disableplugin=priorities -y <<YUM
 erase rsyslog
@@ -1512,8 +1538,8 @@ YUM
 # This only affects the python v2 cart
 remove_abrt_addon_python()
 {
-  if grep 'Enterprise Linux Server release 6.4' /etc/redhat-release && rpm -q abrt-addon-python && rpm -q openshift-origin-cartridge-python; then
-    yum $disable_plugin remove -y abrt-addon-python || abort_install
+  if grep 'Enterprise Linux Server release 6.4' /etc/redhat-release && rpm -q abrt-addon-python && rpm -q openshift-origin-cartridge-python
+  then yum $disable_plugin remove -y abrt-addon-python || abort_install
   fi
 }
 
@@ -1946,13 +1972,14 @@ execute_mongodb()
   echo "---"
 
   local userpass=
-  if [[ -n "${3+x}" && -n "${4+x}" ]]; then
-    userpass="-u ${3} -p ${4} admin"
+  if [[ -n "${3+x}" && -n "${4+x}" ]]
+  then userpass="-u ${3} -p ${4} admin"
   fi
 
   local output="$( echo "$1" | mongo ${userpass} )"
   echo "$output"
-  if [[ -n "${2+x}" ]]; then # test output against regex
+  if [[ -n "${2+x}" ]]
+  then # test output against regex
     [[ "$output" =~ $2 ]] || return 1
   fi
   return 0
@@ -2118,7 +2145,8 @@ configure_gears()
   chkconfig openshift-gears on
 
   # configure gear logging
-  if [[ "$log_to_syslog" = *gears* ]]; then
+  if [[ "$log_to_syslog" = *gears* ]]
+  then
     # make the gear app servers log to syslog by default (overrideable)
     sed -i -e '
       /outputtype\b/I coutputType = syslog
@@ -2185,7 +2213,8 @@ enable_services_on_node()
   firewall_allow[wss]=tcp:8443
 
   # Allow connections to openshift-sni-proxy
-  if is_true "$enable_sni_proxy"; then
+  if is_true "$enable_sni_proxy"
+  then
     firewall_allow[sni]="tcp:${sni_first_port}:${sni_last_port}"
     chkconfig openshift-sni-proxy on
   else
@@ -2490,8 +2519,8 @@ $networkConnectors
                <authenticationUser username="${mcollective_user}" password="${mcollective_password}" groups="mcollective,everyone"/>
                ${authenticationUser_amq}
                <authenticationUser username="admin" password="${activemq_admin_password}" groups="mcollective,admin,everyone"/>
-               $( if is_true "$enable_routing_plugin"; then
-                    echo "<authenticationUser username=\"$routing_plugin_user\" password=\"$routing_plugin_pass\" groups=\"routinginfo,everyone\"/>"
+               $( if is_true "$enable_routing_plugin"
+                  then echo "<authenticationUser username=\"$routing_plugin_user\" password=\"$routing_plugin_pass\" groups=\"routinginfo,everyone\"/>"
                   fi
                )
              </users>
@@ -2505,7 +2534,8 @@ $networkConnectors
                   <authorizationEntry topic="mcollective.>" write="mcollective" read="mcollective" admin="mcollective" />
                   <authorizationEntry queue="mcollective.>" write="mcollective" read="mcollective" admin="mcollective" />
                   <authorizationEntry topic="ActiveMQ.Advisory.>" read="everyone" write="everyone" admin="everyone"/>
-                  $( if is_true "$enable_routing_plugin"; then
+                  $( if is_true "$enable_routing_plugin"
+                     then
                        echo '<authorizationEntry topic="routinginfo.>" write="routinginfo" read="routinginfo" admin="routinginfo" />'
                        echo '<authorizationEntry queue="routinginfo.>" write="routinginfo" read="routinginfo" admin="routinginfo" />'
                      fi
@@ -2606,7 +2636,8 @@ configure_named()
 
   # Set up DNS forwarding if so directed.
   local forwarders="recursion no;"
-  if is_true "$enable_dns_forwarding"; then
+  if is_true "$enable_dns_forwarding"
+  then
     echo "forwarders { ${nameservers} } ;" > /var/named/forwarders.conf
     restorecon /var/named/forwarders.conf
     chmod 644 /var/named/forwarders.conf
@@ -2691,7 +2722,8 @@ configure_named_zone()
 {
   local zone="$1"
 
-  if [[ -z "$bind_key" ]]; then
+  if [[ -z "$bind_key" ]]
+  then
     # Generate a new secret key
     local zone_tolower="${zone,,}"
     rm -f /var/named/K${zone_tolower}*
@@ -2761,10 +2793,9 @@ add_host_to_zone()
   # Check that $1 isn't an IP address and that $2 is.
   # All numbers and dots = IP address (not rigorous).
   local ip_regex='^[.0-9]+$'
-  if [[ $1 =~ $ip_regex || ! $2 =~ $ip_regex ]]; then
-    echo "Not adding DNS record to host zone: '$1' should be a hostname and '$2' should be an IP address"
-  else
-    echo "${1%.${zone}}			IN A	$2" >> $nsdb
+  if [[ $1 =~ $ip_regex || ! $2 =~ $ip_regex ]]
+  then echo "Not adding DNS record to host zone: '$1' should be a hostname and '$2' should be an IP address"
+  else echo "${1%.${zone}}			IN A	$2" >> $nsdb
   fi
 }
 
@@ -2776,17 +2807,19 @@ configure_hosts_dns()
   # Add the glue record for the NS host in the subdomain.
   [[ "$hosts_domain" = *?"$domain" ]] && add_host_to_zone "$named_hostname" "$named_ip_addr" "$domain"
 
-  if [[ -z "$named_entries" ]]; then
+  if [[ -z "$named_entries" ]]
+  then
     # Add A records for any other components that are being installed locally.
     broker && add_host_to_zone "$broker_hostname" "$broker_ip_addr"
     node && add_host_to_zone "$node_hostname" "$node_ip_addr"
     activemq && add_host_to_zone "$activemq_hostname" "$cur_ip_addr"
     datastore && add_host_to_zone "$datastore_hostname" "$cur_ip_addr"
-  elif [[ "$named_entries" =~ : ]]; then
+  elif [[ "$named_entries" =~ : ]]
+  then
     # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
     local host_ip
-    for host_ip in ${named_entries//,/ }; do
-      add_host_to_zone ${host_ip//:/ }
+    for host_ip in ${named_entries//,/ }
+    do add_host_to_zone ${host_ip//:/ }
     done
   else # If "none" is specified, then just don't add anything.
     echo "Not adding named entries; named_entries = $named_entries"
@@ -2805,11 +2838,14 @@ register_named_entries()
   local host_ip
   local host
   local ip
-  for host_ip in ${named_entries//,/ }; do
+  for host_ip in ${named_entries//,/ }
+  do
     read host ip <<<$(echo ${host_ip//:/ })
-    if [[ $host =~ $ip_regex || ! $ip =~ $ip_regex ]]; then
+    if [[ $host =~ $ip_regex || ! $ip =~ $ip_regex ]]
+    then
       echo "Not adding DNS record to host zone: '$host' should be a hostname and '$ip' should be an IP address"
-    elif ! oo-register-dns -d "$hosts_domain" -h "${host%.$hosts_domain}" -k "${hosts_domain_keyfile}" -n $ip; then
+    elif ! oo-register-dns -d "$hosts_domain" -h "${host%.$hosts_domain}" -k "${hosts_domain_keyfile}" -n $ip
+    then
       echo "WARNING: Failed to register host $host with IP $ip"
       failed="true"
     fi
@@ -2824,7 +2860,8 @@ configure_network()
   set_conf "/etc/sysconfig/network-scripts/ifcfg-$interface" ONBOOT yes
 
   # Check if static IP configured
-  if grep -q "IPADDR" /etc/sysconfig/network-scripts/ifcfg-$interface; then
+  if grep -q "IPADDR" /etc/sysconfig/network-scripts/ifcfg-$interface
+  then
     set_conf "/etc/sysconfig/network-scripts/ifcfg-$interface" BOOTPROTO none
     set_conf "/etc/sysconfig/network-scripts/ifcfg-$interface" IPV6INIT no
   fi
@@ -3009,7 +3046,8 @@ configure_httpd_auth()
 
 configure_routing_plugin()
 {
-  if is_true "$enable_routing_plugin"; then
+  if is_true "$enable_routing_plugin"
+  then
     local conffile=/etc/openshift/plugins.d/openshift-origin-routing-activemq.conf
     sed -e '/^ACTIVEMQ_\(USERNAME\|PASSWORD\|HOST\)/ d' $conffile.example > $conffile
     cat <<EOF >> "$conffile"
@@ -3128,10 +3166,10 @@ configure_hostname()
 configure_node()
 {
   local resrc=/etc/openshift/resource_limits.conf
-  if [[ -f "$resrc.${node_profile}.${node_host_type}" ]]; then
-    cp "$resrc.${node_profile}.${node_host_type}" $resrc
-  elif [[ -f "$resrc.${node_profile}" ]]; then
-    cp "$resrc.${node_profile}" $resrc
+  if [[ -f "$resrc.${node_profile}.${node_host_type}" ]]
+  then cp "$resrc.${node_profile}.${node_host_type}" $resrc
+  elif [[ -f "$resrc.${node_profile}" ]]
+  then cp "$resrc.${node_profile}" $resrc
   fi
   set_conf "$resrc" node_profile "$node_profile_name"
 
@@ -3141,7 +3179,8 @@ configure_node()
   set_node BROKER_HOST "$broker_hostname"
   set_node EXTERNAL_ETH_DEV "$interface"
 
-  if [[ "$ports_per_gear" != 5 ]]; then
+  if [[ "$ports_per_gear" != 5 ]]
+  then
     set_node PORTS_PER_USER "$ports_per_gear" '' \
      'Number of proxy ports available per gear. Increasing the ports per gear'\
      'requires reducing the number of UIDs the district has so that the ports'\
@@ -3158,7 +3197,8 @@ configure_node()
       ;;
   esac
 
-  if is_true "$enable_sni_proxy"; then
+  if is_true "$enable_sni_proxy"
+  then
     # configure in the sni proxy
     grep -q 'OPENSHIFT_FRONTEND_HTTP_PLUGINS=.*sni-proxy' $conf || \
       sed -i -e '/OPENSHIFT_FRONTEND_HTTP_PLUGINS/ s/=/=openshift-origin-frontend-haproxy-sni-proxy,/' $conf
@@ -3180,7 +3220,8 @@ configure_node()
 
 configure_node_logs()
 {
-  if [[ "$log_to_syslog" = *node* ]]; then
+  if [[ "$log_to_syslog" = *node* ]]
+  then
     # Send the node platform logs to syslog instead.
     sed -i -e '
       # comment out existing log settings
@@ -3195,17 +3236,20 @@ PLATFORM_SYSLOG_TRACE_ENABLED=1
     ' /etc/openshift/node.conf
     echo 'local0.*  /var/log/messages' > /etc/rsyslog.d/openshift-node-platform.conf
   fi
-  if [[ "$log_to_syslog" = *frontend* ]]; then
+  if [[ "$log_to_syslog" = *frontend* ]]
+  then
     # Send the frontend logs to syslog (in addition to file).
     sed -i -e 's/^#*\s*OPTIONS="\?\([^"]*\)"\?/OPTIONS="\1 -DOpenShiftFrontendSyslogEnabled"/' /etc/sysconfig/httpd
   fi
-  if is_true "$node_log_context"; then
+  if is_true "$node_log_context"
+  then
     # Annotate the frontend logs with UUIDs.
     set_node PLATFORM_LOG_CONTEXT_ENABLED '1'
     set_node PLATFORM_LOG_CONTEXT_ATTRS 'request_id,app_uuid,container_uuid'
     sed -i -e 's/^#*\s*OPTIONS="\?\([^"]*\)"\?/OPTIONS="\1 -DOpenShiftAnnotateFrontendAccessLog"/' /etc/sysconfig/httpd
   fi
-  if [[ -n "$metrics_interval" ]]; then
+  if [[ -n "$metrics_interval" ]]
+  then
     # Configure watchman with given the interval.
     set_node WATCHMAN_METRICS_ENABLED 'true'
     set_node WATCHMAN_METRICS_INTERVAL "$metrics_interval"
@@ -3231,9 +3275,11 @@ install_rsync_pub_key()
   echo "OpenShift node: will wait for $wait seconds to fetch SSH key."
 
   local cert
-  while [[ `date +%s` -lt $end ]]; do
+  while [[ `date +%s` -lt $end ]]
+  do
     # Try to get the public key from the broker.
-    if ! cert=$(wget -q -O- --no-check-certificate "https://${broker_hostname}/rsync_id_rsa.pub?host=${node_hostname}"); then
+    if ! cert=$(wget -q -O- --no-check-certificate "https://${broker_hostname}/rsync_id_rsa.pub?host=${node_hostname}")
+    then
       sleep 5
     else
       if ! ssh-keygen -lf /dev/stdin <<< "$cert"
@@ -3554,16 +3600,19 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
   # CONF_CDN_REPO_BASE is set.
   cdn_layout="${CONF_CDN_REPO_BASE-}"
   cdn_repo_base="${CONF_CDN_REPO_BASE%/}"
-  if [[ -n "$cdn_repo_base" ]]; then
+  if [[ -n "$cdn_repo_base" ]]
+  then
     rhel_repo="${rhel_repo:-$cdn_repo_base/os}"
     jboss_repo_base="${jboss_repo_base:-$cdn_repo_base}"
     rhscl_repo_base="${rhscl_repo_base:-$cdn_repo_base}"
     rhel_optional_repo="${rhel_optional_repo:-$cdn_repo_base/optional/os}"
     ose_repo_base="${ose_repo_base:-$cdn_repo_base}"
-    if [[ "${cdn_repo_base}" = "${ose_repo_base}" ]]; then # same repo layout
+    if [[ "${cdn_repo_base}" = "${ose_repo_base}" ]]
+    then # same repo layout
       cdn_layout=1  # use the CDN layout for OpenShift yum repos
     fi
-  elif [[ "${rhel_repo}" = "${ose_repo_base}/os" ]]; then # OSE same repo base as RHEL?
+  elif [[ "${rhel_repo}" = "${ose_repo_base}/os" ]]
+  then # OSE same repo base as RHEL?
     cdn_layout=1  # use the CDN layout for OpenShift yum repos
   fi
   ose_extra_repo_base="${CONF_OSE_EXTRA_REPO_BASE%/}"
@@ -3651,8 +3700,8 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
   bind_keysize="${CONF_BIND_KEYSIZE:-256}"
 
   local s
-  for s in valid_gear_sizes default_gear_capabilities default_gear_size; do
-    eval "isset_${s}() { false; }"
+  for s in valid_gear_sizes default_gear_capabilities default_gear_size
+  do eval "isset_${s}() { false; }"
   done
 
   # Set $valid_gear_sizes to $CONF_VALID_GEAR_SIZES
@@ -3717,7 +3766,8 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
   datastore_replicants="${CONF_DATASTORE_REPLICANTS:-$datastore_hostname:27017}"
   # For each replicant that does not have an explicit port number
   # specified, append :27017 to its host name.
-  datastore_replicants="$( for repl in ${datastore_replicants//,/ }; do
+  datastore_replicants="$( for repl in ${datastore_replicants//,/ }
+                           do
                              [[ "$repl" =~ : ]] || repl=$repl:27017
                              printf ",%s" "${repl}"
                            done)"
@@ -3825,29 +3875,34 @@ validate_preflight()
   local preflight_failure=
 
   # Test that this isn't RHEL < 6 or Fedora
-  if ! grep -q "Enterprise.* 6" /etc/redhat-release; then
+  if ! grep -q "Enterprise.* 6" /etc/redhat-release
+  then
     echo "OpenShift: This process needs to begin with Enterprise Linux 6 installed."
     preflight_failure=1
   fi
 
   # Test that SELinux is at least present and not Disabled
-  if ! command -v getenforce || ! [[ $(getenforce) =~ Enforcing|Permissive ]] ; then
+  if ! command -v getenforce || ! [[ $(getenforce) =~ Enforcing|Permissive ]]
+  then
     echo "OpenShift: SELinux needs to be installed and enabled."
     preflight_failure=1
   fi
 
   # Test that rpm/yum exists and isn't totally broken
-  if ! command -v rpm || ! command -v yum; then
+  if ! command -v rpm || ! command -v yum
+  then
     echo "OpenShift: rpm and yum must be installed."
     preflight_failure=1
   fi
-  if ! rpm -q rpm yum; then
+  if ! rpm -q rpm yum
+  then
     echo "OpenShift: rpm command failed; there may be a problem with the RPM DB."
     preflight_failure=1
   fi
 
   # test that subscription parameters are available if needed
-  if [[ "$install_method" = rhn ]]; then
+  if [[ "$install_method" = rhn ]]
+  then
     # Check whether we are already registered with RHN and already have
     # ose-2.2 channels added.  If we are not, we will need RHN
     # credentials so that we can register and add channels ourselves.
@@ -3857,7 +3912,8 @@ validate_preflight()
     if ! [[ -f /etc/sysconfig/rhn/systemid ]] || ! rhn-channel -l | grep -q '^rhel-x86_64-server-6-ose-2.2-\(node\|infrastructure\)'
     then
       set +x # Don't log password.
-      if [[ -z "$rhn_user" || -z "$rhn_pass" ]]; then
+      if [[ -z "$rhn_user" || -z "$rhn_pass" ]]
+      then
         echo "OpenShift: Install method rhn requires an RHN user and password."
         preflight_failure=1
       fi
@@ -3865,15 +3921,18 @@ validate_preflight()
     fi
   fi
 
-  if [[ "$install_method" = rhsm ]]; then
+  if [[ "$install_method" = rhsm ]]
+  then
     # Check whether we are already registered with RHSM.  If we are not,
     # we will need credentials so that we can register ourselves.
     #
     # Note: With RHSM, we need credentials for registration but not for
     # adding channels.
-    if ! subscription-manager identity | grep -q 'identity is:'; then
+    if ! subscription-manager identity | grep -q 'identity is:'
+    then
       set +x # Don't log password.
-      if [[ -z "$rhn_user" || -z "$rhn_pass" ]]; then
+      if [[ -z "$rhn_user" || -z "$rhn_pass" ]]
+      then
         echo "OpenShift: Install method rhsm requires an RHN user and password."
         preflight_failure=1
       fi
@@ -3892,13 +3951,15 @@ validate_preflight()
     # a harmless but possibly alarming "Broken pipe" error message.
     if [[ -z "$sm_reg_pool" ]] &&
         ( [[ -n "$rhn_user" && -n "$rhn_pass" ]] ||
-          ! subscription-manager repos | tac | grep -q '\<rhel-6-server-ose-2.2-\(infra\|node\)-rpms$' ); then
+          ! subscription-manager repos | tac | grep -q '\<rhel-6-server-ose-2.2-\(infra\|node\)-rpms$' )
+    then
       echo "OpenShift: Install method rhsm requires a poolid."
       preflight_failure=1
     fi
   fi
 
-  if [[ "$install_method" = yum && -z "$ose_repo_base" ]]; then
+  if [[ "$install_method" = yum && -z "$ose_repo_base" ]]
+  then
     echo "OpenShift: Install method yum requires providing URLs for at least OpenShift repos."
     preflight_failure=1
   fi
@@ -3918,12 +3979,11 @@ install_rpms()
   yum $disable_plugin clean all
 
   local count=0
-  while true; do
-    yum $disable_plugin update -y
-    if [[ $? -eq 0 ]]; then
-      break
-    elif [[ $count -gt 3 ]]; then
-      abort_install
+  while true
+  do
+    yum $disable_plugin update -y && break
+    if [[ $count -gt 3 ]]
+    then abort_install
     fi
     let count+=1
   done
@@ -4132,9 +4192,11 @@ configure_districts()
   date +%Y-%m-%d-%H:%M:%S
 
   local restart=$RESTART_NEEDED
-  if is_true "$default_districts"; then
+  if is_true "$default_districts"
+  then
     local p
-    for p in ${valid_gear_sizes//,/ }; do
+    for p in ${valid_gear_sizes//,/ }
+    do
       is_xpaas "$p" && configure_messaging_plugin 15  # xpaas profile requires more ports
       oo-admin-ctl-district -p $p -n default-${p} -c add-node --available |& sed -e 's/^\(Error\)/OpenShift: oo-admin-ctl-district - \1/g'
       is_xpaas "$p" && configure_messaging_plugin  # back to default
@@ -4146,18 +4208,21 @@ configure_districts()
     local nodes
     local district
     local mapping
-    for mapping in ${district_mappings//;/ }; do
+    for mapping in ${district_mappings//;/ }
+    do
       district="${mapping%%:*}"
       nodes="${mapping#*:}"
       firstnode=${nodes//,*/}
       # Query the node for the node profile via MCollective.
       profile=""
-      for i in {1..10}; do
+      for i in {1..10}
+      do
         profile=$(oo-ruby -e "require 'mcollective'; include MCollective::RPC; mc=rpcclient('rpcutil'); mc.progress=false; result=mc.custom_request('get_fact', {:fact => 'node_profile'}, ['${firstnode}'], {'identity' => '${firstnode}'}); if not result.empty?;  value=result.first.results[:data][:value]; if not value.nil? and not value.empty?; puts value; exit 0; end; end; exit 1" 2>/dev/null) \
          && break
         sleep 10
       done
-      if [[ -n "$profile" ]]; then
+      if [[ -n "$profile" ]]
+      then
         echo "OpenShift: Adding nodes: $nodes with profile: $profile to district: $district."
         is_xpaas "$profile" && configure_messaging_plugin 15  # xpaas profile requires more ports
         oo-admin-ctl-district -p $profile -n $district -c add-node -i $nodes |& sed -e 's/^\(Error\)/OpenShift: oo-admin-ctl-district - \1/g'
@@ -4178,8 +4243,10 @@ post_deploy()
 {
   echo "OpenShift: Begin post deployment steps."
 
-  if broker; then
-    if isset_valid_gear_sizes || isset_default_gear_capabilities || isset_default_gear_size; then
+  if broker
+  then
+    if isset_valid_gear_sizes || isset_default_gear_capabilities || isset_default_gear_size
+    then
       update_controller_gear_size_configs
       RESTART_NEEDED=true
     fi
@@ -4238,9 +4305,10 @@ RESTART_NEEDED=false
 RESTART_COMPLETED=false
 
 # Make sure /sbin and /usr/sbin are in PATH
-for admin_path in /sbin /usr/sbin; do
-  if [[ :$PATH: != *:"${admin_path}":* ]] ; then
-    PATH=${PATH}:${admin_path}
+for admin_path in /sbin /usr/sbin
+do
+  if [[ :$PATH: != *:"${admin_path}":* ]]
+  then PATH=${PATH}:${admin_path}
   fi
 done
 
