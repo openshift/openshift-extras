@@ -25,7 +25,6 @@ import rpm
 
 from yumvalidator.reconcile_rhsm_config import SubscriptionManagerNotRegisteredError
 
-
 NAME = 'oo-admin-check-sources'
 VERSION = '0.1'
 USAGE = 'Apply a thin layer to scalp and sing'
@@ -130,10 +129,19 @@ class CheckSources(object):
                 except SubscriptionManagerNotRegisteredError:
                     self._use_override = False
                     raise
+                except Exception, rengex:
+                    # We can't recover from any error here
+                    raise SubscriptionManagerError(repr(rengex))
+
             return self._use_override
 
     def _update_overrides(self):
-        (self._repo_overrides, ovrd_repos) = self.r_eng.get_overrides_and_repos()
+        try:
+            (self._repo_overrides, ovrd_repos) = self.r_eng.get_overrides_and_repos()
+        except Exception, rengex:
+            # We can't recover from any error here
+            raise SubscriptionManagerError(repr(rengex))
+
         self._ovrd_age = time.time()
 
     def repo_overrides(self):
@@ -340,7 +348,11 @@ class CheckSources(object):
         """
         repo = self._resolve_repoid(repoid)
         if self.repo_act_invoker():
-            return self.repo_act_invoker().is_managed(repo.id)
+            try:
+                return self.repo_act_invoker().is_managed(repo.id)
+            except Exception, raiex:
+                # We can't recover from any error here
+                raise SubscriptionManagerError(repr(raiex))
         return False
 
     def repo_is_rhn(self, repoid):

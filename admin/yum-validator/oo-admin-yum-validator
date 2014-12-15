@@ -836,10 +836,14 @@ class OpenShiftYumValidator(object):
         self.logger.info('Checking for discrepancies between local settings '
                          'and content overrides')
         from yumvalidator.reconcile_rhsm_config import ReconciliationEngine
-        r_eng = ReconciliationEngine(self.oscs, self.rdb, self.logger, self.opts)
-        if r_eng.reconcile_overrides():
-            self.problem = True
-            return False
+        try:
+            r_eng = ReconciliationEngine(self.oscs, self.rdb, self.logger, self.opts)
+            if r_eng.reconcile_overrides():
+                self.problem = True
+                return False
+        except Exception, rengex:
+            # We can't recover from any error here
+            raise SubscriptionManagerError(repr(rengex))
         return True
 
     def validate_version(self):
@@ -977,12 +981,11 @@ class OpenShiftYumValidator(object):
             self.logger.critical(uryum_err)
             return 128
         except SubscriptionManagerError, sm_err:
-            self.logger.critical('A problem occured while setting content '
-                                 'overrides using the subscription-manager '
-                                 'utility. This often indicates a problem '
-                                 'communicating with the subscription-manager '
-                                 'server component. Please resolve the issue '
-                                 'and try again.')
+            self.logger.critical('A problem occured while using '
+                                 'subscription-manager services. This often '
+                                 'indicates a problem communicating with the '
+                                 'subscription-manager server component. '
+                                 'Please resolve the issue and try again.')
             print ''
             self.logger.critical(sm_err)
             return 2
