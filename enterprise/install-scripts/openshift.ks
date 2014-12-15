@@ -1030,7 +1030,7 @@ synchronize_clock()
 assign_pass()
 {
  # If the ENV variable is set, use it
-  if [ -n "${!3}" ]; then
+  if [[ -n "${!3}" ]]; then
     printf -v "$1" '%s' "${!3}"
   elif is_true "$no_scramble" ; then
     printf -v "$1" '%s' "$2"
@@ -1063,11 +1063,11 @@ display_passwords()
     matchingvar=""
     for postfix in password password1 pass; do
       vprefix=${k%${postfix}}
-      [ "$vprefix" != "$k" ] && break
+      [[ "$vprefix" != "$k" ]] && break
     done
 
     for v in "${vprefix}user" "${vprefix}user1"; do
-      if [ "x${!v}" != "x" ]; then
+      if [[ -n "${!v}" ]]; then
         matchingvar=$v
         break
       fi
@@ -1079,8 +1079,8 @@ display_passwords()
     done
 
     out_string+="$formattedprefix"
-    [ "x$matchingvar" != "x" ] && out_string+=" ${matchingvar##*_}: ${!matchingvar}"
-    [ "$vprefix" != "$k" ] && out_string+=" ${k##*_}"
+    [[ -n "$matchingvar" ]] && out_string+=" ${matchingvar##*_}: ${!matchingvar}"
+    [[ "$vprefix" != "$k" ]] && out_string+=" ${k##*_}"
     out_string+=": ${!k}"
     echo $out_string
   done
@@ -1102,7 +1102,7 @@ configure_repos()
 
   is_true "$CONF_OPTIONAL_REPO" && need_optional_repo() { :; }
 
-  if [ -n "${jbossews_extra_repo}${jbosseap_extra_repo}${rhel_optional_repo}${rhscl_extra_repo}${fuse_extra_repo}${amq_extra_repo}" ]; then
+  if [[ -n "${jbossews_extra_repo}${jbosseap_extra_repo}${rhel_optional_repo}${rhscl_extra_repo}${fuse_extra_repo}${amq_extra_repo}" ]]; then
     need_extra_repo() { :; }
   fi
 
@@ -1180,11 +1180,11 @@ configure_ose_yum_repos()
   # this can be useful even if the main subscription is via RHN
   local repo
   for repo in infra node jbosseap_cartridge client_tools; do
-    if [ "$ose_repo_base" != "" ]; then
-      local layout=puddle; [ -n "$CONF_CDN_LAYOUT" ] && layout=cdn
+    if [[ -n "$ose_repo_base" ]]; then
+      local layout=puddle; [[ -n "$CONF_CDN_LAYOUT" ]] && layout=cdn
       "need_${repo}_repo" && def_ose_yum_repo "$ose_repo_base" "$layout" "$repo"
     fi
-    if [ "$ose_extra_repo_base" != "" ]; then
+    if [[ -n "$ose_extra_repo_base" ]]; then
       "need_${repo}_repo" && def_ose_yum_repo "$ose_extra_repo_base" 'extra' "$repo"
     fi
   done
@@ -1196,7 +1196,7 @@ configure_rhel_repo()
   # installing from RHEL. The post section cannot access the method that
   # was used in the base install. This configures a RHEL yum repo which
   # you must supply.
-if [ "${rhel_repo}x" != "x" ]; then
+if [[ -n "${rhel_repo}" ]]; then
   cat > /etc/yum.repos.d/rhel.repo <<YUM
 [rhel6]
 name=RHEL 6 base OS
@@ -1213,7 +1213,7 @@ fi
 
 configure_optional_repo()
 {
-if [ "${rhel_optional_repo}x" != "x" ]; then
+if [[ -n "${rhel_optional_repo}" ]]; then
   cat > /etc/yum.repos.d/rheloptional.repo <<YUM
 [rhel6_optional]
 name=RHEL 6 Optional
@@ -1261,7 +1261,7 @@ YUM
 
 configure_rhscl_repo()
 {
-  if [ "x${rhscl_repo_base}" != "x" ]; then
+  if [[ -n "${rhscl_repo_base}" ]]; then
     cat <<YUM > /etc/yum.repos.d/rhscl.repo
 [rhscl]
 name=rhscl
@@ -1307,7 +1307,7 @@ YUM
 configure_extra_repos()
 { # add all defined extra repos in one file
   local extra_repo_file=/etc/yum.repos.d/ose_extra.repo
-  if [ -e "${extra_repo_file}" ]; then
+  if [[ -e "${extra_repo_file}" ]]; then
       echo > "${extra_repo_file}"
   fi
 
@@ -1326,7 +1326,7 @@ configure_extra_repos()
   local repo
   for repo in "${!priority[@]}"; do
     local url="${!repo}"
-    if [ "${url}x" != "x" ]; then
+    if [[ -n "${url}" ]]; then
       cat <<YUM >> "${extra_repo_file}"
 [${repo}]
 name=${repo}
@@ -1369,11 +1369,11 @@ configure_subscription()
 
 configure_rhn_channels()
 {
-  if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
+  if [[ -n "$CONF_RHN_REG_ACTKEY" ]]; then
     echo "OpenShift: Register to RHN Classic using an activation key"
     rhnreg_ks --force "--activationkey=${CONF_RHN_REG_ACTKEY}" "--profilename=$profile_name" ${CONF_RHN_REG_OPTS} || abort_install
-  else 
-    if [ $rhn_creds_provided ]
+  else
+    if [[ -n "$rhn_creds_provided" ]]
     then
       set +x # don't log password
       echo "OpenShift: Register to RHN Classic with username and password"
@@ -1385,7 +1385,7 @@ configure_rhn_channels()
     fi
   fi
 
-  if [ $rhn_creds_provided ]
+  if [[ -n "$rhn_creds_provided" ]]
   then
     # Enable the node or infrastructure channel to enable installing the release RPM
     local repos=('rhel-x86_64-server-6-rhscl-1')
@@ -1401,7 +1401,7 @@ configure_rhn_channels()
     set +x # don't log password
     local repo
     for repo in "${repos[@]}"; do
-      [[ "$(rhn-channel -l)" == *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
+      [[ "$(rhn-channel -l)" = *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
     done
     set -x
   fi
@@ -1411,7 +1411,7 @@ configure_rhn_channels()
 
 configure_rhsm_channels()
 {
-  if [ $rhn_creds_provided ]
+  if [[ -n "$rhn_creds_provided" ]]
   then
     set +x # don't log password
     echo "OpenShift: Register with RHSM"
@@ -1422,7 +1422,7 @@ configure_rhsm_channels()
     echo "OpenShift: No credentials given for RHSM; assuming already configured"
   fi
 
-  if [[ "${CONF_SM_REG_POOL}" ]]
+  if [[ -n "${CONF_SM_REG_POOL}" ]]
   then
     echo "OpenShift: Removing all current subscriptions"
     subscription-manager remove --all
@@ -1446,7 +1446,7 @@ configure_rhsm_channels()
 
 abort_install()
 {
-  [[ "$@"x == x ]] || echo "$@"
+  [[ "$#" -ge 1 ]] && echo "$@"
   # don't change this; could be used as an automation cue.
   echo "OpenShift: Aborting Installation."
   exit 1
@@ -1458,9 +1458,9 @@ yum_install_or_exit()
   local count=0
   time while true; do
     yum install -y $* $disable_plugin
-    if [ $? -eq 0 ]; then
+    if [[ $? -eq 0 ]]; then
       return
-    elif [ $count -gt 3 ]; then
+    elif [[ $count -gt 3 ]]; then
       echo "OpenShift: Command failed: yum install $*"
       echo "OpenShift: Please ensure relevant repos/subscriptions are configured."
       abort_install
@@ -1866,7 +1866,7 @@ configure_quotas_on_node()
   # Get the mountpoint for /var/lib/openshift (should be /).
   local geardata_mnt=$(df -P /var/lib/openshift 2>/dev/null | tail -n 1 | awk '{ print $6 }')
 
-  if ! [ x"$geardata_mnt" != x ]
+  if [[ -z "$geardata_mnt" ]]
   then
     echo 'Could not enable quotas for gear data: unable to determine mountpoint.'
   else
@@ -1973,13 +1973,13 @@ execute_mongodb()
   echo "---"
 
   local userpass=
-  if [ -n "$3" -a -n "$4" ]; then
+  if [[ -n "$3" && -n "$4" ]]; then
     userpass="-u ${3} -p ${4} admin"
   fi
 
   local output="$( echo "$1" | mongo ${userpass} )"
   echo "$output"
-  if [ "$2" ]; then # test output against regex
+  if [[ -n "$2" ]]; then # test output against regex
     [[ "$output" =~ $2 ]] || return 1
   fi
   return 0
@@ -2367,7 +2367,7 @@ configure_activemq()
   local replicant
   for replicant in ${activemq_replicants//,/ }
   do
-    if ! [ "$replicant" = "$activemq_hostname" ]
+    if [[ "$replicant" != "$activemq_hostname" ]]
     then
       : ${networkConnectors:='        <networkConnectors>'$'\n'}
       : ${authenticationUser_amq:="<authenticationUser username=\"amq\" password=\"${activemq_amq_user_password}\" groups=\"admins,everyone\" />"}
@@ -2704,7 +2704,7 @@ EOF
   # actually set up the domain zone(s)
   # bind_key is used if set, created if not. both domains use same key.
   configure_named_zone "$hosts_domain"
-  [ "$domain" != "$hosts_domain" ] && configure_named_zone "$domain"
+  [[ "$domain" != "$hosts_domain" ]] && configure_named_zone "$domain"
 
   # configure in any hosts as needed
   configure_hosts_dns
@@ -2721,7 +2721,7 @@ configure_named_zone()
 {
   local zone="$1"
 
-  if [ "x$bind_key" = x ]; then
+  if [[ -z "$bind_key" ]]; then
     # Generate a new secret key
     local zone_tolower="${zone,,}"
     rm -f /var/named/K${zone_tolower}*
@@ -2771,7 +2771,7 @@ EOF
 ensure_domain()
 { # adds a domain to hostname if it does not have one
   # $1 = host; $2 = domain
-  if [[ $1 == *.* ]]; then # already FQDN or IP
+  if [[ $1 = *.* ]]; then # already FQDN or IP
     echo "$1"
   else # needs a domain
     echo "$1.$2"
@@ -2796,8 +2796,8 @@ configure_hosts_dns()
 {
   add_host_to_zone "$named_hostname" "$named_ip_addr" # always define self
   # glue record for NS host in subdomain:
-  [[ "$hosts_domain" == *?"$domain" ]] && add_host_to_zone "$named_hostname" "$named_ip_addr" "$domain"
-  if [ -z "$CONF_NAMED_ENTRIES" ]; then
+  [[ "$hosts_domain" = *?"$domain" ]] && add_host_to_zone "$named_hostname" "$named_ip_addr" "$domain"
+  if [[ -z "$CONF_NAMED_ENTRIES" ]]; then
     # Add A records for any other components that are being installed locally.
     broker && add_host_to_zone "$broker_hostname" "$broker_ip_addr"
     node && add_host_to_zone "$node_hostname" "$node_ip_addr"
@@ -2885,7 +2885,7 @@ update_controller_gear_size_configs()
 # Update the controller configuration.
 configure_controller()
 {
-  if [ "x$broker_auth_salt" = "x" ]
+  if [[ -z "$broker_auth_salt" ]]
   then
     echo "Warning: broker authentication salt is empty!"
   fi
@@ -2903,7 +2903,7 @@ configure_controller()
       /etc/openshift/broker.conf
 
   # Configure the session secret for the console
-  if [ `grep -c SESSION_SECRET /etc/openshift/console.conf` -eq 0 ]
+  if [[ `grep -c SESSION_SECRET /etc/openshift/console.conf` -eq 0 ]]
   then
     echo "SESSION_SECRET=${console_session_secret}" >> /etc/openshift/console.conf
   fi
@@ -2954,7 +2954,7 @@ configure_messaging_plugin()
 # Configure the broker to use the BIND DNS plug-in.
 configure_dns_plugin()
 {
-  if [ "x$bind_key" = x ] && [ "x$bind_krb_keytab" = x ]
+  if [[ -z "$bind_key" && -z "$bind_krb_keytab" ]]
   then
     echo 'WARNING: Neither key nor keytab has been set for communication'
     echo 'with BIND. You will need to modify the value of BIND_KEYVALUE'
@@ -2968,7 +2968,7 @@ BIND_SERVER="${named_ip_addr}"
 BIND_PORT=53
 BIND_ZONE="${domain}"
 EOF
-  if [ "x$bind_krb_keytab" = x ]
+  if [[ -z "$bind_krb_keytab" ]]
   then
     cat <<EOF >> /etc/openshift/plugins.d/openshift-origin-dns-nsupdate.conf
 BIND_KEYNAME="${domain}"
@@ -2993,7 +2993,7 @@ configure_httpd_auth()
 
   # Configure mod_auth_kerb if both CONF_BROKER_KRB_SERVICE_NAME
   # and CONF_BROKER_KRB_AUTH_REALMS are specified
-  if [ -n "$CONF_BROKER_KRB_SERVICE_NAME" ] && [ -n "$CONF_BROKER_KRB_AUTH_REALMS" ]
+  if [[ -n "$CONF_BROKER_KRB_SERVICE_NAME" && -n "$CONF_BROKER_KRB_AUTH_REALMS" ]]
   then
     yum_install_or_exit mod_auth_kerb
     local d
@@ -3232,7 +3232,7 @@ PLATFORM_SYSLOG_TRACE_ENABLED=1
     ' /etc/openshift/node.conf
     sed -i -e 's/^#*\s*OPTIONS="\?\([^"]*\)"\?/OPTIONS="\1 -DOpenShiftAnnotateFrontendAccessLog"/' /etc/sysconfig/httpd
   fi
-  if [[ "$CONF_METRICS_INTERVAL" != "" ]]; then
+  if [[ -n "$CONF_METRICS_INTERVAL" ]]; then
     # configure watchman with given interval
     sed -i -e "
       s/^.*WATCHMAN_METRICS_ENABLED=.*/WATCHMAN_METRICS_ENABLED=true/
@@ -3263,11 +3263,11 @@ install_rsync_pub_key()
   while [[ `date +%s` -lt $end ]]; do
     # try to get key hosted on broker machine
     cert=$(wget -q -O- --no-check-certificate "https://${broker_hostname}/rsync_id_rsa.pub?host=${node_hostname}")
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
       sleep 5
     else
       ssh-keygen -lf /dev/stdin <<< $cert
-      if [ $? -ne 0 ]; then
+      if [[ $? -ne 0 ]]; then
         break
       else
         echo $cert >> /root/.ssh/authorized_keys
@@ -3357,7 +3357,7 @@ is_true()
 {
   for arg
   do
-    [[ x$arg =~ x(1|true) ]] || return 1
+    [[ "$arg" =~ (1|true) ]] || return 1
   done
 
   return 0
@@ -3367,7 +3367,7 @@ is_false()
 {
   for arg
   do
-    [[ x$arg =~ x(1|true) ]] || return 0
+    [[ "$arg" =~ (1|true) ]] || return 0
   done
 
   return 1
@@ -3376,7 +3376,7 @@ is_false()
 is_xpaas()
 { # checks first arg or $node_profile, true if contains "xpaas"
   local profile="${1:-$node_profile}"
-  [[ "${profile}" == *xpaas* ]]
+  [[ "${profile}" = *xpaas* ]]
 }
 
 # For each component, this function defines a constant function that
@@ -3440,7 +3440,7 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
   local setting
   for setting in "${!CONF_@}"
   do
-    if ! [[ ${valid_settings[$setting]+1} ]]
+    if [[ -z "${valid_settings[$setting]+x}" ]]
     then
       if is_true "$abort_on_unrecognized_settings"
       then
@@ -3450,7 +3450,7 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
       fi
     else
       # The setting is recognized, so check whether a non-empty value is given.
-      [[ ${!setting} ]] || abort_install "Setting is assigned an empty value: $setting"
+      [[ -n "${!setting}" ]] || abort_install "Setting is assigned an empty value: $setting"
     fi
   done
   set -x
@@ -3490,7 +3490,7 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
       break
     fi
   done
-  if [ $installing_something = 0 ]
+  if [[ $installing_something = 0 ]]
   then
     for component in $components
     do
@@ -3536,26 +3536,26 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
 
   # Use CDN layout as the default for all yum repos if this is set.
   cdn_repo_base="${CONF_CDN_REPO_BASE%/}"
-  if [ "x$cdn_repo_base" != "x" ]; then
+  if [[ -n "$cdn_repo_base" ]]; then
     rhel_repo="${rhel_repo:-$cdn_repo_base/os}"
     jboss_repo_base="${jboss_repo_base:-$cdn_repo_base}"
     rhscl_repo_base="${rhscl_repo_base:-$cdn_repo_base}"
     rhel_optional_repo="${rhel_optional_repo:-$cdn_repo_base/optional/os}"
     ose_repo_base="${ose_repo_base:-$cdn_repo_base}"
-    if [ "${cdn_repo_base}" == "${ose_repo_base}" ]; then # same repo layout
+    if [[ "${cdn_repo_base}" = "${ose_repo_base}" ]]; then # same repo layout
       CONF_CDN_LAYOUT=1  # use the CDN layout for OpenShift yum repos
     fi
-  elif [ "${rhel_repo}" == "${ose_repo_base}/os" ]; then # OSE same repo base as RHEL?
+  elif [[ "${rhel_repo}" = "${ose_repo_base}/os" ]]; then # OSE same repo base as RHEL?
     CONF_CDN_LAYOUT=1  # use the CDN layout for OpenShift yum repos
   fi
   ose_extra_repo_base="${CONF_OSE_EXTRA_REPO_BASE%/}"
   rhscl_repo_base="${rhscl_repo_base:-${rhel_repo%/os}}"
   # no need to waste time checking both subscription plugins if using one
   disable_plugin=""
-  [[ "$CONF_INSTALL_METHOD" == "rhsm" ]] && disable_plugin='--disableplugin=rhnplugin'
-  [[ "$CONF_INSTALL_METHOD" == "rhn" ]] && disable_plugin='--disableplugin=subscription-manager'
+  [[ "$CONF_INSTALL_METHOD" = "rhsm" ]] && disable_plugin='--disableplugin=rhnplugin'
+  [[ "$CONF_INSTALL_METHOD" = "rhn" ]] && disable_plugin='--disableplugin=subscription-manager'
   # could do the same for "yum" method but it's more likely to surprise someone
-  #[[ "$CONF_INSTALL_METHOD" == "yum" ]] && disable_plugin='--disableplugin=subscription-manager --disableplugin=rhnplugin'
+  #[[ "$CONF_INSTALL_METHOD" = "yum" ]] && disable_plugin='--disableplugin=subscription-manager --disableplugin=rhnplugin'
 
   # remap subscription parameters used previously
   CONF_RHN_USER="${CONF_RHN_USER:-${CONF_SM_REG_NAME:-$CONF_RHN_REG_NAME}}"
@@ -3632,7 +3632,7 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
   # $CONF_BIND_KRB_KEYTAB and $CONF_BIND_KRB_PRINCIPAL if these values
   # are both non-empty, or set $bind_key to the value of $CONF_BIND_KEY
   # if the latter is non-empty.
-  if [ "x$CONF_BIND_KRB_KEYTAB" != x ] && [ "x$CONF_BIND_KRB_PRINCIPAL" != x ] ; then
+  if [[ -n "$CONF_BIND_KRB_KEYTAB" && -n "$CONF_BIND_KRB_PRINCIPAL" ]]; then
   bind_krb_keytab="$CONF_BIND_KRB_KEYTAB"
   bind_krb_principal="$CONF_BIND_KRB_PRINCIPAL"
   else
@@ -3647,15 +3647,15 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
   done
 
   # Set $valid_gear_sizes to $CONF_VALID_GEAR_SIZES
-  [ -n "$CONF_VALID_GEAR_SIZES" ] && isset_valid_gear_sizes() { :; }
+  [[ -n "$CONF_VALID_GEAR_SIZES" ]] && isset_valid_gear_sizes() { :; }
   broker && valid_gear_sizes="${CONF_VALID_GEAR_SIZES:-small}"
 
   # Set $default_gear_capabilities to $CONF_DEFAULT_GEAR_CAPABILITIES
-  [ -n "$CONF_DEFAULT_GEAR_CAPABILITIES" ] && isset_default_gear_capabilities() { :; }
+  [[ -n "$CONF_DEFAULT_GEAR_CAPABILITIES" ]] && isset_default_gear_capabilities() { :; }
   broker && default_gear_capabilities="${CONF_DEFAULT_GEAR_CAPABILITIES:-${valid_gear_sizes}}"
 
   # Set $default_gear_size to $CONF_DEFAULT_GEAR_SIZE
-  [ -n "$CONF_DEFAULT_GEAR_SIZE" ] && isset_default_gear_size() { :; }
+  [[ -n "$CONF_DEFAULT_GEAR_SIZE" ]] && isset_default_gear_size() { :; }
   broker && default_gear_size="${CONF_DEFAULT_GEAR_SIZE:-${valid_gear_sizes%%,*}}"
 
   # Set $node_profile to $CONF_NODE_PROFILE
@@ -3793,7 +3793,7 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
 init_message()
 {
   echo_installation_intentions
-  [ "$environment" = ks ] && configure_console_msg
+  [[ "$environment" = ks ]] && configure_console_msg
 }
 
 validate_preflight()
@@ -3834,7 +3834,7 @@ validate_preflight()
     if ! [[ -f /etc/sysconfig/rhn/systemid ]] || ! rhn-channel -l | grep -q '^rhel-x86_64-server-6-ose-2.2-\(node\|infrastructure\)'
     then
       set +x # don't log password
-      if [ ! "$CONF_RHN_USER" -o ! "$CONF_RHN_PASS" ]; then
+      if [[ -z "$CONF_RHN_USER" || -z "$CONF_RHN_PASS" ]]; then
         echo "OpenShift: Install method rhn requires an RHN user and password."
         preflight_failure=1
       fi
@@ -3850,7 +3850,7 @@ validate_preflight()
     # adding channels.
     if ! subscription-manager identity | grep -q 'identity is:'; then
       set +x # don't log password
-      if [ ! "$CONF_RHN_USER" -o ! "$CONF_RHN_PASS" ]; then
+      if [[ -z "$CONF_RHN_USER" || -z "$CONF_RHN_PASS" ]]; then
         echo "OpenShift: Install method rhsm requires an RHN user and password."
         preflight_failure=1
       fi
@@ -3867,15 +3867,15 @@ validate_preflight()
     # subscription-manager gets to write all of its plentiful output
     # before grep closes the pipeline.  Without it, we will get
     # a harmless but possibly alarming "Broken pipe" error message.
-    if [[ ! "$CONF_SM_REG_POOL" ]] &&
-        ( [[ "$CONF_RHN_USER" && "$CONF_RHN_PASS" ]] ||
+    if [[ -z "$CONF_SM_REG_POOL" ]] &&
+        ( [[ -n "$CONF_RHN_USER" && -n "$CONF_RHN_PASS" ]] ||
           ! subscription-manager repos | tac | grep -q '\<rhel-6-server-ose-2.2-\(infra\|node\)-rpms$' ); then
       echo "OpenShift: Install method rhsm requires a poolid."
       preflight_failure=1
     fi
   fi
 
-  if [ "$CONF_INSTALL_METHOD" = yum -a ! "$ose_repo_base" ]; then
+  if [[ "$CONF_INSTALL_METHOD" = yum && -z "$ose_repo_base" ]]; then
     echo "OpenShift: Install method yum requires providing URLs for at least OpenShift repos."
     preflight_failure=1
   fi
@@ -3883,7 +3883,7 @@ validate_preflight()
   # Test that known problematic RPMs aren't present
   # ... ?
 
-  [ "$preflight_failure" ] && abort_install
+  [[ -n "$preflight_failure" ]] && abort_install
   echo "OpenShift: Completed preflight validation."
 }
 
@@ -3897,9 +3897,9 @@ install_rpms()
   local count=0
   while true; do
     yum $disable_plugin update -y
-    if [ $? -eq 0 ]; then
+    if [[ $? -eq 0 ]]; then
       break
-    elif [ $count -gt 3 ]; then
+    elif [[ $count -gt 3 ]]; then
       abort_install
     fi
     let count+=1
@@ -4131,12 +4131,12 @@ configure_districts()
       profile=""
       for i in {1..10}; do
         profile=$(oo-ruby -e "require 'mcollective'; include MCollective::RPC; mc=rpcclient('rpcutil'); mc.progress=false; result=mc.custom_request('get_fact', {:fact => 'node_profile'}, ['${firstnode}'], {'identity' => '${firstnode}'}); if not result.empty?;  value=result.first.results[:data][:value]; if not value.nil? and not value.empty?; puts value; exit 0; end; end; exit 1" 2>/dev/null)
-        if [ $? -eq 0 ]; then
+        if [[ $? -eq 0 ]]; then
           break;
         fi
         sleep 10
       done
-      if [ "x$profile" != "x" ]; then
+      if [[ -n "$profile" ]]; then
         echo "OpenShift: Adding nodes: $nodes with profile: $profile to district: $district."
         is_xpaas "$profile" && configure_messaging_plugin 15  # xpaas profile requires more ports
         oo-admin-ctl-district -p $profile -n $district -c add-node -i $nodes |& sed -e 's/^\(Error\)/OpenShift: oo-admin-ctl-district - \1/g'
@@ -4232,7 +4232,7 @@ set_defaults
 date +%Y-%m-%d-%H:%M:%S
 for action in ${actions//,/ }
 do
-  [ "$(type -t "$action")" = function ] || abort_install "Invalid action: ${action}"
+  [[ "$(type -t "$action")" = function ]] || abort_install "Invalid action: ${action}"
   "$action"
 done
 date +%Y-%m-%d-%H:%M:%S
