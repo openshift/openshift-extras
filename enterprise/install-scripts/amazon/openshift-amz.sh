@@ -55,7 +55,7 @@ assign_pass()
   elif is_true "$no_scramble" ; then
     printf -v "$1" '%s' "$2"
   else
-    randomized=$(openssl rand -base64 20)
+    local randomized=$(openssl rand -base64 20)
     printf -v "$1" '%s' "${randomized//[![:alnum:]]}"
   fi
   passwords[$1]="${!1}"
@@ -64,6 +64,20 @@ assign_pass()
 display_passwords()
 {
   set +x
+  local k
+  local v
+  local s
+  local vprefix
+  local postfix
+  local out_string
+  local matchingvar
+  local formattedprefix
+  local -A subs
+  subs[openshift]="OpenShift"
+  subs[mcollective]="MCollective"
+  subs[mongodb]="MongoDB"
+  subs[activemq]="ActiveMQ"
+
   for k in "${!passwords[@]}"; do
     out_string=""
     matchingvar=""
@@ -78,12 +92,6 @@ display_passwords()
         break
       fi
     done
-
-    local -A subs
-    subs[openshift]="OpenShift"
-    subs[mcollective]="MCollective"
-    subs[mongodb]="MongoDB"
-    subs[activemq]="ActiveMQ"
 
     formattedprefix=${vprefix//_/ }
     for s in ${!subs[@]}; do
@@ -106,6 +114,7 @@ configure_repos()
   # functions.
 
   # Make need_${repo}_repo return false by default.
+  local repo
   for repo in optional infra node client_tools extra \
               fuse_cartridge amq_cartridge jbosseap_cartridge jbosseap jbossews; do
       eval "need_${repo}_repo() { false; }"
@@ -189,9 +198,10 @@ configure_yum_repos()
 configure_ose_yum_repos()
 { # define plain yum repos if the parameters are given
   # this can be useful even if the main subscription is via RHN
+  local repo
   for repo in infra node jbosseap_cartridge client_tools; do
     if [ "$ose_repo_base" != "" ]; then
-      layout=puddle; [ -n "$CONF_CDN_LAYOUT" ] && layout=cdn
+      local layout=puddle; [ -n "$CONF_CDN_LAYOUT" ] && layout=cdn
       "need_${repo}_repo" && def_ose_yum_repo "$ose_repo_base" "$layout" "$repo"
     fi
     if [ "$ose_extra_repo_base" != "" ]; then
@@ -242,11 +252,12 @@ fi
 
 def_ose_yum_repo()
 {
-  repo_base=$1
-  layout=$2  # one of: puddle, extra, cdn
-  channel=$3 # one of: client_tools, infra, node, jbosseap_cartridge
+  local repo_base=$1
+  local layout=$2  # one of: puddle, extra, cdn
+  local channel=$3 # one of: client_tools, infra, node, jbosseap_cartridge
 
-  declare -A map
+  local -A map
+  local url
   case $layout in
   puddle | extra)
     map=([client_tools]=RHOSE-CLIENT-2.2 [infra]=RHOSE-INFRA-2.2 [node]=RHOSE-NODE-2.2 [jbosseap_cartridge]=RHOSE-JBOSSEAP-2.2)
@@ -320,7 +331,7 @@ YUM
 
 configure_extra_repos()
 { # add all defined extra repos in one file
-  extra_repo_file=/etc/yum.repos.d/ose_extra.repo
+  local extra_repo_file=/etc/yum.repos.d/ose_extra.repo
   if [ -e "${extra_repo_file}" ]; then
       echo > "${extra_repo_file}"
   fi
@@ -364,7 +375,7 @@ configure_subscription()
    # install our tool to enable repo/channel configuration
    yum_install_or_exit openshift-enterprise-yum-validator
 
-   roles=""  # we will build the list of roles we need, then enable them.
+   local roles=""  # we will build the list of roles we need, then enable them.
    need_infra_repo && roles="$roles --role broker"
    need_client_tools_repo && roles="$roles --role client"
    need_node_repo && roles="$roles --role node"
@@ -403,7 +414,7 @@ configure_rhn_channels()
   if [ $rhn_creds_provided ]
   then
     # Enable the node or infrastructure channel to enable installing the release RPM
-    repos=('rhel-x86_64-server-6-rhscl-1')
+    local repos=('rhel-x86_64-server-6-rhscl-1')
     if ! need_node_repo || need_infra_repo ; then
       repos+=('rhel-x86_64-server-6-ose-2.2-infrastructure')
     fi
@@ -414,6 +425,7 @@ configure_rhn_channels()
     need_amq_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.2-jbossamq')
 
     set +x # don't log password
+    local repo
     for repo in "${repos[@]}"; do
       [[ "$(rhn-channel -l)" == *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" || abort_install
     done
@@ -445,6 +457,7 @@ configure_rhsm_channels()
   fi
 
   # If CONF_SM_REG_POOL was not specified, this for loop is a no-op.
+  local poolid
   for poolid in ${CONF_SM_REG_POOL//[, :+\/-]/ }; do
     echo "OpenShift: Registering subscription from pool id $poolid"
     subscription-manager attach --pool "$poolid" || abort_install
@@ -468,17 +481,17 @@ abort_install()
 yum_install_or_exit()
 {
   echo "OpenShift: yum install $*"
-  COUNT=0
+  local count=0
   time while true; do
     yum install -y $* $disable_plugin
     if [ $? -eq 0 ]; then
       return
-    elif [ $COUNT -gt 3 ]; then
+    elif [ $count -gt 3 ]; then
       echo "OpenShift: Command failed: yum install $*"
       echo "OpenShift: Please ensure relevant repos/subscriptions are configured."
       abort_install
     fi
-    let COUNT+=1
+    let count+=1
   done
 }
 
@@ -652,6 +665,8 @@ parse_cartridges()
   # the documentation on the CONF_CARTRIDGES / cartridges options for
   # the rules governing how $cartridges will be passed.
   local pkgs=( )
+  local pkg
+  local cart_spec
   for cart_spec in ${cartridges//,/ }
   do
     if [[ "${cart_spec:0:1}" = - ]]
@@ -674,6 +689,7 @@ parse_cartridges()
 
   if metapkgs_optional || metapkgs_recommended
   then
+    local metapkg
     for metapkg in ${meta[@]}
     do
       if [[ "${pkgs[@]}" =~ "-${metapkg}" ]]
@@ -824,6 +840,8 @@ configure_pam_on_node()
 {
   sed -i -e 's|pam_selinux|pam_openshift|g' /etc/pam.d/sshd
 
+  local t
+  local f
   for f in "runuser" "runuser-l" "sshd" "su" "system-auth-ac"
   do
     t="/etc/pam.d/$f"
@@ -850,6 +868,8 @@ configure_pam_on_node()
 
 configure_cgroups_on_node()
 {
+  local t
+  local f
   for f in "runuser" "runuser-l" "sshd" "system-auth-ac"
   do
     t="/etc/pam.d/$f"
@@ -870,7 +890,7 @@ configure_cgroups_on_node()
 configure_quotas_on_node()
 {
   # Get the mountpoint for /var/lib/openshift (should be /).
-  geardata_mnt=$(df -P /var/lib/openshift 2>/dev/null | tail -n 1 | awk '{ print $6 }')
+  local geardata_mnt=$(df -P /var/lib/openshift 2>/dev/null | tail -n 1 | awk '{ print $6 }')
 
   if ! [ x"$geardata_mnt" != x ]
   then
@@ -978,13 +998,12 @@ execute_mongodb()
   echo "$1"
   echo "---"
 
+  local userpass=
   if [ -n "$3" -a -n "$4" ]; then
     userpass="-u ${3} -p ${4} admin"
-  else
-    userpass=""
   fi
 
-  output="$( echo "$1" | mongo ${userpass} )"
+  local output="$( echo "$1" | mongo ${userpass} )"
   echo "$output"
   if [ "$2" ]; then # test output against regex
     [[ "$output" =~ $2 ]] || return 1
@@ -1032,12 +1051,14 @@ configure_datastore_add_replicants()
   time execute_mongodb 'rs.initiate()' '"ok" : 1' ||
     abort_install "OpenShift: Failed to form MongoDB replica set; please do this manually."
 
-  master_out="$(echo 'while (rs.isMaster().primary == null) { sleep(5); }; print("host="+rs.isMaster().primary)' | mongo | grep 'host=')" ||
+  local master_out="$(echo 'while (rs.isMaster().primary == null) { sleep(5); }; print("host="+rs.isMaster().primary)' | mongo | grep 'host=')" ||
     abort_install "OpenShift: Failed to query the MongoDB replica set master; please verify the replica set configuration manually."
 
   configure_datastore_add_users
 
   # Configure the replica set.
+  local i
+  local replicant
   for replicant in ${datastore_replicants//,/ }
   do
     if [[ "$replicant" != "${master_out#host=}" ]]
@@ -1252,8 +1273,10 @@ enable_services_on_broker()
 
 generate_mcollective_pools_configuration()
 {
-  num_replicants=0
-  members=
+  local num_replicants=0
+  local members=
+  local new_member
+  local replicant
   for replicant in ${activemq_replicants//,/ }
   do
     let num_replicants=num_replicants+1
@@ -1275,8 +1298,8 @@ plugin.activemq.pool.${num_replicants}.password = ${mcollective_password}
 # https://bugzilla.redhat.com/show_bug.cgi?id=963332
 configure_mcollective_for_activemq_on_broker()
 {
-  MCOLLECTIVE_CFG="/opt/rh/ruby193/root/etc/mcollective/client.cfg"
-  cat <<EOF > $MCOLLECTIVE_CFG
+  local mcollective_cfg="/opt/rh/ruby193/root/etc/mcollective/client.cfg"
+  cat <<EOF > $mcollective_cfg
 main_collective = mcollective
 collectives = mcollective
 libdir = /opt/rh/ruby193/root/usr/libexec/mcollective
@@ -1305,8 +1328,8 @@ plugin.yaml = /opt/rh/ruby193/root/etc/mcollective/facts.yaml
 
 EOF
 
-  chown apache:apache $MCOLLECTIVE_CFG
-  chmod 640 $MCOLLECTIVE_CFG
+  chown apache:apache $mcollective_cfg
+  chmod 640 $mcollective_cfg
 
   # make sure mcollective client log is created with proper ownership.
   # if root owns it, the broker (apache user) can't log to it.
@@ -1367,6 +1390,7 @@ configure_activemq()
   local networkConnectors=
   local authenticationUser_amq=
   function allow_openwire() { false; }
+  local replicant
   for replicant in ${activemq_replicants//,/ }
   do
     if ! [ "$replicant" = "$activemq_hostname" ]
@@ -1637,7 +1661,7 @@ configure_named()
   chmod 640 /etc/rndc.key
 
   # Set up DNS forwarding if so directed.
-  forwarders="recursion no;"
+  local forwarders="recursion no;"
   if is_true "$CONF_FORWARD_DNS"; then
     echo "forwarders { ${nameservers} } ;" > /var/named/forwarders.conf
     restorecon /var/named/forwarders.conf
@@ -1721,11 +1745,11 @@ EOF
 
 configure_named_zone()
 {
-  zone="$1"
+  local zone="$1"
 
   if [ "x$bind_key" = x ]; then
     # Generate a new secret key
-    zone_tolower="${zone,,}"
+    local zone_tolower="${zone,,}"
     rm -f /var/named/K${zone_tolower}*
     dnssec-keygen -a ${bind_keyalgorithm} -b ${bind_keysize} -n USER -r /dev/urandom -K /var/named ${zone}
     # $zone may have uppercase letters in it.  However the file that
@@ -1783,10 +1807,10 @@ ensure_domain()
 add_host_to_zone()
 {
   # $1 = host; $2 = ip; [ $3 = zone ]
-  zone="${3:-$hosts_domain}"
-  nsdb="/var/named/dynamic/${zone}.db"
+  local zone="${3:-$hosts_domain}"
+  local nsdb="/var/named/dynamic/${zone}.db"
   # sanity check that $1 isn't an IP, and $2 is.
-  ip_regex='^[.0-9]+$' # all numbers and dots = IP (not rigorous)
+  local ip_regex='^[.0-9]+$' # all numbers and dots = IP (not rigorous)
   if [[ $1 =~ $ip_regex || ! $2 =~ $ip_regex ]]; then
     echo "Not adding DNS record to host zone: '$1' should be a hostname and '$2' should be an IP address"
   else
@@ -1807,6 +1831,7 @@ configure_hosts_dns()
     datastore && add_host_to_zone "$datastore_hostname" "$cur_ip_addr"
   elif [[ "$CONF_NAMED_ENTRIES" =~ : ]]; then
     # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
+    local host_ip
     for host_ip in ${CONF_NAMED_ENTRIES//,/ }; do
       add_host_to_zone ${host_ip//:/ }
     done
@@ -1819,8 +1844,11 @@ configure_hosts_dns()
 # using oo-register-dns. Not used by default.
 register_named_entries()
 {
-  ip_regex='^[.0-9]+$' # all numbers and dots = IP (not rigorous)
-  failed="false"
+  local ip_regex='^[.0-9]+$' # all numbers and dots = IP (not rigorous)
+  local failed="false"
+  local host_ip
+  local host
+  local ip
   for host_ip in ${CONF_NAMED_ENTRIES//,/ }; do
     read host ip <<<$(echo ${host_ip//:/ })
     if [[ $host =~ $ip_regex || ! $ip =~ $ip_regex ]]; then
@@ -1994,6 +2022,7 @@ configure_httpd_auth()
   if [ -n "$CONF_BROKER_KRB_SERVICE_NAME" ] && [ -n "$CONF_BROKER_KRB_AUTH_REALMS" ]
   then
     yum_install_or_exit mod_auth_kerb
+    local d
     for d in /var/www/openshift/broker/httpd/conf.d /var/www/openshift/console/httpd/conf.d
     do
       sed -e "s#KrbServiceName.*#KrbServiceName ${CONF_BROKER_KRB_SERVICE_NAME}#" \
@@ -2030,7 +2059,7 @@ configure_httpd_auth()
 configure_routing_plugin()
 {
   if is_true "$CONF_ROUTING_PLUGIN"; then
-    conffile=/etc/openshift/plugins.d/openshift-origin-routing-activemq.conf
+    local conffile=/etc/openshift/plugins.d/openshift-origin-routing-activemq.conf
     sed -e '/^ACTIVEMQ_\(USERNAME\|PASSWORD\|HOST\)/ d' $conffile.example > $conffile
     cat <<EOF >> "$conffile"
 ACTIVEMQ_HOST='$activemq_replicants'
@@ -2252,11 +2281,12 @@ install_rsync_pub_key()
   mkdir -p /root/.ssh
   chmod 700 /root/.ssh
 
-  WAIT=600
-  END=`date -d "$WAIT seconds" +%s`
-  echo "OpenShift node: will wait for $WAIT seconds to fetch SSH key."
+  local wait=600
+  local end=`date -d "$wait seconds" +%s`
+  echo "OpenShift node: will wait for $wait seconds to fetch SSH key."
 
-  while [[ `date +%s` -lt $END ]]; do
+  local cert
+  while [[ `date +%s` -lt $end ]]; do
     # try to get key hosted on broker machine
     cert=$(wget -q -O- --no-check-certificate "https://${broker_hostname}/rsync_id_rsa.pub?host=${node_hostname}")
     if [ $? -ne 0 ]; then
@@ -2281,6 +2311,8 @@ install_rsync_pub_key()
 echo_installation_intentions()
 {
   echo "The following components should be installed:"
+  local components='broker node named activemq datastore'
+  local component
   for component in $components
   do "$component" && printf '\t%s.\n' "$component"
   done
@@ -2311,6 +2343,8 @@ configure_console_msg()
 # and CONF_BAZ=true in the environment.
 parse_args()
 {
+  local key
+  local word
   for word in "$@"
   do
     key="${word%%\=*}"
@@ -2425,10 +2459,11 @@ set_defaults()
   #
   # The declare statement below is generated by the following command:
   #
-  #   echo declare -A valid_settings=\( $(grep -o 'CONF_[0-9A-Z_]\+' openshift.ks |sort -u |grep -v -F -e CONF_BAZ -e CONF_FOO |sed -e 's/.*/[&]=/') \)
-declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]= [CONF_ACTIVEMQ_ADMIN_PASSWORD]= [CONF_ACTIVEMQ_AMQ_USER_PASSWORD]= [CONF_ACTIVEMQ_HOSTNAME]= [CONF_ACTIVEMQ_REPLICANTS]= [CONF_AMQ_EXTRA_REPO]= [CONF_BIND_KEY]= [CONF_BIND_KEYALGORITHM]= [CONF_BIND_KEYSIZE]= [CONF_BIND_KEYVALUE]= [CONF_BIND_KRB_KEYTAB]= [CONF_BIND_KRB_PRINCIPAL]= [CONF_BROKER_AUTH_PRIV_KEY]= [CONF_BROKER_AUTH_SALT]= [CONF_BROKER_HOSTNAME]= [CONF_BROKER_IP_ADDR]= [CONF_BROKER_KRB_AUTH_REALMS]= [CONF_BROKER_KRB_SERVICE_NAME]= [CONF_BROKER_SESSION_SECRET]= [CONF_CARTRIDGES]= [CONF_JBOSSEAP_VERSION]= [CONF_CDN_LAYOUT]= [CONF_CDN_REPO_BASE]= [CONF_CONSOLE_SESSION_SECRET]= [CONF_DATASTORE_HOSTNAME]= [CONF_DATASTORE_REPLICANTS]= [CONF_DEFAULT_DISTRICTS]= [CONF_DEFAULT_GEAR_CAPABILITIES]= [CONF_DEFAULT_GEAR_SIZE]= [CONF_ISOLATE_GEARS]= [CONF_DISTRICT_FIRST_UID]= [CONF_DISTRICT_MAPPINGS]= [CONF_DOMAIN]= [CONF_ENABLE_SNI_PROXY]= [CONF_FORWARD_DNS]= [CONF_FUSE_EXTRA_REPO]= [CONF_HOSTS_DOMAIN]= [CONF_HOSTS_DOMAIN_KEYFILE]= [CONF_IDLE_INTERVAL]= [CONF_INSTALL_COMPONENTS]= [CONF_INSTALL_METHOD]= [CONF_INTERFACE]= [CONF_JBOSSEAP_EXTRA_REPO]= [CONF_JBOSSEWS_EXTRA_REPO]= [CONF_JBOSS_REPO_BASE]= [CONF_KEEP_HOSTNAME]= [CONF_KEEP_NAMESERVERS]= [CONF_MCOLLECTIVE_PASSWORD]= [CONF_MCOLLECTIVE_USER]= [CONF_METAPKGS]= [CONF_METRICS_INTERVAL]= [CONF_MONGODB_ADMIN_PASSWORD]= [CONF_MONGODB_ADMIN_USER]= [CONF_MONGODB_BROKER_PASSWORD]= [CONF_MONGODB_BROKER_USER]= [CONF_MONGODB_KEY]= [CONF_MONGODB_NAME]= [CONF_MONGODB_PASSWORD]= [CONF_MONGODB_REPLSET]= [CONF_NAMED_ENTRIES]= [CONF_NAMED_HOSTNAME]= [CONF_NAMED_IP_ADDR]= [CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST]= [CONF_NODE_APACHE_FRONTEND]= [CONF_NODE_HOSTNAME]= [CONF_NODE_HOST_TYPE]= [CONF_NODE_IP_ADDR]= [CONF_NODE_LOG_CONTEXT]= [CONF_NODE_PROFILE]= [CONF_NODE_PROFILE_NAME]= [CONF_NO_NTP]= [CONF_NO_SCRAMBLE]= [CONF_OPENSHIFT_PASSWORD]= [CONF_OPENSHIFT_PASSWORD1]= [CONF_OPENSHIFT_USER]= [CONF_OPENSHIFT_USER1]= [CONF_OPTIONAL_REPO]= [CONF_OSE_ERRATA_BASE]= [CONF_OSE_EXTRA_REPO_BASE]= [CONF_OSE_REPO_BASE]= [CONF_PORTS_PER_GEAR]= [CONF_PROFILE_NAME]= [CONF_REPOS_BASE]= [CONF_RHEL_EXTRA_REPO]= [CONF_RHEL_OPTIONAL_REPO]= [CONF_RHEL_REPO]= [CONF_RHN_PASS]= [CONF_RHN_REG_ACTKEY]= [CONF_RHN_REG_NAME]= [CONF_RHN_REG_OPTS]= [CONF_RHN_REG_PASS]= [CONF_RHN_USER]= [CONF_RHSCL_EXTRA_REPO]= [CONF_RHSCL_REPO_BASE]= [CONF_ROUTING_PLUGIN]= [CONF_ROUTING_PLUGIN_PASS]= [CONF_ROUTING_PLUGIN_USER]= [CONF_SM_REG_NAME]= [CONF_SM_REG_PASS]= [CONF_SM_REG_POOL]= [CONF_SNI_FIRST_PORT]= [CONF_SNI_PROXY_PORTS]= [CONF_SYSLOG]= [CONF_VALID_GEAR_SIZES]= [CONF_YUM_EXCLUDE_PKGS]= )
+  #   echo local -A valid_settings=\( $(grep -o 'CONF_[0-9A-Z_]\+' openshift.ks |sort -u |grep -v -F -e CONF_BAZ -e CONF_FOO |sed -e 's/.*/[&]=/') \)
+local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]= [CONF_ACTIVEMQ_ADMIN_PASSWORD]= [CONF_ACTIVEMQ_AMQ_USER_PASSWORD]= [CONF_ACTIVEMQ_HOSTNAME]= [CONF_ACTIVEMQ_REPLICANTS]= [CONF_AMQ_EXTRA_REPO]= [CONF_BIND_KEY]= [CONF_BIND_KEYALGORITHM]= [CONF_BIND_KEYSIZE]= [CONF_BIND_KEYVALUE]= [CONF_BIND_KRB_KEYTAB]= [CONF_BIND_KRB_PRINCIPAL]= [CONF_BROKER_AUTH_PRIV_KEY]= [CONF_BROKER_AUTH_SALT]= [CONF_BROKER_HOSTNAME]= [CONF_BROKER_IP_ADDR]= [CONF_BROKER_KRB_AUTH_REALMS]= [CONF_BROKER_KRB_SERVICE_NAME]= [CONF_BROKER_SESSION_SECRET]= [CONF_CARTRIDGES]= [CONF_CDN_LAYOUT]= [CONF_CDN_REPO_BASE]= [CONF_CONSOLE_SESSION_SECRET]= [CONF_DATASTORE_HOSTNAME]= [CONF_DATASTORE_REPLICANTS]= [CONF_DEFAULT_DISTRICTS]= [CONF_DEFAULT_GEAR_CAPABILITIES]= [CONF_DEFAULT_GEAR_SIZE]= [CONF_DISTRICT_FIRST_UID]= [CONF_DISTRICT_MAPPINGS]= [CONF_DOMAIN]= [CONF_ENABLE_SNI_PROXY]= [CONF_FORWARD_DNS]= [CONF_FUSE_EXTRA_REPO]= [CONF_HOSTS_DOMAIN]= [CONF_HOSTS_DOMAIN_KEYFILE]= [CONF_IDLE_INTERVAL]= [CONF_INSTALL_COMPONENTS]= [CONF_INSTALL_METHOD]= [CONF_INTERFACE]= [CONF_ISOLATE_GEARS]= [CONF_JBOSSEAP_EXTRA_REPO]= [CONF_JBOSSEAP_VERSION]= [CONF_JBOSSEWS_EXTRA_REPO]= [CONF_JBOSS_REPO_BASE]= [CONF_KEEP_HOSTNAME]= [CONF_KEEP_NAMESERVERS]= [CONF_MCOLLECTIVE_PASSWORD]= [CONF_MCOLLECTIVE_USER]= [CONF_METAPKGS]= [CONF_METRICS_INTERVAL]= [CONF_MONGODB_ADMIN_PASSWORD]= [CONF_MONGODB_ADMIN_USER]= [CONF_MONGODB_BROKER_PASSWORD]= [CONF_MONGODB_BROKER_USER]= [CONF_MONGODB_KEY]= [CONF_MONGODB_NAME]= [CONF_MONGODB_PASSWORD]= [CONF_MONGODB_REPLSET]= [CONF_NAMED_ENTRIES]= [CONF_NAMED_HOSTNAME]= [CONF_NAMED_IP_ADDR]= [CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST]= [CONF_NODE_APACHE_FRONTEND]= [CONF_NODE_HOSTNAME]= [CONF_NODE_HOST_TYPE]= [CONF_NODE_IP_ADDR]= [CONF_NODE_LOG_CONTEXT]= [CONF_NODE_PROFILE]= [CONF_NODE_PROFILE_NAME]= [CONF_NO_NTP]= [CONF_NO_SCRAMBLE]= [CONF_OPENSHIFT_PASSWORD]= [CONF_OPENSHIFT_PASSWORD1]= [CONF_OPENSHIFT_USER]= [CONF_OPENSHIFT_USER1]= [CONF_OPTIONAL_REPO]= [CONF_OSE_ERRATA_BASE]= [CONF_OSE_EXTRA_REPO_BASE]= [CONF_OSE_REPO_BASE]= [CONF_PORTS_PER_GEAR]= [CONF_PROFILE_NAME]= [CONF_REPOS_BASE]= [CONF_RHEL_EXTRA_REPO]= [CONF_RHEL_OPTIONAL_REPO]= [CONF_RHEL_REPO]= [CONF_RHN_PASS]= [CONF_RHN_REG_ACTKEY]= [CONF_RHN_REG_NAME]= [CONF_RHN_REG_OPTS]= [CONF_RHN_REG_PASS]= [CONF_RHN_USER]= [CONF_RHSCL_EXTRA_REPO]= [CONF_RHSCL_REPO_BASE]= [CONF_ROUTING_PLUGIN]= [CONF_ROUTING_PLUGIN_PASS]= [CONF_ROUTING_PLUGIN_USER]= [CONF_SM_REG_NAME]= [CONF_SM_REG_PASS]= [CONF_SM_REG_POOL]= [CONF_SNI_FIRST_PORT]= [CONF_SNI_PROXY_PORTS]= [CONF_SYSLOG]= [CONF_VALID_GEAR_SIZES]= [CONF_YUM_EXCLUDE_PKGS]= )
 
   set +x # don't log passwords
+  local setting
   for setting in "${!CONF_@}"
   do
     if ! [[ ${valid_settings[$setting]+1} ]]
@@ -2451,15 +2486,17 @@ declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS
   actions="${CONF_ACTIONS:-do_all_actions}"
 
   # Following are the different components that can be installed:
-  components='broker node named activemq datastore'
+  local components='broker node named activemq datastore'
 
   # By default, each component is _not_ installed.
+  local component
   for component in $components
   do
     eval "$component() { false; }"
   done
 
   # But any or all components may be explicity enabled.
+  local component
   for component in ${CONF_INSTALL_COMPONENTS//,/ }
   do
     case "$component" in
@@ -2470,7 +2507,7 @@ declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS
   done
 
   # If nothing is explicitly enabled, enable everything.
-  installing_something=0
+  local installing_something=0
   for component in $components
   do
     if "$component"
@@ -2630,6 +2667,7 @@ declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS
   bind_keysize="${CONF_BIND_KEYSIZE:-256}"
   fi
 
+  local s
   for s in valid_gear_sizes default_gear_capabilities default_gear_size; do
     eval "isset_${s}() { false; }"
   done
@@ -2670,6 +2708,8 @@ declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS
 
   # Set $district_mappings to $CONF_DISTRICT_MAPPINGS
   broker && district_mappings=$CONF_DISTRICT_MAPPINGS
+
+  local randomized
 
   # Generate a random salt for the broker authentication.
   randomized=$(openssl rand -base64 20)
@@ -2785,7 +2825,7 @@ init_message()
 validate_preflight()
 {
   echo "OpenShift: Begin preflight validation."
-  preflight_failure=
+  local preflight_failure=
 
   # Test that this isn't RHEL < 6 or Fedora
   if ! grep -q "Enterprise.* 6" /etc/redhat-release; then
@@ -2880,15 +2920,15 @@ install_rpms()
   echo "OpenShift: yum update"
   yum $disable_plugin clean all
 
-  COUNT=0
+  local count=0
   while true; do
     yum $disable_plugin update -y
     if [ $? -eq 0 ]; then
       break
-    elif [ $COUNT -gt 3 ]; then
+    elif [ $count -gt 3 ]; then
       abort_install
     fi
-    let COUNT+=1
+    let count+=1
   done
 
   # Install a few packages missing from a minimal RHEL install required by the
@@ -2936,7 +2976,7 @@ configure_host()
 configure_firewall()
 {
   # Disable lokkit.
-  conf='/etc/sysconfig/system-config-firewall'
+  local conf='/etc/sysconfig/system-config-firewall'
   [[ -e "$conf" && "$(< "$conf")" != --disabled ]] && mv "$conf" "${conf}.bak"
   echo '--disabled' > "$conf"
 
@@ -2961,7 +3001,11 @@ EOF
 # Note: This function must be run after configure_firewall.
 configure_firewall_add_rules()
 {
-  rules=""
+  local rules=""
+  local port
+  local prot
+  local rule
+  local svc
   for svc in ${!firewall_allow[@]}
   do
     rules+="$(
@@ -3092,12 +3136,19 @@ configure_districts()
 
   local restart=$RESTART_NEEDED
   if is_true "$default_districts"; then
+    local p
     for p in ${valid_gear_sizes//,/ }; do
       is_xpaas "$p" && configure_messaging_plugin 15  # xpaas profile requires more ports
       oo-admin-ctl-district -p $p -n default-${p} -c add-node --available |& sed -e 's/^\(Error\)/OpenShift: oo-admin-ctl-district - \1/g'
       is_xpaas "$p" && configure_messaging_plugin  # back to default
     done
   else
+    local i
+    local profile
+    local firstnode
+    local nodes
+    local district
+    local mapping
     for mapping in ${district_mappings//;/ }; do
       district="${mapping%%:*}"
       nodes="${mapping#*:}"
