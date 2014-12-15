@@ -3030,7 +3030,9 @@ fix_broker_routing()
   case "$node_apache_frontend" in
     vhost)
       # node vhost obscures the broker vhost unless we bring the broker conf forward
-      ln -s /etc/httpd/conf.d/00000{2,0}_openshift_origin_broker_proxy.conf
+      if [[ ! -e '/etc/httpd/conf.d/000000_openshift_origin_broker_proxy.conf' ]]
+      then ln -s /etc/httpd/conf.d/00000{2,0}_openshift_origin_broker_proxy.conf
+      fi
       ;;
     mod_rewrite)
       # node vhost obscures the broker vhost still, but can let specific requests past
