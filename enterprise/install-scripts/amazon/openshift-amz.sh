@@ -1192,39 +1192,10 @@ else
   *.info;mail.none;authpriv.none;cron.none      action(type="omfile" file="/var/log/messages")
 
 LOGCONF
-    configure_mmopenshift_selinux_policy
     chkconfig rsyslog on
     service rsyslog restart
   fi
 }
-
-configure_mmopenshift_selinux_policy()
-{
-  local req=selinux-policy-3.7.19-237.el6.noarch # no need if policy update released
-  [[ $(rpm -q selinux-policy | sed "i$req" | sort -V | head -1 ) == $req ]] && return
-  echo "Installing SELinux policy module for rsyslog7-mmopenshift per BZ 1096155"
-  local dir=$(mktemp -d /tmp/selinux.XXXXXXXX)
-  pushd $dir
-    cat <<POLICY > rsyslog7-mmopenshift.te
-
-module rsyslog7-mmopenshift 1.0;
-require {
-        type syslogd_t;
-        type inotifyfs_t;
-        class dir read;
-}
-#============= syslogd_t ==============
-# enable rsyslog7-mmopenshift to receive inotify events so that when
-# a gear is removed, context for its UID is cleared from module cache.
-allow syslogd_t inotifyfs_t:dir read;
-POLICY
-    checkmodule -M -m -o rsyslog7-mmopenshift.mod rsyslog7-mmopenshift.te
-    semodule_package -o rsyslog7-mmopenshift.pp -m rsyslog7-mmopenshift.mod
-    semodule -i rsyslog7-mmopenshift.pp
-  popd
-  "rm" -r $dir
-}
-
 
 # Enable services to start on boot for the node.
 enable_services_on_node()
