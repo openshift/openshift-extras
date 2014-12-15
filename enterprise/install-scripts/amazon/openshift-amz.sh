@@ -22,9 +22,19 @@ set -x
 # hardware clock with that.
 synchronize_clock()
 {
+  local need_to_start_ntpd=
+
+  if service ntpd status | grep 'is running'
+  then
+    # Stop ntpd so that ntpdate succeeds.
+    service ntpd stop
+    need_to_start_ntpd=1
+  fi
 
   # Synchronize the system clock using NTP.
   ntpdate clock.redhat.com
+
+  [[ -n "$need_to_start_ntpd" ]] && service ntpd start
 
   # Synchronize the hardware clock to the system clock.
   hwclock --systohc
