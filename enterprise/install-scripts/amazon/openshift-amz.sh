@@ -336,7 +336,7 @@ configure_extra_repos()
 {
   local extra_repo_file=/etc/yum.repos.d/ose_extra.repo
   if [[ -e "${extra_repo_file}" ]]; then
-      echo > "${extra_repo_file}"
+      > "${extra_repo_file}"
   fi
 
   local -A priority=(
