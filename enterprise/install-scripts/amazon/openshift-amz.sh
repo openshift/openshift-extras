@@ -2703,8 +2703,7 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
   [[ -n "$CONF_DEFAULT_GEAR_SIZE" ]] && isset_default_gear_size() { :; }
   broker && default_gear_size="${CONF_DEFAULT_GEAR_SIZE:-${valid_gear_sizes%%,*}}"
 
-  # Set $node_profile to $CONF_NODE_PROFILE
-  node && node_profile="${CONF_NODE_PROFILE:-small}"
+  node_profile="${CONF_NODE_PROFILE:-small}"
   node && node_profile_name="${CONF_NODE_PROFILE_NAME:-$node_profile}"
   node && node_host_type="${CONF_NODE_HOST_TYPE:-m3.xlarge}"
   # determine node port and UID settings
