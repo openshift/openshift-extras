@@ -1715,30 +1715,39 @@ install_cartridges()
 # given value to the setting.  If it does not, then comment out any
 # existing setting and add the given setting.
 #
-# The search pattern is /^\s*name\s*=\s*value\s*(|#.*)$/.  The
-# added line will be in the form 'name = value' or, if a short comment
-# is specified, 'name = value # short comment'.  If a long comment is
-# specified, a blank line followed by '# long comment' will be added
-# before the line for the setting itself.
+# The search pattern is /^\s*name\s*=\s*['"]?value\['"]?s*(|#.*)$/.  The added
+# line will be in the form 'name=value' or, if a non-empty short comment is
+# specified, 'name=value # short comment'.  Note that quotation marks are
+# tolerated when checking whether the setting is already present, but are not
+# added when adding the setting unless they are explicitly passed in with the
+# value.  If a long comment is specified using the fifth and possibly subsequent
+# arguments, a blank line followed by '# long comment' (one line per argument)
+# will be added before the line for the setting itself.
 #
 # $1 = configuration file's filename
 # $2 = setting name
 # $3 = value
 # $4 = short comment (optional)
-# $5 = long comment (optional)
+# $5- = long comment (optional)
 set_conf()
 {
-  if ! grep -q "^\\s*$2\\s*=\\s*$3\\s*\\(\\|#.*\\)$" "$1"
+  if ! grep -q "^\\s*$2\\s*=\\s*['\"]\\?$3['\"]\\?\\s*\\(\\|#.*\\)$" "$1"
   then
     sed -i -e "s/^\\s*$2\\s*=\\s*/#&/" "$1"
-    if [[ -n "$5" ]]
+    if [[ -n "${5-}" ]]
     then
       echo >> "$1"
-      echo "# $5" >> "$1"
+      args=( "$@" )
+      printf '# %s\n' "${args[@]:4}" >> "$1"
     fi
-    echo "$2 = $3${4:+ #$4}" >> "$1"
+    echo "$2=$3${4:+ #$4}" >> "$1"
   fi
 }
+
+set_mongodb() { set_conf /etc/mongodb.conf "$@"; }
+set_broker() { set_conf /etc/openshift/broker.conf "$@"; }
+set_console() { set_conf /etc/openshift/console.conf "$@"; }
+set_node() { set_conf /etc/openshift/node.conf "$@"; }
 
 # Fix up SELinux policy on the broker.
 configure_selinux_policy_on_broker()
@@ -2067,13 +2076,6 @@ configure_datastore_add_replicants()
   done
 
   set -x
-}
-
-# $1 = setting name
-# $2 = value
-set_mongodb()
-{
-  set_conf /etc/mongodb.conf "$1" "$2"
 }
 
 configure_datastore()
@@ -2861,12 +2863,12 @@ register_named_entries()
 configure_network()
 {
   # Ensure interface is configured to come up on boot
-  sed -i -e 's/ONBOOT="no"/ONBOOT="yes"/' /etc/sysconfig/network-scripts/ifcfg-$interface
+  set_conf "/etc/sysconfig/network-scripts/ifcfg-$interface" ONBOOT yes
 
   # Check if static IP configured
   if grep -q "IPADDR" /etc/sysconfig/network-scripts/ifcfg-$interface; then
-    sed -i -e 's/BOOTPROTO="dhcp"/BOOTPROTO="none"/' /etc/sysconfig/network-scripts/ifcfg-$interface
-    sed -i -e 's/IPV6INIT="yes"/IPV6INIT="no"/' /etc/sysconfig/network-scripts/ifcfg-$interface
+    set_conf "/etc/sysconfig/network-scripts/ifcfg-$interface" BOOTPROTO none
+    set_conf "/etc/sysconfig/network-scripts/ifcfg-$interface" IPV6INIT no
   fi
 }
 
@@ -2897,10 +2899,9 @@ update_controller_gear_size_configs()
 {
   # Configure the valid gear sizes, default gear capabilities and default gear
   # size for the broker
-  sed -i -e "s/^VALID_GEAR_SIZES=.*/VALID_GEAR_SIZES=\"${valid_gear_sizes}\"/" \
-      -e "s/^DEFAULT_GEAR_CAPABILITIES=.*/DEFAULT_GEAR_CAPABILITIES=\"${default_gear_capabilities}\"/" \
-      -e "s/^DEFAULT_GEAR_SIZE=.*/DEFAULT_GEAR_SIZE=\"${default_gear_size}\"/" \
-      /etc/openshift/broker.conf
+  set_broker VALID_GEAR_SIZES "$valid_gear_sizes"
+  set_broker DEFAULT_GEAR_CAPABILITIES "$default_gear_capabilities"
+  set_broker DEFAULT_GEAR_SIZE "$default_gear_size"
 
   RESTART_NEEDED=true
 }
@@ -2915,40 +2916,34 @@ configure_controller()
 
   # Configure the broker with the correct domain name, and use random salt
   # to the data store (the host running MongoDB).
-  sed -i -e "s/^CLOUD_DOMAIN=.*$/CLOUD_DOMAIN=${domain}/" \
-      /etc/openshift/broker.conf
-  echo AUTH_SALT=${broker_auth_salt} >> /etc/openshift/broker.conf
+  set_broker CLOUD_DOMAIN "$domain"
+  set_broker AUTH_SALT "$broker_auth_salt"
 
   update_controller_gear_size_configs
 
   # Configure the session secret for the broker
-  sed -i -e "s/# SESSION_SECRET=.*$/SESSION_SECRET=${broker_session_secret}/" \
-      /etc/openshift/broker.conf
+  set_broker SESSION_SECRET "$broker_session_secret"
 
   # Configure the session secret for the console
-  if [[ `grep -c SESSION_SECRET /etc/openshift/console.conf` -eq 0 ]]
-  then
-    echo "SESSION_SECRET=${console_session_secret}" >> /etc/openshift/console.conf
-  fi
+  set_console SESSION_SECRET "$console_session_secret"
 
   if [[ ${datastore_replicants} =~ , ]] || ! datastore
   then
     # MongoDB may be installed remotely or replicated, so configure it
     # with the given hostname(s).
-    sed -i -e "s/^MONGO_HOST_PORT=.*$/MONGO_HOST_PORT=\"${datastore_replicants}\"/" /etc/openshift/broker.conf
+    set_broker MONGO_HOST_PORT "$datastore_replicants"
   fi
 
   # configure MongoDB access
-  sed -i -e "s/MONGO_PASSWORD=.*$/MONGO_PASSWORD=\"${mongodb_broker_password}\"/
-            s/MONGO_USER=.*$/MONGO_USER=\"${mongodb_broker_user}\"/
-            s/MONGO_DB=.*$/MONGO_DB=\"${mongodb_name}\"/" \
-      /etc/openshift/broker.conf
+  set_broker MONGO_PASSWORD "$mongodb_broker_password"
+  set_broker MONGO_USER "$mongodb_broker_user"
+  set_broker MONGO_DB "$mongodb_name"
 
   # configure broker logs for syslog
   [[ "$log_to_syslog" = *broker* ]] && \
-    sed -i -e '/SYSLOG_ENABLED=/ cSYSLOG_ENABLED="true"' /etc/openshift/broker.conf
+    set_broker SYSLOG_ENABLED true
   [[ "$log_to_syslog" = *console* ]] && \
-    echo 'SYSLOG_ENABLED="true"' >> /etc/openshift/console.conf
+    set_console SYSLOG_ENABLED true
 
   # Set the ServerName for httpd
   sed -i -e "s/ServerName .*$/ServerName ${hostname}/" \
@@ -2970,9 +2965,8 @@ configure_messaging_plugin()
 
   local file=/etc/openshift/plugins.d/openshift-origin-msg-broker-mcollective.conf
   cp "$file"{.example,}
-  sed -i -e "s/DISTRICTS_FIRST_UID=.*/DISTRICTS_FIRST_UID=${district_first_uid}/
-             s/DISTRICTS_MAX_CAPACITY=.*/DISTRICTS_MAX_CAPACITY=${pool_size}/
-            " $file
+  set_conf "$file" DISTRICTS_FIRST_UID "$district_first_uid"
+  set_conf "$file" DISTRICTS_MAX_CAPACITY "$pool_size"
   RESTART_NEEDED=true
 }
 
@@ -3167,7 +3161,7 @@ configure_hostname()
 {
   if [[ ! "$hostname" =~ ^[0-9.]*$ ]]  # hostname is not just an IP
   then
-    sed -i -e "s/HOSTNAME=.*/HOSTNAME=${hostname}/" /etc/sysconfig/network
+    set_conf /etc/sysconfig/network HOSTNAME "$hostname"
     hostname "${hostname}"
   fi
 }
@@ -3181,27 +3175,22 @@ configure_node()
   elif [[ -f "$resrc.${node_profile}" ]]; then
     cp "$resrc.${node_profile}" $resrc
   fi
-  sed -i -e "s/^node_profile=.*$/node_profile=${node_profile_name}/" $resrc
+  set_conf "$resrc" node_profile "$node_profile_name"
 
-  local conf=/etc/openshift/node.conf
-  sed -i -e "s/^PUBLIC_IP=.*$/PUBLIC_IP=${node_ip_addr}/;
-             s/^CLOUD_DOMAIN=.*$/CLOUD_DOMAIN=${domain}/;
-             s/^PUBLIC_HOSTNAME=.*$/PUBLIC_HOSTNAME=${hostname}/;
-             s/^BROKER_HOST=.*$/BROKER_HOST=${broker_hostname}/;
-             s/^[# ]*EXTERNAL_ETH_DEV=.*$/EXTERNAL_ETH_DEV='${interface}'/" \
-      $conf
+  set_node PUBLIC_IP "$node_ip_addr"
+  set_node CLOUD_DOMAIN "$domain"
+  set_node PUBLIC_HOSTNAME "$hostname"
+  set_node BROKER_HOST "$broker_hostname"
+  set_node EXTERNAL_ETH_DEV "$interface"
+
   if [[ "$ports_per_gear" != 5 ]]; then
-    sed -i -e "/PORTS_PER_USER=/ cPORTS_PER_USER=${ports_per_gear}" $conf
-    # If PORTS_PER_USER is not already there, we need to add it.
-    grep -q '^PORTS_PER_USER' $conf || sed -i -e "$ a\\
-\\
-# Number of proxy ports available per gear. Increasing the ports per gear requires reducing\\
-# the number of UIDs the district has so that the ports allocated to all UIDs fit in the\\
-# proxy port range.\\
-PORTS_PER_USER=${ports_per_gear}
-                                                 " $conf
+    set_node PORTS_PER_USER "$ports_per_gear" '' \
+     'Number of proxy ports available per gear. Increasing the ports per gear'\
+     'requires reducing the number of UIDs the district has so that the ports'\
+     'allocated to all UIDs fit in the proxy port range.'
   fi
 
+  local conf=/etc/openshift/node.conf
   case "$node_apache_frontend" in
     mod_rewrite)
       sed -i -e "/OPENSHIFT_FRONTEND_HTTP_PLUGINS/ s/vhost/mod-rewrite/" $conf
@@ -3216,7 +3205,8 @@ PORTS_PER_USER=${ports_per_gear}
     grep -q 'OPENSHIFT_FRONTEND_HTTP_PLUGINS=.*sni-proxy' $conf || \
       sed -i -e '/OPENSHIFT_FRONTEND_HTTP_PLUGINS/ s/=/=openshift-origin-frontend-haproxy-sni-proxy,/' $conf
     local port_list=$(seq -s, "$sni_first_port" "$sni_last_port")
-    sed -i -e "/PROXY_PORTS/ cPROXY_PORTS=${port_list}" /etc/openshift/node-plugins.d/openshift-origin-frontend-haproxy-sni-proxy.conf
+    local sniconf='/etc/openshift/node-plugins.d/openshift-origin-frontend-haproxy-sni-proxy.conf'
+    set_conf "$sniconf" PROXY_PORTS "$port_list"
   fi
 
   echo $broker_hostname > /etc/openshift/env/OPENSHIFT_BROKER_HOST
@@ -3253,18 +3243,14 @@ PLATFORM_SYSLOG_TRACE_ENABLED=1
   fi
   if is_true "$node_log_context"; then
     # Annotate the frontend logs with UUIDs.
-    sed -i -e '
-      s/^.*PLATFORM_LOG_CONTEXT_ENABLED=.*/PLATFORM_LOG_CONTEXT_ENABLED=1/
-      s/^.*PLATFORM_LOG_CONTEXT_ATTRS=.*/PLATFORM_LOG_CONTEXT_ATTRS=request_id,app_uuid,container_uuid/
-    ' /etc/openshift/node.conf
+    set_node PLATFORM_LOG_CONTEXT_ENABLED '1'
+    set_node PLATFORM_LOG_CONTEXT_ATTRS 'request_id,app_uuid,container_uuid'
     sed -i -e 's/^#*\s*OPTIONS="\?\([^"]*\)"\?/OPTIONS="\1 -DOpenShiftAnnotateFrontendAccessLog"/' /etc/sysconfig/httpd
   fi
   if [[ -n "$metrics_interval" ]]; then
     # Configure watchman with given the interval.
-    sed -i -e "
-      s/^.*WATCHMAN_METRICS_ENABLED=.*/WATCHMAN_METRICS_ENABLED=true/
-      s/^.*WATCHMAN_METRICS_INTERVAL=.*/WATCHMAN_METRICS_INTERVAL=$metrics_interval/
-    " /etc/openshift/node.conf
+    set_node WATCHMAN_METRICS_ENABLED 'true'
+    set_node WATCHMAN_METRICS_INTERVAL "$metrics_interval"
   fi
 }
 
@@ -4012,7 +3998,7 @@ configure_host()
   is_false "$keep_hostname" && configure_hostname
 
   # Minimize grub timeout on startup.
-  sed -i -e 's/^timeout=.*/timeout=1/' /etc/grub.conf;
+  set_conf /etc/grub.conf timeout 1
 
   # Remove VirtualHost from the default httpd ssl.conf to prevent a warning.
   sed -i '/VirtualHost/,/VirtualHost/ d' /etc/httpd/conf.d/ssl.conf
