@@ -909,8 +909,13 @@ configure_quotas_on_node()
     # External mounts, esp. at /var/lib/openshift, may often be created
     # with an incorrect context and quotacheck hits SElinux denials.
     time restorecon "${geardata_mnt}"
+
+    # quotacheck fails if quotas are enabled.
+    quotaoff "${geardata_mnt}"
+
     # Generate user quota info for the mount point.
     time quotacheck -cmug "${geardata_mnt}"
+
     # Fix the SELinux label of the created quota file.
     restorecon "${geardata_mnt}"/aquota.user
 
