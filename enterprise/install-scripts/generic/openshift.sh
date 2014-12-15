@@ -1143,6 +1143,8 @@ configure_ose_yum_repos()
       "need_${repo}_repo" && def_ose_yum_repo "$ose_extra_repo_base" 'extra' "$repo"
     fi
   done
+
+  return 0
 }
 
 configure_rhel_repo()
@@ -1313,7 +1315,7 @@ configure_subscription()
    need_jbosseap_cartridge_repo && roles="$roles --role $jbosseap_yumvalidator_role"
    need_fuse_cartridge_repo && roles="$roles --role node-fuse"
    need_amq_cartridge_repo && roles="$roles --role node-amq"
-   oo-admin-yum-validator -o 2.2 --fix-all $roles # when fixing, rc is always false
+   oo-admin-yum-validator -o 2.2 --fix-all $roles || : # when fixing, rc is always false
    oo-admin-yum-validator -o 2.2 $roles || abort_install # so check when fixes are done
 
    # Normally we could just install o-e-release and it would pull in yum-validator;
@@ -1322,6 +1324,8 @@ configure_subscription()
    yum_install_or_exit openshift-enterprise-release
    configure_ose_yum_repos # refresh if overwritten by validator
    need_extra_repo && configure_extra_repos
+
+   return 0
 }
 
 configure_rhn_channels()
@@ -1415,10 +1419,8 @@ yum_install_or_exit()
   echo "OpenShift: yum install $*"
   local count=0
   time while true; do
-    yum install -y $* $disable_plugin
-    if [[ $? -eq 0 ]]; then
-      return
-    elif [[ $count -gt 3 ]]; then
+    yum install -y $* $disable_plugin && return
+    if [[ $count -gt 3 ]]; then
       echo "OpenShift: Command failed: yum install $*"
       echo "OpenShift: Please ensure relevant repos/subscriptions are configured."
       abort_install
@@ -1847,7 +1849,7 @@ configure_quotas_on_node()
 
 configure_idler_on_node()
 {
-  [[ "$idle_interval" =~ ^[[:digit:]]+$ ]] || return
+  [[ "$idle_interval" =~ ^[[:digit:]]+$ ]] || return 0
   cat <<CRON > /etc/cron.hourly/auto-idler
 (
   /usr/sbin/oo-last-access
@@ -2358,7 +2360,7 @@ configure_activemq()
   if is_true "${enable_routing_plugin}"
   then
     schedulerSupport='schedulerSupport="true"'
-    IFS= read -r -d '' routingPolicy <<'EOF'
+    IFS= read -r -d '' routingPolicy <<'EOF' || :
           <redeliveryPlugin fallbackToDeadLetter="true"
                             sendToDlqIfMaxRetriesExceeded="true">
             <redeliveryPolicyMap>
@@ -2778,6 +2780,8 @@ configure_hosts_dns()
   else # If "none" is specified, then just don't add anything.
     echo "Not adding named entries; named_entries = $named_entries"
   fi
+
+  return 0
 }
 
 # An alternate method for registering against a running named
@@ -2800,6 +2804,7 @@ register_named_entries()
     fi
   done
   is_false "$failed" && echo "OpenShift: Completed updating host DNS entries."
+  return 0
 }
 
 configure_network()
@@ -3231,12 +3236,11 @@ install_rsync_pub_key()
   local cert
   while [[ `date +%s` -lt $end ]]; do
     # Try to get the public key from the broker.
-    cert=$(wget -q -O- --no-check-certificate "https://${broker_hostname}/rsync_id_rsa.pub?host=${node_hostname}")
-    if [[ $? -ne 0 ]]; then
+    if ! cert=$(wget -q -O- --no-check-certificate "https://${broker_hostname}/rsync_id_rsa.pub?host=${node_hostname}"); then
       sleep 5
     else
-      ssh-keygen -lf /dev/stdin <<< "$cert"
-      if [[ $? -ne 0 ]]; then
+      if ! ssh-keygen -lf /dev/stdin <<< "$cert"
+      then
         break
       else
         echo "$cert" >> /root/.ssh/authorized_keys
@@ -3815,6 +3819,7 @@ init_message()
 {
   echo_installation_intentions
   [[ "$environment" = ks ]] && configure_console_msg
+  return 0
 }
 
 validate_preflight()
@@ -4065,7 +4070,7 @@ configure_openshift()
   configure_firewall_add_rules
   node && configure_gear_isolation_firewall
 
-  sysctl -p
+  sysctl -p || :
   restorecon -rv /etc/openshift
 
   PASSWORDS_TO_DISPLAY=true
@@ -4151,10 +4156,8 @@ configure_districts()
       # Query the node for the node profile via MCollective.
       profile=""
       for i in {1..10}; do
-        profile=$(oo-ruby -e "require 'mcollective'; include MCollective::RPC; mc=rpcclient('rpcutil'); mc.progress=false; result=mc.custom_request('get_fact', {:fact => 'node_profile'}, ['${firstnode}'], {'identity' => '${firstnode}'}); if not result.empty?;  value=result.first.results[:data][:value]; if not value.nil? and not value.empty?; puts value; exit 0; end; end; exit 1" 2>/dev/null)
-        if [[ $? -eq 0 ]]; then
-          break;
-        fi
+        profile=$(oo-ruby -e "require 'mcollective'; include MCollective::RPC; mc=rpcclient('rpcutil'); mc.progress=false; result=mc.custom_request('get_fact', {:fact => 'node_profile'}, ['${firstnode}'], {'identity' => '${firstnode}'}); if not result.empty?;  value=result.first.results[:data][:value]; if not value.nil? and not value.empty?; puts value; exit 0; end; end; exit 1" 2>/dev/null) \
+         && break
         sleep 10
       done
       if [[ -n "$profile" ]]; then
