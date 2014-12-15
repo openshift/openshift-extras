@@ -2307,11 +2307,11 @@ install_rsync_pub_key()
     if [[ $? -ne 0 ]]; then
       sleep 5
     else
-      ssh-keygen -lf /dev/stdin <<< $cert
+      ssh-keygen -lf /dev/stdin <<< "$cert"
       if [[ $? -ne 0 ]]; then
         break
       else
-        echo $cert >> /root/.ssh/authorized_keys
+        echo "$cert" >> /root/.ssh/authorized_keys
         echo "OpenShift node: SSH key downloaded from broker successfully."
         chmod 644 /root/.ssh/authorized_keys
         return
