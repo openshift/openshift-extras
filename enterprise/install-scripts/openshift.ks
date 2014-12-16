@@ -2981,9 +2981,9 @@ configure_controller()
   set_broker MONGO_DB "$mongodb_name"
 
   # configure broker logs for syslog
-  [[ "$log_to_syslog" = *broker* ]] && \
+  [[ "$log_to_syslog" = *broker* ]] &&
     set_broker SYSLOG_ENABLED true
-  [[ "$log_to_syslog" = *console* ]] && \
+  [[ "$log_to_syslog" = *console* ]] &&
     set_console SYSLOG_ENABLED true
 
   # Set the ServerName for httpd
@@ -3246,7 +3246,7 @@ configure_node()
   if is_true "$enable_sni_proxy"
   then
     # configure in the sni proxy
-    grep -q 'OPENSHIFT_FRONTEND_HTTP_PLUGINS=.*sni-proxy' $conf || \
+    grep -q 'OPENSHIFT_FRONTEND_HTTP_PLUGINS=.*sni-proxy' $conf ||
       sed -i -e '/OPENSHIFT_FRONTEND_HTTP_PLUGINS/ s/=/=openshift-origin-frontend-haproxy-sni-proxy,/' $conf
     local port_list=$(seq -s, "$sni_first_port" "$sni_last_port")
     local sniconf='/etc/openshift/node-plugins.d/openshift-origin-frontend-haproxy-sni-proxy.conf'
