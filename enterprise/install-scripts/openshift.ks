@@ -4066,7 +4066,9 @@ configure_host()
   set_conf '/etc/grub.conf' timeout 1
 
   # Remove VirtualHost from the default httpd ssl.conf to prevent a warning.
-  sed -i '/VirtualHost/,/VirtualHost/ d' '/etc/httpd/conf.d/ssl.conf'
+  if broker || node
+  then sed -i '/VirtualHost/,/VirtualHost/ d' '/etc/httpd/conf.d/ssl.conf'
+  fi
 
   # Reset the firewall to disable lokkit and initialise iptables configuration.
   configure_firewall
