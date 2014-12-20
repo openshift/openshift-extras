@@ -290,8 +290,9 @@ class OpenShiftYumValidator(object):
                               'these modifications to '
                               '/etc/yum/pluginconf.d/rhnplugin.conf:')
             for repoid in self.managed_changes[RHN].iterkeys():
-                self.logger.error('    Set "enabled=0" in the [%s] '
-                                  'section' % repoid)
+                self.logger.error('    Set "enabled=0" in the "[%s]" '
+                                  'section, creating the section if needed' %
+                                  repoid)
         if self.local_changes:
             if self.ycm_works():
                 self.logger.error('Disable Yum and/or RHSM-managed '
@@ -310,7 +311,8 @@ class OpenShiftYumValidator(object):
                                       'changes:' % repofile)
                     for repoid in changes.iterkeys():
                         self.logger.error('    Set "enabled=0" in the '
-                                          '[%s] section' % repoid)
+                                          '[%s] section, creating the '
+                                          'section if needed' % repoid)
 
     def check_version_conflict(self):
         """Determine if repositories for multiple versions of OpenShift have
@@ -432,7 +434,8 @@ class OpenShiftYumValidator(object):
                               '/etc/yum/pluginconf.d/rhnplugin.conf '
                               'with the following changes:')
             for repoid, priority in self.managed_changes[RHN].iteritems():
-                self.logger.error('    Set "priority=%d" in the [%s] section' %
+                self.logger.error('    Set "priority=%d" in the "[%s]" '
+                                  'section, creating the section if needed' %
                                   (priority, repoid))
         if self.local_changes:
             if self.ycm_works():
@@ -450,7 +453,8 @@ class OpenShiftYumValidator(object):
                                       'with the following changes:' % repofile)
                     for repoid, priority in changes.iteritems():
                         self.logger.error('    Set "priority=%d" in the '
-                                          '[%s] section' %
+                                          '[%s] section, creating the '
+                                          'section if needed' %
                                           (priority, repoid))
         self.committed_resolved_repos = self.resolved_repos.copy()
 
@@ -565,8 +569,9 @@ class OpenShiftYumValidator(object):
                               'modifications to '
                               '/etc/yum/pluginconf.d/rhnplugin.conf:')
             for repoid in self.managed_changes[RHN].iterkeys():
-                self.logger.error('    Set "enabled=1" in the [%s] '
-                                  'section' % repoid)
+                self.logger.error('    Set "enabled=1" in the "[%s]" '
+                                  'section, creating the section if '
+                                  'needed' % repoid)
         if self.local_changes:
             if self.ycm_works():
                 self.logger.error('Enable Yum and/or locally-managed RHSM '
@@ -583,8 +588,9 @@ class OpenShiftYumValidator(object):
                     self.logger.error('Update %s with the following '
                                       'changes:' % repofile)
                     for repoid in changes.iterkeys():
-                        self.logger.error('    Set "enabled=1" in the [%s] '
-                                          'section' % repoid)
+                        self.logger.error('    Set "enabled=1" in the "[%s]" '
+                                          'section, creating the section if '
+                                          'needed' % repoid)
 
     def check_disabled_repos(self):
         """Check if any required repositories are disabled, and fix or advise
@@ -724,15 +730,16 @@ class OpenShiftYumValidator(object):
             for repoid, exclusions in self.managed_changes[RHSM].iteritems():
                 self.logger.error('    # subscription-manager repo-override '
                                   '--repo=%s --add=exclude:"%s"' %
-                                  (repoid, exclusion))
+                                  (repoid, exclusions))
         if self.managed_changes[RHN]:
             self.logger.error('Set package exclusions for RHN-managed repos '
                               'by updating '
                               '/etc/yum/pluginconf.d/rhnplugin.conf '
                               'with the following changes:')
             for repoid, exclusions in self.managed_changes[RHN].iteritems():
-                self.logger.error('    Set "exclude=%s" in the [%s] section' %
-                                  (exclusion, repoid))
+                self.logger.error('    Set "exclude=%s" in the "[%s]" section, '
+                                  'creating the section if needed' %
+                                  (exclusions, repoid))
         if self.local_changes:
             if self.ycm_works():
                 self.logger.error('Set package exclusions for Yum '
@@ -752,8 +759,9 @@ class OpenShiftYumValidator(object):
                     self.logger.error('Update %s with the following '
                                       'changes:' % repofile)
                     for repoid, exclusions in changes.iteritems():
-                        self.logger.error('    Set "exclude=%s" in the [%s] '
-                                          'section' % (exclusions, repoid))
+                        self.logger.error('    Set "exclude=%s" in the "[%s]" '
+                                          'section, creating the section if '
+                                          'needed' % (exclusions, repoid))
 
 
     def set_excludes(self):
