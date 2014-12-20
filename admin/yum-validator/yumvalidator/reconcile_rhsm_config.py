@@ -69,8 +69,17 @@ class ReconciliationEngine(object):
         self.consumer_uuid = self.consumer_identity.getConsumerId()
         self.cp_provider = inj.require(inj.CP_PROVIDER)
         self.cp = self.cp_provider.get_consumer_auth_cp()
-        self.ATTR_DEFAULTS = dict([(attr, RepoConf.optionobj(attr).default) for attr in IMPORTANT_ATTRS])
+        # self.ATTR_DEFAULTS = dict([(attr, RepoConf.optionobj(attr).default) for attr in IMPORTANT_ATTRS])
+        self._set_attr_defaults()
         self.problem = False
+
+    def _set_attr_defaults(self):
+        self.ATTR_DEFAULTS = dict()
+        for attr in IMPORTANT_ATTRS:
+            try:
+                self.ATTR_DEFAULTS[attr] = RepoConf.optionobj(attr).default
+            except KeyError:
+                IMPORTANT_ATTRS.remove(attr)
 
     def get_overrides_and_repos(self):
         overrides = self.cp.getContentOverrides(self.consumer_uuid)
