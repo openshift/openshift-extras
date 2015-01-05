@@ -15,6 +15,24 @@ CONF_NO_NTP=true
 # the log more useful.
 set -x
 
+set -euo pipefail
+
+annotate()
+{
+  exec awk "{ print strftime(\"%H:%M:%S $1:\"), \$0; fflush(); }"
+}
+trap 'echo "Finished with exitcode $?" >&4' EXIT
+# <> redirection requires disabling posix.
+set +o posix
+exec 5>&1 \
+  1<> >(annotate O >&5) \
+  2<> >(annotate E >&5) \
+  3<> >(annotate D >&5) \
+  4<> >(annotate I >&5) \
+  5>&-
+BASH_XTRACEFD=3
+echo "Started $0 $*" >&4
+
 
 ########################################################################
 
