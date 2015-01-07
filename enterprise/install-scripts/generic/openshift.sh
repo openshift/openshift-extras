@@ -1040,8 +1040,8 @@ display_passwords()
     done
 
     out_string+="$formattedprefix"
-    [[ -n "$matchingvar" ]] && out_string+=" ${matchingvar##*_}: ${!matchingvar}"
-    [[ "$vprefix" != "$k" ]] && out_string+=" ${k##*_}"
+    [[ -n "$matchingvar" ]] && out_string+="${matchingvar##*_}: ${!matchingvar} "
+    [[ "$vprefix" != "$k" ]] && out_string+="${k##*_}"
     out_string+=": ${!k}"
     echo "$out_string"
   done
