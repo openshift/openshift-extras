@@ -2037,6 +2037,10 @@ configure_datastore()
   # Require authentication.
   set_mongodb auth true
 
+  # Workaround for oo-accept-broker, which performs a strict pattern match for
+  # 'auth = true' (with spaces).
+  sed -i -e 's/auth=true/auth = true/' '/etc/mongodb.conf'
+
   # Use a smaller default size for databases.
   set_mongodb smallfiles true
 
