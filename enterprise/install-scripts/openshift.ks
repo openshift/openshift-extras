@@ -464,6 +464,21 @@
 #   other means.
 #CONF_NO_NTP=true
 
+# http_proxy / CONF_HTTP_PROXY
+# https_proxy / CONF_HTTPS_PROXY
+#   Default: none
+#   Setting these options causes the installation script to configure the PaaS
+#   to use the specified proxy or proxies for access to external resources via
+#   HTTP and HTTPS.  For example, /etc/gitconfig will be written on broker and
+#   node hosts, which both need Git to clone downloadable cartridges, and
+#   /etc/openshift/env/HTTP_PROXY, /etc/openshift/env/HTTPS_PROXY, and
+#   /etc/openshift/env/NO_PROXY (to exclude internal addresses) will be written
+#   as appropriate so that gears will have the corresponding environment
+#   variables, which may be needed for cartridge-specific package repositories
+#   (e.g., Maven for JBoss, NPM for NodeJS, and Pear for PHP).
+#CONF_HTTP_PROXY='http://10.0.0.1:80/'
+#CONF_HTTPS_PROXY='https://10.0.0.1:443/'
+
 #----------------------------------------------------------#
 #                          Brokers                         #
 #----------------------------------------------------------#
@@ -1531,6 +1546,150 @@ configure_rhc()
 
   # Set up the system express.conf so this broker will be used by default.
   set_conf '/etc/openshift/express.conf' libra_server "'${broker_hostname}'"
+}
+
+# Configure the host to use an HTTP or HTTPS proxy for outgoing connections
+# so that Git and cartridge-specific packaging tools work properly.
+configure_outgoing_http_proxy()
+{
+  [[ -n "$outgoing_http_proxy" || -n "$outgoing_https_proxy" ]] || return 0
+
+  if node
+  then
+    # These environment variables should suffice for PERL's cpanm, PHP's
+    # PEAR, Python's easy_install, and Ruby's rubygems.
+    echo "localhost,127.*,*.$domain" > '/etc/openshift/env/no_proxy'
+    # Note that CPAN requires a proper URL, including schema.
+    if [[ -n "$outgoing_http_proxy" ]]
+    then
+      http_proxy_url="$outgoing_http_proxy"
+      if ! [[ "$http_proxy_url" =~ ^https?://* ]]
+      then http_proxy_url="http://$http_proxy_url"
+      fi
+      echo "$http_proxy_url" > '/etc/openshift/env/http_proxy'
+    fi
+    if [[ -n "$outgoing_https_proxy" ]]
+    then
+      https_proxy_url="$outgoing_https_proxy"
+      if ! [[ "$https_proxy_url" =~ ^https?://* ]]
+      then https_proxy_url="https://$https_proxy_url"
+      fi
+      echo "$https_proxy_url" > '/etc/openshift/env/https_proxy'
+    fi
+
+    # Configure NodeJS NPM to use the proxy.
+    mkdir -p '/etc/openshift/skel'
+    printf '%s\n' \
+      "proxy = $outgoing_http_proxy" \
+      "https-proxy = $outgoing_https_proxy" \
+      > '/etc/openshift/skel/.npmrc'
+
+    # Configure Maven for JBoss.
+    # So far all this fancy^H^H^H^H^Had hoc, good-enough parsing is needed only
+    # for Maven, but it could be moved earlier in the function if its results
+    # could be used elsewhere.
+    local http_proxy_auth https_proxy_auth \
+          http_proxy_user http_proxy_pass https_proxy_user https_proxy_pass \
+          http_proxy_host_port https_proxy_host_port \
+          http_proxy_hostname https_proxy_hostname \
+          http_proxy_port https_proxy_port \
+
+    # Strip any leading schemas (schema is inferred from the variable's name).
+    http_proxy_auth="${outgoing_http_proxy#*//}"
+    https_proxy_auth="${outgoing_https_proxy#*//}"
+
+    # Split on '@' into (possibly) authentication credentials and the rest.
+    read http_proxy_auth http_proxy_host_port <<<"${http_proxy_auth//@/ }"
+    read https_proxy_auth https_proxy_host_port <<<"${https_proxy_auth//@/ }"
+
+    if [[ -z "$http_proxy_host_port" ]]
+    then # No credentials were specified.
+      http_proxy_host_port="$http_proxy_auth"
+      http_proxy_auth=
+    else
+      read http_proxy_user http_proxy_pass <<<"${http_proxy_auth//:/ }"
+    fi
+
+    if [[ -z "$https_proxy_host_port" ]]
+    then # No credentials were specified.
+      https_proxy_host_port="$https_proxy_auth"
+      https_proxy_auth=
+    else
+      read https_proxy_user https_proxy_pass <<<"${https_proxy_auth//:/ }"
+    fi
+
+    # Strip any trailing slashes (and possibly more, but there shouldn't be
+    # anything more).
+    http_proxy_host_port="${http_proxy_host_port%/*}"
+    https_proxy_host_port="${https_proxy_host_port%/*}"
+
+    # Split on ':' into hostname and (possibly) port parts.
+    read http_proxy_hostname http_proxy_port <<<"${http_proxy_host_port//:/ }"
+    read https_proxy_hostname https_proxy_port <<<"${https_proxy_host_port//:/ }"
+
+    local proxies_stanza="\
+<settings>
+  <proxies>
+    ${outgoing_http_proxy:+<proxy>
+      <active>true</active>
+      <protocol>http</protocol>
+      <host>${http_proxy_hostname}</host>
+      ${http_proxy_port:+<port>${http_proxy_port}</port>}
+      ${http_proxy_user:+<username>${http_proxy_user}</username>}
+      ${http_proxy_pass:+<password>${http_proxy_pass}</password>}
+      <nonProxyHosts>localhost|${domain}</nonProxyHosts>
+    </proxy>
+    }
+    ${outgoing_https_proxy:+<proxy>
+      <active>true</active>
+      <protocol>https</protocol>
+      <host>${https_proxy_hostname}</host>
+      ${https_proxy_port:+<port>${https_proxy_port}</port>}
+      ${https_proxy_user:+<username>${https_proxy_user}</username>}
+      ${https_proxy_pass:+<password>${https_proxy_pass}</password>}
+      <nonProxyHosts>localhost|${domain}</nonProxyHosts>
+    </proxy>
+}  </proxies>
+</settings>"
+    # Delete blank lines (this is the slowest part of this function--maybe use
+    # an external tool instead?).
+    shopt -s extglob # for *()
+    proxies_stanza="${proxies_stanza//$'\n'*([[:space:]])$'\n'/$'\n'}"
+    mkdir -p '/etc/openshift/skel/.m2'
+    local settings_xml='/etc/openshift/skel/.m2/settings.xml'
+    if ! [[ -e "$settings_xml" ]] || ! grep -q '<proxies>' "$settings_xml"
+    then
+      echo "$proxies_stanza" >> "$settings_xml"
+    else
+      # Escape newlines in $proxies_stanza so that we can use it in a sed
+      # expression.
+      proxies_stanza="${proxies_stanza//$'\n'/\\$'\n'}"
+      sed -i -e "/<proxies>/,/<\/proxies>/c$proxies_stanza" "$settings_xml"
+    fi
+  fi
+
+  # Configure Git so that downloadable cartridges can work.
+  cat <<EOF > '/etc/gitconfig'
+[http]
+      proxy = $outgoing_https_proxy
+[https]
+      proxy = $outgoing_https_proxy
+
+# git-clone seems to hang with HTTP over a Squid proxy where HTTPS works fine.
+[url "https://"]
+        insteadOf = http://
+
+[http "localhost"]
+      proxy =
+[http "${domain}"]
+      proxy =
+EOF
+
+  # Configure the broker to use the proxy for downloadable cartridges.
+  # Note: There is only one setting in /etc/openshift/broker.conf, HTTP_PROXY,
+  # which the broker uses for both HTTP and HTTPS connetions.  Usually, one will
+  # use an https: URL for downloadable cartridges, so we put that here.
+  broker && set_broker HTTP_PROXY "$outgoing_https_proxy"
 }
 
 # Install broker-specific packages.
@@ -3516,7 +3675,7 @@ set_defaults()
   # The declare statement below is generated by the following command:
   #
   #   echo local -A valid_settings=\( $(grep -o 'CONF_[0-9A-Z_]\+' openshift.ks |sort -u |grep -v -F -e CONF_BAZ -e CONF_FOO |sed -e 's/.*/[&]=/') \)
-local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]= [CONF_ACTIVEMQ_ADMIN_PASSWORD]= [CONF_ACTIVEMQ_AMQ_USER_PASSWORD]= [CONF_ACTIVEMQ_HOSTNAME]= [CONF_ACTIVEMQ_REPLICANTS]= [CONF_AMQ_EXTRA_REPO]= [CONF_BIND_KEY]= [CONF_BIND_KEYALGORITHM]= [CONF_BIND_KEYSIZE]= [CONF_BIND_KEYVALUE]= [CONF_BIND_KRB_KEYTAB]= [CONF_BIND_KRB_PRINCIPAL]= [CONF_BROKER_AUTH_PRIV_KEY]= [CONF_BROKER_AUTH_SALT]= [CONF_BROKER_HOSTNAME]= [CONF_BROKER_IP_ADDR]= [CONF_BROKER_KRB_AUTH_REALMS]= [CONF_BROKER_KRB_SERVICE_NAME]= [CONF_BROKER_SESSION_SECRET]= [CONF_CARTRIDGES]= [CONF_CDN_LAYOUT]= [CONF_CDN_REPO_BASE]= [CONF_CONSOLE_SESSION_SECRET]= [CONF_DATASTORE_HOSTNAME]= [CONF_DATASTORE_REPLICANTS]= [CONF_DEFAULT_DISTRICTS]= [CONF_DEFAULT_GEAR_CAPABILITIES]= [CONF_DEFAULT_GEAR_SIZE]= [CONF_DISTRICT_FIRST_UID]= [CONF_DISTRICT_MAPPINGS]= [CONF_DOMAIN]= [CONF_ENABLE_SNI_PROXY]= [CONF_FORWARD_DNS]= [CONF_FUSE_EXTRA_REPO]= [CONF_HOSTS_DOMAIN]= [CONF_HOSTS_DOMAIN_KEYFILE]= [CONF_IDLE_INTERVAL]= [CONF_INSTALL_COMPONENTS]= [CONF_INSTALL_METHOD]= [CONF_INTERFACE]= [CONF_ISOLATE_GEARS]= [CONF_JBOSSEAP_EXTRA_REPO]= [CONF_JBOSSEAP_VERSION]= [CONF_JBOSSEWS_EXTRA_REPO]= [CONF_JBOSS_REPO_BASE]= [CONF_KEEP_HOSTNAME]= [CONF_KEEP_NAMESERVERS]= [CONF_MCOLLECTIVE_PASSWORD]= [CONF_MCOLLECTIVE_USER]= [CONF_METAPKGS]= [CONF_METRICS_INTERVAL]= [CONF_MONGODB_ADMIN_PASSWORD]= [CONF_MONGODB_ADMIN_USER]= [CONF_MONGODB_BROKER_PASSWORD]= [CONF_MONGODB_BROKER_USER]= [CONF_MONGODB_KEY]= [CONF_MONGODB_NAME]= [CONF_MONGODB_PASSWORD]= [CONF_MONGODB_REPLSET]= [CONF_NAMED_ENTRIES]= [CONF_NAMED_HOSTNAME]= [CONF_NAMED_IP_ADDR]= [CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST]= [CONF_NODE_APACHE_FRONTEND]= [CONF_NODE_HOSTNAME]= [CONF_NODE_HOST_TYPE]= [CONF_NODE_IP_ADDR]= [CONF_NODE_LOG_CONTEXT]= [CONF_NODE_PROFILE]= [CONF_NODE_PROFILE_NAME]= [CONF_NO_NTP]= [CONF_NO_SCRAMBLE]= [CONF_OPENSHIFT_PASSWORD]= [CONF_OPENSHIFT_PASSWORD1]= [CONF_OPENSHIFT_USER]= [CONF_OPENSHIFT_USER1]= [CONF_OPTIONAL_REPO]= [CONF_OSE_ERRATA_BASE]= [CONF_OSE_EXTRA_REPO_BASE]= [CONF_OSE_REPO_BASE]= [CONF_PORTS_PER_GEAR]= [CONF_PROFILE_NAME]= [CONF_REPOS_BASE]= [CONF_RHEL_EXTRA_REPO]= [CONF_RHEL_OPTIONAL_REPO]= [CONF_RHEL_REPO]= [CONF_RHN_PASS]= [CONF_RHN_REG_ACTKEY]= [CONF_RHN_REG_NAME]= [CONF_RHN_REG_OPTS]= [CONF_RHN_REG_PASS]= [CONF_RHN_USER]= [CONF_RHSCL_EXTRA_REPO]= [CONF_RHSCL_REPO_BASE]= [CONF_ROUTING_PLUGIN]= [CONF_ROUTING_PLUGIN_PASS]= [CONF_ROUTING_PLUGIN_USER]= [CONF_SM_REG_NAME]= [CONF_SM_REG_PASS]= [CONF_SM_REG_POOL]= [CONF_SNI_FIRST_PORT]= [CONF_SNI_PROXY_PORTS]= [CONF_SYSLOG]= [CONF_VALID_GEAR_SIZES]= [CONF_YUM_EXCLUDE_PKGS]= )
+local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]= [CONF_ACTIVEMQ_ADMIN_PASSWORD]= [CONF_ACTIVEMQ_AMQ_USER_PASSWORD]= [CONF_ACTIVEMQ_HOSTNAME]= [CONF_ACTIVEMQ_REPLICANTS]= [CONF_AMQ_EXTRA_REPO]= [CONF_BIND_KEY]= [CONF_BIND_KEYALGORITHM]= [CONF_BIND_KEYSIZE]= [CONF_BIND_KEYVALUE]= [CONF_BIND_KRB_KEYTAB]= [CONF_BIND_KRB_PRINCIPAL]= [CONF_BROKER_AUTH_PRIV_KEY]= [CONF_BROKER_AUTH_SALT]= [CONF_BROKER_HOSTNAME]= [CONF_BROKER_IP_ADDR]= [CONF_BROKER_KRB_AUTH_REALMS]= [CONF_BROKER_KRB_SERVICE_NAME]= [CONF_BROKER_SESSION_SECRET]= [CONF_CARTRIDGES]= [CONF_CDN_LAYOUT]= [CONF_CDN_REPO_BASE]= [CONF_CONSOLE_SESSION_SECRET]= [CONF_DATASTORE_HOSTNAME]= [CONF_DATASTORE_REPLICANTS]= [CONF_DEFAULT_DISTRICTS]= [CONF_DEFAULT_GEAR_CAPABILITIES]= [CONF_DEFAULT_GEAR_SIZE]= [CONF_DISTRICT_FIRST_UID]= [CONF_DISTRICT_MAPPINGS]= [CONF_DOMAIN]= [CONF_ENABLE_SNI_PROXY]= [CONF_FORWARD_DNS]= [CONF_FUSE_EXTRA_REPO]= [CONF_HOSTS_DOMAIN]= [CONF_HOSTS_DOMAIN_KEYFILE]= [CONF_HTTP_PROXY]= [CONF_HTTPS_PROXY]= [CONF_IDLE_INTERVAL]= [CONF_INSTALL_COMPONENTS]= [CONF_INSTALL_METHOD]= [CONF_INTERFACE]= [CONF_ISOLATE_GEARS]= [CONF_JBOSSEAP_EXTRA_REPO]= [CONF_JBOSSEAP_VERSION]= [CONF_JBOSSEWS_EXTRA_REPO]= [CONF_JBOSS_REPO_BASE]= [CONF_KEEP_HOSTNAME]= [CONF_KEEP_NAMESERVERS]= [CONF_MCOLLECTIVE_PASSWORD]= [CONF_MCOLLECTIVE_USER]= [CONF_METAPKGS]= [CONF_METRICS_INTERVAL]= [CONF_MONGODB_ADMIN_PASSWORD]= [CONF_MONGODB_ADMIN_USER]= [CONF_MONGODB_BROKER_PASSWORD]= [CONF_MONGODB_BROKER_USER]= [CONF_MONGODB_KEY]= [CONF_MONGODB_NAME]= [CONF_MONGODB_PASSWORD]= [CONF_MONGODB_REPLSET]= [CONF_NAMED_ENTRIES]= [CONF_NAMED_HOSTNAME]= [CONF_NAMED_IP_ADDR]= [CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST]= [CONF_NODE_APACHE_FRONTEND]= [CONF_NODE_HOSTNAME]= [CONF_NODE_HOST_TYPE]= [CONF_NODE_IP_ADDR]= [CONF_NODE_LOG_CONTEXT]= [CONF_NODE_PROFILE]= [CONF_NODE_PROFILE_NAME]= [CONF_NO_NTP]= [CONF_NO_SCRAMBLE]= [CONF_OPENSHIFT_PASSWORD]= [CONF_OPENSHIFT_PASSWORD1]= [CONF_OPENSHIFT_USER]= [CONF_OPENSHIFT_USER1]= [CONF_OPTIONAL_REPO]= [CONF_OSE_ERRATA_BASE]= [CONF_OSE_EXTRA_REPO_BASE]= [CONF_OSE_REPO_BASE]= [CONF_PORTS_PER_GEAR]= [CONF_PROFILE_NAME]= [CONF_REPOS_BASE]= [CONF_RHEL_EXTRA_REPO]= [CONF_RHEL_OPTIONAL_REPO]= [CONF_RHEL_REPO]= [CONF_RHN_PASS]= [CONF_RHN_REG_ACTKEY]= [CONF_RHN_REG_NAME]= [CONF_RHN_REG_OPTS]= [CONF_RHN_REG_PASS]= [CONF_RHN_USER]= [CONF_RHSCL_EXTRA_REPO]= [CONF_RHSCL_REPO_BASE]= [CONF_ROUTING_PLUGIN]= [CONF_ROUTING_PLUGIN_PASS]= [CONF_ROUTING_PLUGIN_USER]= [CONF_SM_REG_NAME]= [CONF_SM_REG_PASS]= [CONF_SM_REG_POOL]= [CONF_SNI_FIRST_PORT]= [CONF_SNI_PROXY_PORTS]= [CONF_SYSLOG]= [CONF_VALID_GEAR_SIZES]= [CONF_YUM_EXCLUDE_PKGS]= )
 
   set +x # don't log passwords
   local setting
@@ -3914,6 +4073,9 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
   broker_krb_service_name="${CONF_BROKER_KRB_SERVICE_NAME-}"
   broker_krb_auth_realms="${CONF_BROKER_KRB_AUTH_REALMS-}"
 
+  outgoing_http_proxy="${CONF_HTTP_PROXY-}"
+  outgoing_https_proxy="${CONF_HTTPS_PROXY-}"
+
   # cartridge dependency metapackages
   metapkgs="${CONF_METAPKGS:-recommended}"
 
@@ -4181,6 +4343,7 @@ configure_openshift()
   broker && configure_broker_ssl_cert
   broker && configure_access_keys_on_broker
   broker && configure_rhc
+  { node || broker; } && configure_outgoing_http_proxy
 
   node && configure_port_proxy
   node && configure_gears
