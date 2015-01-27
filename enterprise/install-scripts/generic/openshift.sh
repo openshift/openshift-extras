@@ -218,7 +218,8 @@
 #     activemq - installs the messaging bus
 #     datastore - installs the MongoDB datastore
 #     node - installs node functionality
-#   Default: all.
+#     router - installs nginx as an external load-balancer/routing layer
+#   Default: all but router.
 #   Only the specified components are installed and configured.
 #   e.g. install_components=broker,datastore only installs the broker
 #   and DB, and assumes you have used other hosts for messaging and DNS.
@@ -417,8 +418,9 @@
 # named_hostname / CONF_NAMED_HOSTNAME
 # activemq_hostname / CONF_ACTIVEMQ_HOSTNAME
 # datastore_hostname / CONF_DATASTORE_HOSTNAME
+# router_hostname / CONF_ROUTER_HOSTNAME
 #   Default: the root plus the host domain, e.g. broker.example.com - except
-#   named=ns1.example.com
+#   named=ns1.example.com and router=www.example.com
 #
 #   These supply the FQDN of the hosts containing these components. Used
 #   for configuring the host's name at install, and also for clients to
@@ -437,6 +439,7 @@
 #CONF_NAMED_HOSTNAME="ns1.example.com"
 #CONF_ACTIVEMQ_HOSTNAME="activemq.example.com"
 #CONF_DATASTORE_HOSTNAME="datastore.example.com"
+#CONF_ROUTER_HOSTNAME="www.example.com"
 
 # syslog / CONF_SYSLOG
 #   Default: log only to files
@@ -529,6 +532,33 @@
 #CONF_ROUTING_PLUGIN_PASS=...
 #   Default: <randomized>
 #   Default with CONF_NO_SCRAMBLE: routinginfopasswd
+
+# enable_ha / CONF_ENABLE_HA
+#   Default: false
+#   When enabled, this installation script will configure the OpenShift broker
+#   to allow HA applications (setting ALLOW_HA_APPLICATIONS=true in
+#   /etc/openshift/broker.conf), add DNS CNAME records for highly available
+#   access to applications (MANAGE_HA_DNS=true in broker.conf) where those CNAME
+#   records will point to an external load-balancer (see CONF_ROUTER_HOSTNAME),
+#   and configure the broker so that accounts have permission to create HA
+#   applications by default (DEFAULT_ALLOW_HA=true in broker.conf).
+#CONF_ENABLE_HA=true
+
+# router / CONF_ROUTER
+#   Default: none
+#   When CONF_INSTALL_COMPONENTS includes router or broker, this setting
+#   specifies the router that will be installed or configured.  The following
+#   values are recognized:
+#     nginx - install and configure nginx and the routing daemon when
+#       CONF_INSTALL_COMPONENTS includes "router".
+#     f5 - install and configure the routing daemon for F5 BIG-IP LTM when
+#       CONF_INSTALL_COMPONENTS includes "broker".
+#   Note that installing and configuring F5 itself is outside the scope of this
+#   installation script.  Also note that in the case of F5, the routing daemon
+#   must run on the broker hosts whereas in the case of nginx, the routing
+#   daemon must run on the router alongside nginx.
+#CONF_ROUTER=f5
+#CONF_ROUTER=nginx
 
 # Settings for configuring Kerberos as user authentication method
 #
@@ -1100,7 +1130,7 @@ configure_repos()
   then need_extra_repo() { :; }
   fi
 
-  if activemq || broker || datastore || named
+  if activemq || broker || datastore || named || router
   then
     # The ose-infrastructure channel has the activemq, broker, and mongodb
     # packages.  The ose-infrastructure and ose-node channels also include
@@ -1492,6 +1522,20 @@ install_rhc_pkg()
   yum_install_or_exit rhc
 }
 
+# Install the router (nginx).
+install_router_pkgs()
+{
+  case "$router" in
+    (f5)
+      # Nothing to do; setting up an F5 instance is outside the scope of this
+      # script.
+      ;;
+    (nginx)
+      yum_install_or_exit nginx16-nginx rubygem-openshift-origin-routing-daemon
+      ;;
+  esac
+}
+
 # Set up the system express.conf so our broker will be used by default.
 configure_rhc()
 {
@@ -1658,6 +1702,7 @@ install_broker_pkgs()
   pkgs="$pkgs openshift-origin-console"
   pkgs="$pkgs rubygem-openshift-origin-admin-console"
   is_true "$enable_routing_plugin" && pkgs="$pkgs rubygem-openshift-origin-routing-activemq"
+  [[ "$router" = f5 ]] && pkgs="$pkgs rubygem-openshift-origin-routing-daemon"
 
   # We use semanage in configure_selinux_policy_on_broker, so we need to
   # install policycoreutils-python.
@@ -1905,6 +1950,7 @@ set_mongodb() { set_conf /etc/mongodb.conf "$@"; }
 set_broker() { set_conf /etc/openshift/broker.conf "$@"; }
 set_console() { set_conf /etc/openshift/console.conf "$@"; }
 set_node() { set_conf /etc/openshift/node.conf "$@"; }
+set_routing_daemon() { set_conf /etc/openshift/routing-daemon.conf "$@"; }
 
 # Fix up SELinux policy on the broker.
 configure_selinux_policy_on_broker()
@@ -2991,6 +3037,7 @@ configure_hosts_dns()
     node && add_host_to_zone "$node_hostname" "$node_ip_addr"
     activemq && add_host_to_zone "$activemq_hostname" "$cur_ip_addr"
     datastore && add_host_to_zone "$datastore_hostname" "$cur_ip_addr"
+    router && add_host_to_zone "$router_hostname" "$cur_ip_addr"
   elif [[ "$named_entries" =~ : ]]
   then
     # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
@@ -3098,6 +3145,18 @@ configure_controller()
 
   # Configure the session secret for the console
   set_console SESSION_SECRET "$console_session_secret"
+
+  if is_true "$enable_ha"
+  then
+    # Enable highly available applications, manage DNS CNAME records for highly
+    # available access to applications where those records will point to the
+    # external router, and grant permission to create HA applications to new
+    # accounts by default.
+    set_broker ALLOW_HA_APPLICATIONS true
+    set_broker MANAGE_HA_DNS true
+    set_broker DEFAULT_ALLOW_HA true
+    set_broker ROUTER_HOSTNAME "$router_hostname"
+  fi
 
   if [[ "$datastore_replicants" =~ , ]] || ! datastore
   then
@@ -3222,6 +3281,23 @@ configure_httpd_auth()
   RESTART_NEEDED=true
 }
 
+configure_routing_daemon()
+{
+  # The routing daemon runs on the broker in the case that $router = f5
+  # or on the router in the case that $router = nginx.
+  [[ -z "$router" ]] && return 0
+  [[ "$router" = f5 ]] && ! broker && return 0
+  [[ "$router" = nginx ]] && ! router && return 0
+
+  set_routing_daemon LOAD_BALANCER "$router"
+  set_routing_daemon ACTIVEMQ_HOST "$activemq_replicants"
+  set_routing_daemon ACTIVEMQ_USER "$routing_plugin_user"
+  set_routing_daemon ACTIVEMQ_PASSWORD "$routing_plugin_pass"
+  set_routing_daemon CLOUD_DOMAIN "$domain"
+
+  [[ "$router" = nginx ]] && service openshift-routing-daemon start
+}
+
 configure_routing_plugin()
 {
   if is_true "$enable_routing_plugin"
@@ -3266,6 +3342,31 @@ EOF
     *)
       echo "Invalid value: CONF_NODE_APACHE_FRONTEND=$node_apache_frontend"
       abort_install
+      ;;
+  esac
+}
+
+configure_router()
+{
+  case "$router" in
+    (f5)
+      # Nothing to do; configuration of F5 is outside the scope of this script.
+      ;;
+    (nginx)
+      firewall_allow[https]='tcp:443'
+      firewall_allow[http]='tcp:80'
+      setsebool -P httpd_can_network_connect=true
+      # Don't try to start nginx unless /etc/pki/tls/certs/node.example.com.crt
+      # and /etc/pki/tls/private/node.example.com.key exist because nginx will
+      # fail to start without them.
+      #
+      # These files should be copies of /etc/pki/tls/certs/localhost.crt and
+      # /etc/pki/tls/private/localhost.key, respectively, from a node host.
+      if [[ -e /etc/pki/tls/certs/node.example.com.crt &&
+            -e /etc/pki/tls/private/node.example.com.key ]]
+      then
+        service nginx16-nginx start
+      fi
       ;;
   esac
 }
@@ -3490,6 +3591,7 @@ echo_installation_intentions()
   echo "Configuring with named with IP address ${named_ip_addr}."
   broker && echo "Configuring with datastore with hostname ${datastore_hostname}."
   echo "Configuring with activemq with hostname ${activemq_hostname}."
+  echo "Configuring with router with hostname ${router_hostname}."
 }
 
 # Modify console message to show install info
@@ -3629,7 +3731,7 @@ set_defaults()
   # The declare statement below is generated by the following command:
   #
   #   echo local -A valid_settings=\( $(grep -o 'CONF_[0-9A-Z_]\+' openshift.ks |sort -u |grep -v -F -e CONF_BAZ -e CONF_FOO |sed -e 's/.*/[&]=/') \)
-local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]= [CONF_ACTIVEMQ_ADMIN_PASSWORD]= [CONF_ACTIVEMQ_AMQ_USER_PASSWORD]= [CONF_ACTIVEMQ_HOSTNAME]= [CONF_ACTIVEMQ_REPLICANTS]= [CONF_AMQ_EXTRA_REPO]= [CONF_BIND_KEY]= [CONF_BIND_KEYALGORITHM]= [CONF_BIND_KEYSIZE]= [CONF_BIND_KEYVALUE]= [CONF_BIND_KRB_KEYTAB]= [CONF_BIND_KRB_PRINCIPAL]= [CONF_BROKER_AUTH_PRIV_KEY]= [CONF_BROKER_AUTH_SALT]= [CONF_BROKER_HOSTNAME]= [CONF_BROKER_IP_ADDR]= [CONF_BROKER_KRB_AUTH_REALMS]= [CONF_BROKER_KRB_SERVICE_NAME]= [CONF_BROKER_SESSION_SECRET]= [CONF_CARTRIDGES]= [CONF_CDN_LAYOUT]= [CONF_CDN_REPO_BASE]= [CONF_CONSOLE_SESSION_SECRET]= [CONF_DATASTORE_HOSTNAME]= [CONF_DATASTORE_REPLICANTS]= [CONF_DEFAULT_DISTRICTS]= [CONF_DEFAULT_GEAR_CAPABILITIES]= [CONF_DEFAULT_GEAR_SIZE]= [CONF_DISTRICT_FIRST_UID]= [CONF_DISTRICT_MAPPINGS]= [CONF_DOMAIN]= [CONF_ENABLE_SNI_PROXY]= [CONF_FORWARD_DNS]= [CONF_FUSE_EXTRA_REPO]= [CONF_HOSTS_DOMAIN]= [CONF_HOSTS_DOMAIN_KEYFILE]= [CONF_HTTP_PROXY]= [CONF_HTTPS_PROXY]= [CONF_IDLE_INTERVAL]= [CONF_INSTALL_COMPONENTS]= [CONF_INSTALL_METHOD]= [CONF_INTERFACE]= [CONF_ISOLATE_GEARS]= [CONF_JBOSSEAP_EXTRA_REPO]= [CONF_JBOSSEAP_VERSION]= [CONF_JBOSSEWS_EXTRA_REPO]= [CONF_JBOSS_REPO_BASE]= [CONF_KEEP_HOSTNAME]= [CONF_KEEP_NAMESERVERS]= [CONF_MCOLLECTIVE_PASSWORD]= [CONF_MCOLLECTIVE_USER]= [CONF_METAPKGS]= [CONF_METRICS_INTERVAL]= [CONF_MONGODB_ADMIN_PASSWORD]= [CONF_MONGODB_ADMIN_USER]= [CONF_MONGODB_BROKER_PASSWORD]= [CONF_MONGODB_BROKER_USER]= [CONF_MONGODB_KEY]= [CONF_MONGODB_NAME]= [CONF_MONGODB_PASSWORD]= [CONF_MONGODB_REPLSET]= [CONF_NAMED_ENTRIES]= [CONF_NAMED_HOSTNAME]= [CONF_NAMED_IP_ADDR]= [CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST]= [CONF_NODE_APACHE_FRONTEND]= [CONF_NODE_HOSTNAME]= [CONF_NODE_HOST_TYPE]= [CONF_NODE_IP_ADDR]= [CONF_NODE_LOG_CONTEXT]= [CONF_NODE_PROFILE]= [CONF_NODE_PROFILE_NAME]= [CONF_NO_NTP]= [CONF_NO_SCRAMBLE]= [CONF_OPENSHIFT_PASSWORD]= [CONF_OPENSHIFT_PASSWORD1]= [CONF_OPENSHIFT_USER]= [CONF_OPENSHIFT_USER1]= [CONF_OPTIONAL_REPO]= [CONF_OSE_ERRATA_BASE]= [CONF_OSE_EXTRA_REPO_BASE]= [CONF_OSE_REPO_BASE]= [CONF_PORTS_PER_GEAR]= [CONF_PROFILE_NAME]= [CONF_REPOS_BASE]= [CONF_RHEL_EXTRA_REPO]= [CONF_RHEL_OPTIONAL_REPO]= [CONF_RHEL_REPO]= [CONF_RHN_PASS]= [CONF_RHN_REG_ACTKEY]= [CONF_RHN_REG_NAME]= [CONF_RHN_REG_OPTS]= [CONF_RHN_REG_PASS]= [CONF_RHN_USER]= [CONF_RHSCL_EXTRA_REPO]= [CONF_RHSCL_REPO_BASE]= [CONF_ROUTING_PLUGIN]= [CONF_ROUTING_PLUGIN_PASS]= [CONF_ROUTING_PLUGIN_USER]= [CONF_SM_REG_NAME]= [CONF_SM_REG_PASS]= [CONF_SM_REG_POOL]= [CONF_SNI_FIRST_PORT]= [CONF_SNI_PROXY_PORTS]= [CONF_SYSLOG]= [CONF_VALID_GEAR_SIZES]= [CONF_YUM_EXCLUDE_PKGS]= )
+local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]= [CONF_ACTIVEMQ_ADMIN_PASSWORD]= [CONF_ACTIVEMQ_AMQ_USER_PASSWORD]= [CONF_ACTIVEMQ_HOSTNAME]= [CONF_ACTIVEMQ_REPLICANTS]= [CONF_AMQ_EXTRA_REPO]= [CONF_BIND_KEY]= [CONF_BIND_KEYALGORITHM]= [CONF_BIND_KEYSIZE]= [CONF_BIND_KEYVALUE]= [CONF_BIND_KRB_KEYTAB]= [CONF_BIND_KRB_PRINCIPAL]= [CONF_BROKER_AUTH_PRIV_KEY]= [CONF_BROKER_AUTH_SALT]= [CONF_BROKER_HOSTNAME]= [CONF_BROKER_IP_ADDR]= [CONF_BROKER_KRB_AUTH_REALMS]= [CONF_BROKER_KRB_SERVICE_NAME]= [CONF_BROKER_SESSION_SECRET]= [CONF_CARTRIDGES]= [CONF_CDN_LAYOUT]= [CONF_CDN_REPO_BASE]= [CONF_CONSOLE_SESSION_SECRET]= [CONF_DATASTORE_HOSTNAME]= [CONF_DATASTORE_REPLICANTS]= [CONF_DEFAULT_DISTRICTS]= [CONF_DEFAULT_GEAR_CAPABILITIES]= [CONF_DEFAULT_GEAR_SIZE]= [CONF_DISTRICT_FIRST_UID]= [CONF_DISTRICT_MAPPINGS]= [CONF_DOMAIN]= [CONF_ENABLE_HA]= [CONF_ENABLE_SNI_PROXY]= [CONF_FORWARD_DNS]= [CONF_FUSE_EXTRA_REPO]= [CONF_HOSTS_DOMAIN]= [CONF_HOSTS_DOMAIN_KEYFILE]= [CONF_HTTP_PROXY]= [CONF_HTTPS_PROXY]= [CONF_IDLE_INTERVAL]= [CONF_INSTALL_COMPONENTS]= [CONF_INSTALL_METHOD]= [CONF_INTERFACE]= [CONF_ISOLATE_GEARS]= [CONF_JBOSSEAP_EXTRA_REPO]= [CONF_JBOSSEAP_VERSION]= [CONF_JBOSSEWS_EXTRA_REPO]= [CONF_JBOSS_REPO_BASE]= [CONF_KEEP_HOSTNAME]= [CONF_KEEP_NAMESERVERS]= [CONF_MCOLLECTIVE_PASSWORD]= [CONF_MCOLLECTIVE_USER]= [CONF_METAPKGS]= [CONF_METRICS_INTERVAL]= [CONF_MONGODB_ADMIN_PASSWORD]= [CONF_MONGODB_ADMIN_USER]= [CONF_MONGODB_BROKER_PASSWORD]= [CONF_MONGODB_BROKER_USER]= [CONF_MONGODB_KEY]= [CONF_MONGODB_NAME]= [CONF_MONGODB_PASSWORD]= [CONF_MONGODB_REPLSET]= [CONF_NAMED_ENTRIES]= [CONF_NAMED_HOSTNAME]= [CONF_NAMED_IP_ADDR]= [CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST]= [CONF_NODE_APACHE_FRONTEND]= [CONF_NODE_HOSTNAME]= [CONF_NODE_HOST_TYPE]= [CONF_NODE_IP_ADDR]= [CONF_NODE_LOG_CONTEXT]= [CONF_NODE_PROFILE]= [CONF_NODE_PROFILE_NAME]= [CONF_NO_NTP]= [CONF_NO_SCRAMBLE]= [CONF_OPENSHIFT_PASSWORD]= [CONF_OPENSHIFT_PASSWORD1]= [CONF_OPENSHIFT_USER]= [CONF_OPENSHIFT_USER1]= [CONF_OPTIONAL_REPO]= [CONF_OSE_ERRATA_BASE]= [CONF_OSE_EXTRA_REPO_BASE]= [CONF_OSE_REPO_BASE]= [CONF_PORTS_PER_GEAR]= [CONF_PROFILE_NAME]= [CONF_REPOS_BASE]= [CONF_RHEL_EXTRA_REPO]= [CONF_RHEL_OPTIONAL_REPO]= [CONF_RHEL_REPO]= [CONF_RHN_PASS]= [CONF_RHN_REG_ACTKEY]= [CONF_RHN_REG_NAME]= [CONF_RHN_REG_OPTS]= [CONF_RHN_REG_PASS]= [CONF_RHN_USER]= [CONF_RHSCL_EXTRA_REPO]= [CONF_RHSCL_REPO_BASE]= [CONF_ROUTER]= [CONF_ROUTER_HOSTNAME]= [CONF_ROUTING_PLUGIN]= [CONF_ROUTING_PLUGIN_PASS]= [CONF_ROUTING_PLUGIN_USER]= [CONF_SM_REG_NAME]= [CONF_SM_REG_PASS]= [CONF_SM_REG_POOL]= [CONF_SNI_FIRST_PORT]= [CONF_SNI_PROXY_PORTS]= [CONF_SYSLOG]= [CONF_VALID_GEAR_SIZES]= [CONF_YUM_EXCLUDE_PKGS]= )
 
   set +x # don't log passwords
   local setting
@@ -3655,7 +3757,7 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
   actions="${CONF_ACTIONS:-do_all_actions}"
 
   # Following are the different components that can be installed:
-  local components='broker node named activemq datastore'
+  local components='broker node named activemq datastore router'
 
   # By default, each component is _not_ installed.
   local component
@@ -3669,7 +3771,7 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
   for component in ${CONF_INSTALL_COMPONENTS//,/ }
   do
     case "$component" in
-      (broker|node|named|activemq|datastore) ;;
+      (broker|node|named|activemq|datastore|router) ;;
       (*) abort_install "Unrecognized component: $component" ;;
     esac
     eval "$component() { :; }"
@@ -3687,7 +3789,7 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
   done
   if [[ "$installing_something" = 0 ]]
   then
-    for component in $components
+    for component in ${components//router} # default: all but router
     do
       eval "$component() { :; }"
     done
@@ -3728,6 +3830,7 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
   named_hostname=$(ensure_domain "${CONF_NAMED_HOSTNAME:-ns1}" "$hosts_domain")
   activemq_hostname=$(ensure_domain "${CONF_ACTIVEMQ_HOSTNAME:-activemq}" "$hosts_domain")
   datastore_hostname=$(ensure_domain "${CONF_DATASTORE_HOSTNAME:-datastore}" "$hosts_domain")
+  router_hostname=$(ensure_domain "${CONF_ROUTER_HOSTNAME:-www}" "$domain")
 
   # The hostname name for this host.
   # Note: If this host is, e.g., both a broker and a datastore, we want
@@ -3742,6 +3845,8 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
   then hostname="$activemq_hostname"
   elif datastore
   then hostname="$datastore_hostname"
+  elif router
+  then hostname="$router_hostname"
   fi
 
   # Grab the IP address set during installation.
@@ -4030,6 +4135,9 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
   outgoing_http_proxy="${CONF_HTTP_PROXY-}"
   outgoing_https_proxy="${CONF_HTTPS_PROXY-}"
 
+  enable_ha="${CONF_ENABLE_HA-false}"
+  router="${CONF_ROUTER-}"
+
   # cartridge dependency metapackages
   metapkgs="${CONF_METAPKGS:-recommended}"
 
@@ -4182,6 +4290,7 @@ install_rpms()
   node && install_cartridges
   node && remove_abrt_addon_python
   broker && install_rhc_pkg
+  router && install_router_pkgs
   echo 'OpenShift: Completed installing RPMs.'
 }
 
@@ -4307,6 +4416,9 @@ configure_openshift()
   node && update_openshift_facts_on_node
 
   node && broker && fix_broker_routing
+
+  { broker || router; } && configure_routing_daemon
+  router && configure_router
 
   configure_firewall_add_rules
   node && configure_gear_isolation_firewall
