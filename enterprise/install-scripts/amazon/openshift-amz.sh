@@ -944,14 +944,25 @@ install_cartridges()
 # given value to the setting.  If it does not, then comment out any
 # existing setting and add the given setting.
 #
-# The search pattern is /^\s*name\s*=\s*['"]?value\['"]?s*(|#.*)$/.  The added
-# line will be in the form 'name=value' or, if a non-empty short comment is
-# specified, 'name=value # short comment'.  Note that quotation marks are
-# tolerated when checking whether the setting is already present, but are not
-# added when adding the setting unless they are explicitly passed in with the
-# value.  If a long comment is specified using the fifth and possibly subsequent
-# arguments, a blank line followed by '# long comment' (one line per argument)
-# will be added before the line for the setting itself.
+# If the setting is found with the given value in the configuration file, then
+# this function does not modify the file.  The search pattern used is
+# /^\s*name\s*=\s*['"]?value\['"]?\s*(|#.*)$/.
+#
+# If the setting is found with a value other than the one specified, then the
+# existing setting is commented out and the new setting is added after the old,
+# with any short comment that is specified.  The added line will be in the form
+# 'name=value' or, if a non-empty short comment is specified, 'name=value
+# # short comment'.
+#
+# If the setting is not found in the file, then the new setting is appended to
+# the end of the file, with any short and long comments that are specified.
+# If a long comment is specified using the fifth and possibly subsequent
+# arguments, then a blank line followed by '# long comment' (one line per
+# argument) will be added before the line for the setting itself.
+#
+# Note that quotation marks are tolerated when checking whether the setting is
+# already present, but are not added when adding the setting unless they are
+# explicitly passed in as part of the value.
 #
 # $1 = configuration file's filename
 # $2 = setting name
@@ -960,17 +971,39 @@ install_cartridges()
 # $5- = long comment (optional)
 set_conf()
 {
-  if ! grep -q "^\\s*$2\\s*=\\s*['\"]\\?$3['\"]\\?\\s*\\(\\|#.*\\)$" "$1"
-  then
-    sed -i -e "s/^\\s*$2\\s*=\\s*/#&/" "$1"
-    if [[ -n "${5-}" ]]
-    then
-      echo >> "$1"
-      args=( "$@" )
-      printf '# %s\n' "${args[@]:4}" >> "$1"
-    fi
-    echo "$2=$3${4:+ #$4}" >> "$1"
-  fi
+  local file="$1" setting="$2" value="$3" shortcomment="${4-}"
+  local newsetting="${setting}=${value//\//\\/}${shortcomment:+ #$shortcomment}"
+  shift 4 || shift 3
+  local longcomment=
+  (( $# > 0 )) && printf -v longcomment '# %s\\\n' "$@"
+
+  sed -i -e "
+    :a
+      # Check whether the setting already exists with the specified value.  If
+      # it does, jump to :b.
+      /^\\s*${setting}\\s*=\\s*['\"]\\?${value//\//\\/}['\"]\\?\\s*\\(\\|#.*\\)\$/bb
+
+      # Check whether the setting already exists but with the a value other than
+      # the specified one.  If it does, then comment out the old setting, add
+      # a new setting with the specified value after the old setting, and jump
+      # to :b.
+      s/^\\(\\s*\\)#\\?\\(\\s*${setting}\\s*=[^\\n]*\\)/\\1#\\2\\n${newsetting}/;tb
+
+      # Neither of the previous two checks were positive, so check whether we
+      # have reached the end of the file, and if so, append the new setting
+      # along with any long comment that has been specified.
+      \$a \\
+${longcomment:+\\
+$longcomment}$newsetting
+
+      # Loop and repeat the above checks.
+      n
+      ba
+    :b
+      # Loop until the end of the file, without modifying the stream.
+      n
+      bb
+    " "$file"
 }
 
 set_mongodb() { set_conf /etc/mongodb.conf "$@"; }
