@@ -27,7 +27,7 @@ SUBS_NAME = {UNKNOWN: '', RHSM: 'Red Hat Subscription Manager',
              RHN: 'RHN Classic or RHN Satellite', YUM: 'Yum'}
 VALID_SUBS = SUBS_NAME.keys()[1:]
 ATTACH_ENTITLEMENTS_URL = 'https://access.redhat.com/site/articles/522923'
-VALID_ROLES = ['node', 'broker', 'client', 'node-eap', 'node-fuse', 'node-amq']
+VALID_ROLES = ['node', 'broker', 'client', 'node-eap', 'node-eap-6.3', 'node-fuse', 'node-amq']
 WORKING_YCM_NVR = ('yum', '3.2.29', '47.el6')
 
 def flatten_uniq(llist):
@@ -880,7 +880,7 @@ class OpenShiftYumValidator(object):
             self.guess_role()
         if self.opts.role:
             self.opts.role = [xx.lower() for xx in self.opts.role]
-            for role in ['node-eap', 'node-fuse', 'node-amq']:
+            for role in ['node-eap', 'node-eap-6.3', 'node-fuse', 'node-amq']:
                 if role in self.opts.role and not 'node' in self.opts.role:
                     self.opts.role.append('node')
             if 'broker' in self.opts.role and not 'client' in self.opts.role:
@@ -889,6 +889,8 @@ class OpenShiftYumValidator(object):
                                  'enables --role=client to ensure /usr/bin/rhc '
                                  'is available for testing and '
                                  'troubleshooting.')
+                if 'node-eap-6.3' in self.opts.role and 'node-eap' in self.opts.role:
+                    self.opts.role.remove('node-eap')
 
     def run_priority_checks(self):
         if not (self.verify_priorities() or self.opts.report_all):
