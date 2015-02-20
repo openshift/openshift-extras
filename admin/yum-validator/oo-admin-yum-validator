@@ -483,17 +483,22 @@ class OpenShiftYumValidator(object):
         res = True
         ose_pri = self._limit_pri(ose_repos)
         rhel_pri = self._limit_pri(rhel6_repos, minpri=True)
+        required_repos = self.blessed_repoids(enabled=True, required=True)
         if rhel_pri <= ose_pri:
-            for repoid in (repoid for repoid in ose_repos if
-                           self._get_pri(repoid) != OSE_PRIORITY):
-                self.resolved_repos[repoid] = OSE_PRIORITY
-                res = False
+            for repoid in ose_repos:
+                if repoid in required_repos and self._get_pri(repoid) != OSE_PRIORITY:
+                    self.resolved_repos[repoid] = OSE_PRIORITY
+                if repoid not in required_repos and self._get_pri(repoid) < OTHER_PRIORITY:
+                    self.resolved_repos[repoid] = OTHER_PRIORITY
+            res = False
             ose_pri = OSE_PRIORITY
         # Fix the rhel repos if any of them are at 99
         if rhel_pri <= ose_pri or self._limit_pri(rhel6_repos) >= 99:
-            for repoid in (repoid for repoid in rhel6_repos if
-                           self._get_pri(repoid) != RHEL_PRIORITY):
-                self.resolved_repos[repoid] = RHEL_PRIORITY
+            for repoid in rhel6_repos:
+                if repoid in required_repos and self._get_pri(repoid) != RHEL_PRIORITY:
+                    self.resolved_repos[repoid] = RHEL_PRIORITY
+                if repoid not in required_repos and self._get_pri(repoid) < OTHER_PRIORITY:
+                    self.resolved_repos[repoid] = OTHER_PRIORITY
             res = False
         return res
 
@@ -507,6 +512,8 @@ class OpenShiftYumValidator(object):
         min_pri = self._limit_pri(ose_repos)
         jboss_pri = self._limit_pri(jboss_repos, minpri=True)
         jboss_max_pri = self._limit_pri(jboss_repos)
+        required_jboss_repos = self.blessed_repoids(
+            enabled=True, required=True, product='jboss')
         if rhel6_repos:
             min_pri = self._limit_pri(rhel6_repos)
         if jboss_pri <= min_pri or jboss_max_pri >= 99:
@@ -515,10 +522,11 @@ class OpenShiftYumValidator(object):
                                self._get_pri(repoid) != RHEL_PRIORITY):
                     self.resolved_repos[repoid] = RHEL_PRIORITY
             res = False
-            for repoid in (repoid for repoid in jboss_repos if
-                           self._get_pri(repoid) != JBOSS_PRIORITY):
-                self.resolved_repos[repoid] = JBOSS_PRIORITY
-                res = False
+            for repoid in jboss_repos:
+                if repoid in required_jboss_repos and self._get_pri(repoid) != JBOSS_PRIORITY:
+                    self.resolved_repos[repoid] = JBOSS_PRIORITY
+                elif repoid not in required_jboss_repos and self._get_pri(repoid) < OTHER_PRIORITY:
+                    self.resolved_repos[repoid] = OTHER_PRIORITY
         return res
 
     def verify_priorities(self):
@@ -528,15 +536,19 @@ class OpenShiftYumValidator(object):
         """
         res = True
         self.logger.info('Checking channel/repository priorities')
-        ose_scl = self.blessed_repoids(enabled=True, required=True,
+        ose_scl = self.blessed_repoids(enabled=True, required=False,
                                        product='ose')
-        ose_scl += self.blessed_repoids(enabled=True, required=True,
+        ose_scl += self.blessed_repoids(enabled=True, required=False,
                                         product='rhscl')
-        jboss = self.blessed_repoids(enabled=True, required=True,
+        jboss = self.blessed_repoids(enabled=True, required=False,
                                      product='jboss')
         rhel = self.blessed_repoids(enabled=True, product='rhel')
         if rhel:
             res &= self.verify_rhel_priorities(ose_scl, rhel)
+        # Feed only required ose/scl repos to verify_jboss_priorities
+        ose_scl = [repoid for repoid
+                   in self.blessed_repoids(enabled=True, required=True)
+                   if repoid in ose_scl]
         if jboss:
             if rhel:
                 res &= self.verify_jboss_priorities(ose_scl, jboss, rhel)
@@ -817,6 +829,16 @@ class OpenShiftYumValidator(object):
             self.logger.error('No roles could be detected.')
             self.problem = True
             return False
+        elif 'node-eap-6.3' in self.opts.role and 'node-eap' in self.opts.role:
+            # We will detect both roles since they share a key_pkg,
+            # assume 'node-eap' role unless a 'node-eap-6.3' repo is
+            # already enabled
+            eap63_repos = set([repo.repoid for repo in
+                               self.rdb.find_repos(role='node-eap-6.3')])
+            if eap63_repos.intersection(set(self.oscs.enabled_repoids())):
+                self.opts.role.remove('node-eap')
+            else:
+                self.opts.role.remove('node-eap-6.3')
         self.logger.warning('If the roles listed below are incorrect or '
                             'incomplete, please re-run this script with the '
                             'appropriate --role arguments')
@@ -836,7 +858,6 @@ class OpenShiftYumValidator(object):
                 self.problem = True
                 self.logger.error('You have specified an invalid role: %s '
                                   'is not one of %s' % (role, VALID_ROLES))
-                # self.opt_parser.print_help()
                 return False
         return True
 
@@ -865,7 +886,6 @@ class OpenShiftYumValidator(object):
                 self.logger.error('You have specified an invalid version: '
                                   '%s is not one of: %s' %
                                   (self.opts.oo_version, ', '.join(valid_vers)))
-                # self.opt_parser.print_help()
                 self.problem = True
                 return False
         return True
@@ -890,6 +910,8 @@ class OpenShiftYumValidator(object):
                                  'is available for testing and '
                                  'troubleshooting.')
                 if 'node-eap-6.3' in self.opts.role and 'node-eap' in self.opts.role:
+                    # If the user has specified both, assume they
+                    # meant 'node-eap-6.3'
                     self.opts.role.remove('node-eap')
 
     def run_priority_checks(self):
