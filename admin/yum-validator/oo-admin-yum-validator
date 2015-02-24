@@ -909,10 +909,10 @@ class OpenShiftYumValidator(object):
                                  'enables --role=client to ensure /usr/bin/rhc '
                                  'is available for testing and '
                                  'troubleshooting.')
-                if 'node-eap-6.3' in self.opts.role and 'node-eap' in self.opts.role:
-                    # If the user has specified both, assume they
-                    # meant 'node-eap-6.3'
-                    self.opts.role.remove('node-eap')
+            if 'node-eap-6.3' in self.opts.role and 'node-eap' in self.opts.role:
+                # If the user has specified both, assume they
+                # meant 'node-eap-6.3'
+                self.opts.role.remove('node-eap')
 
     def run_priority_checks(self):
         if not (self.verify_priorities() or self.opts.report_all):
