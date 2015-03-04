@@ -833,8 +833,8 @@ class OpenShiftYumValidator(object):
             # We will detect both roles since they share a key_pkg,
             # assume 'node-eap' role unless a 'node-eap-6.3' repo is
             # already enabled
-            eap63_repos = set([repo.repoid for repo in
-                               self.rdb.find_repos(role='node-eap-6.3')])
+            eap63_repos = set(self.rdb.find_repoids(role='node-eap-6.3',
+                                                    product='jboss'))
             if eap63_repos.intersection(set(self.oscs.enabled_repoids())):
                 self.opts.role.remove('node-eap')
             else:
