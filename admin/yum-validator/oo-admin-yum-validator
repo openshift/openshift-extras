@@ -39,6 +39,10 @@ class UnrecoverableYumError(Exception):
     """The Yum API is giving up, and so should we"""
     pass
 
+class YumValidatorError(Exception):
+    """This error should be prohibited by program logic"""
+    pass
+
 class OpenShiftYumValidator(object):
     """This class encapsulates OpenShift-specific yum validator logic
 
@@ -502,13 +506,40 @@ class OpenShiftYumValidator(object):
             res = False
         return res
 
+    def _verify_jboss_eap63_priorities(self):
+        # Set non-specified/guessed EAP role to OTHER_PRIORITY since
+        # they won't necessarily have package conflicts to trigger
+        # priority shufflin' UNTIL IT'S TOO LATE!
+        res = True
+        other_role = list(set(['node-eap', 'node-eap-6.3']).difference(set(self.opts.role)))
+        if len(other_role) > 1:
+            return
+        try:
+            other_role = other_role[0]
+        except IndexError:
+            raise YumValidatorError('Both the node-eap and node-eap-6.3 roles '
+                                    'are set; they should be mutually '
+                                    'exclusive')
+        other_repos = set(self.rdb.find_repoids(role=other_role,
+                                              product='jboss'))
+        other_repos = list(other_repos.intersection(set(self.oscs.enabled_repoids())))
+        required_jboss_repos = self.blessed_repoids(enabled=True,
+                                                    required=True,
+                                                    product='jboss')
+        repos_to_remove = []
+        for repoid in other_repos:
+            if not self.verify_repo_priority(repoid, required_jboss_repos):
+                repos_to_remove.append(repoid)
+        return res, repos_to_remove
+
     def verify_jboss_priorities(self, ose_repos, jboss_repos, rhel6_repos=None):
         """Check that the JBoss EAP and EWS repositories are lower priority
         than the base Red Hat Enterprise Linux repositories and fix or
         advise accordingly
 
         """
-        res = True
+        res, repos_to_remove = self._verify_jboss_eap63_priorities()
+        jboss_repos = [repoid for repoid in jboss_repos if not (repoid in repos_to_remove)]
         min_pri = self._limit_pri(ose_repos)
         jboss_pri = self._limit_pri(jboss_repos, minpri=True)
         jboss_max_pri = self._limit_pri(jboss_repos)
@@ -799,6 +830,32 @@ class OpenShiftYumValidator(object):
             return False
         return True
 
+    def _guess_eap63(self):
+        # assume 'node-eap-6.3' role unless a 'node-eap' repo is
+        # already enabled and at higher (lower numeric) priority
+        eap_repos = set(self.rdb.find_repoids(role='node-eap',
+                                              product='jboss'))
+        eap63_repos = set(self.rdb.find_repoids(role='node-eap-6.3',
+                                                product='jboss'))
+        enabled_rset = set(self.oscs.enabled_repoids())
+        eap_en = eap_repos.intersection(enabled_rset)
+        eap63_en = eap63_repos.intersection(enabled_rset)
+        if eap_en and eap63_en:
+            eap_repo_pri = self._limit_pri([self.oscs.repo_for_repoid(repoid)
+                                            for repoid in list(eap_en)], True)
+            eap63_repo_pri = self._limit_pri([self.oscs.repo_for_repoid(repoid)
+                                              for repoid in list(eap63_en)], True)
+            # eap63 has _lower_ (higher number) priority
+            if eap_repo_pri < eap63_repo_pri:
+                self.opts.role.remove('node-eap-6.3')
+            else:               # eap63 is equal or higher priority
+                self.opts.role.remove('node-eap')
+        elif eap_en:
+            self.opts.role.remove('node-eap-6.3')
+        else:                   # Neither repo is enabled, assume
+                                # node-eap-6.3
+            self.opts.role.remove('node-eap')
+
     def guess_role(self):
         """Try to determine the system role by comparing installed packages to
         key packages
@@ -830,15 +887,8 @@ class OpenShiftYumValidator(object):
             self.problem = True
             return False
         elif 'node-eap-6.3' in self.opts.role and 'node-eap' in self.opts.role:
-            # We will detect both roles since they share a key_pkg,
-            # assume 'node-eap' role unless a 'node-eap-6.3' repo is
-            # already enabled
-            eap63_repos = set(self.rdb.find_repoids(role='node-eap-6.3',
-                                                    product='jboss'))
-            if eap63_repos.intersection(set(self.oscs.enabled_repoids())):
-                self.opts.role.remove('node-eap')
-            else:
-                self.opts.role.remove('node-eap-6.3')
+            # We will detect both roles since they share a key_pkg
+            self._guess_eap63()
         self.logger.warning('If the roles listed below are incorrect or '
                             'incomplete, please re-run this script with the '
                             'appropriate --role arguments')
@@ -859,6 +909,15 @@ class OpenShiftYumValidator(object):
                 self.logger.error('You have specified an invalid role: %s '
                                   'is not one of %s' % (role, VALID_ROLES))
                 return False
+        if 'node-eap-6.3' in self.opts.role and 'node-eap' in self.opts.role:
+            # If the user has specified both, bail out
+            self.logger.info('You have specified --role=node-eap and '
+                             '--role=node-eap-6.3. Only one of these roles '
+                             'can be specified, as their associated '
+                             'repositories conflict. Please re-run the tool '
+                             'with only the appropriate roles specified.')
+            self.problem = True
+            return False
         return True
 
     def reconcile_overrides(self):
@@ -909,10 +968,6 @@ class OpenShiftYumValidator(object):
                                  'enables --role=client to ensure /usr/bin/rhc '
                                  'is available for testing and '
                                  'troubleshooting.')
-            if 'node-eap-6.3' in self.opts.role and 'node-eap' in self.opts.role:
-                # If the user has specified both, assume they
-                # meant 'node-eap-6.3'
-                self.opts.role.remove('node-eap')
 
     def run_priority_checks(self):
         if not (self.verify_priorities() or self.opts.report_all):
