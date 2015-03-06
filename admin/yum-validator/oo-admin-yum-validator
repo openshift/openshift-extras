@@ -513,7 +513,7 @@ class OpenShiftYumValidator(object):
         res = True
         other_role = list(set(['node-eap', 'node-eap-6.3']).difference(set(self.opts.role)))
         if len(other_role) > 1:
-            return
+            return res, []
         try:
             other_role = other_role[0]
         except IndexError:
