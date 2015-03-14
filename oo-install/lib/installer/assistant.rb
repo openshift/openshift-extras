@@ -188,12 +188,7 @@ module Installer
       end
     end
 
-    def ui_workflow id
-      @workflow = Installer::Workflow.find(id)
-      @workflow_cfg = config.get_workflow_cfg(id)
-      @workflow_id = id
-      ui_newpage
-
+    def ui_deployment_check
       # Deployment check
       if workflow.check_deployment?
         force_edit_deployment = false
@@ -235,7 +230,9 @@ module Installer
           end
         end
       end
+    end
 
+    def ui_subscription_check
       # Subscription check
       if workflow.check_subscription?
         ui_newpage
@@ -280,10 +277,37 @@ module Installer
           subtemp_question = subtemp_followup
         end
       end
+    end
 
-      # Workflow questions
-      if workflow.questions.length > 0
-        ui_edit_workflow
+    def ui_workflow id
+      @workflow = Installer::Workflow.find(id)
+      @workflow_cfg = config.get_workflow_cfg(id)
+      @workflow_id = id
+      ui_newpage
+
+      if ['origin_add_node','enterprise_add_node'].include?(@workflow_id)
+        # if all hosts in the config are completed, then jump to adding a host
+        hosts_in_progress = deployment.nodes.select {|h| h.install_status != :validated}
+        if hosts_in_progress.length == 0
+          ui_edit_host_instance(nil, :node, false, true)
+          ui_modify_account_info
+        end
+
+        # for add_node workflows ask workflow questions before doing
+        # deployment and subscription checks
+        if workflow.questions.length > 0
+          ui_edit_workflow
+        end
+        ui_deployment_check
+        ui_subscription_check
+      else
+        # for all other workflows do deployment and subscription checks before
+        # asking workflow quesitons
+        ui_deployment_check
+        ui_subscription_check
+        if workflow.questions.length > 0
+          ui_edit_workflow
+        end
       end
 
       # Workflow remote systems preflight
@@ -1820,6 +1844,17 @@ module Installer
     end
 
     def ui_modify_account_info(skip_check=false)
+      configured_hosts = deployment.hosts.select{|h| [:configured, :rs_complete,
+                                                      :complete, :completed,
+                                                      :validated].include? h.install_status}
+      if configured_hosts.length > 0
+        service_accounts_info.keys.sort_by{ |k| service_accounts_info[k][:order] }.each do |service_param|
+          deployment.set_synchronized_attr(service_param, deployment.get_synchronized_attr(service_param))
+        end
+        deployment.save_to_disk!
+        return
+      end
+
       if not skip_check and deployment.are_accounts_valid? and not concur("\nDo you want to modify the account info settings for the various role services?","Role services include MongoDB, ActiveMQ and the Broker. You can manually set the account info for OpenShift to use, or alternately it can be generated for you.")
         return
       end
