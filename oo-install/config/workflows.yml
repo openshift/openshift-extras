@@ -151,6 +151,8 @@ Repositories:
   - jbossews_extra_repo
   - rhscl_extra_repo
   - ose_extra_repo
+RequiredComponents:
+  - pkg:all:openssh-clients
 ---
 Name: OE Node-Instance Deployment
 Contexts:
@@ -179,3 +181,5 @@ Repositories:
   - jbossews_extra_repo
   - rhscl_extra_repo
   - ose_extra_repo
+RequiredComponents:
+  - pkg:all:openssh-clients
