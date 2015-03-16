@@ -30,7 +30,7 @@ module Installer
         role = type.split(':')[1].to_sym
         choose do |menu|
           menu.header = text
-          deployment.send(Installer::Deployment.list_map[role]).each do |host_instance|
+          deployment.send(Installer::Deployment.list_map[role]).select{|h| h.install_status != :validated}.each do |host_instance|
             menu.choice(host_instance.summarize) { workflow_cfg[id] = host_instance.host }
           end
         end

@@ -437,10 +437,39 @@ end
 ############################################
 hosts_for_installation = []
 # If we are using the Add a node workflow only act on the selected nodes (if the Node to add exists in config)
+# and any related nodes needed to complete the deployment
 if not @target_node_hostname.nil?
-  @deployment.nodes.select{ |h| h.roles.count == 1 and h.host = @target_node_hostname }.each do |host_instance|
+  @deployment.nodes.select{ |h| h.roles.count == 1 and h.host == @target_node_hostname }.each do |host_instance|
     @target_node = host_instance
     hosts_for_installation << host_instance
+
+    # ssh to the nameserver and add dns record for the new node if we are
+    # managing dns for hosts
+    if @deployment.dns.register_components?
+      component_domain = @deployment.dns.component_domain
+      target_host = @target_node.host
+      puts "Registering #{target_host} with #{component_domain}..."
+      nameserver_host = @deployment.nameservers.first
+      cmd = "(\necho update add #{@target_node.host} 180 A #{@target_node.ip_addr}\necho send\n) | sudo nsupdate -k /var/named/#{@deployment.dns.component_domain}.key"
+      result = nameserver_host.ssh_exec!(cmd, true)
+      if result[:exit_code] == 0
+        puts "#{target_host} record created successfully."
+      else
+        puts "failed to create DNS record for #{target_host}"
+        puts "stdout: #{result[:stdout]}"
+        puts "stderr: #{result[:stderr]}"
+      end
+    end
+
+    # also need to configure the first broker to run the post_deploy step
+    first_broker = @deployment.brokers.first
+    _, post_deploy_step = @steps.select{ |x| x.first == :post_deploy }.first
+
+    first_broker.install_status = @deployment.is_ha? ? \
+                    post_deploy_step[:start_states].last : \
+                    post_deploy_step[:start_states].first
+    @deployment.save_to_disk!
+    hosts_for_installation << first_broker
     break
   end
   if @target_node.nil?
@@ -451,6 +480,7 @@ else
   hosts_for_installation = @deployment.hosts
 end
 
+puts "hosts for installation=#{hosts_for_installation}"
 ############################################
 # Stage 5: Run the Deployments #
 ############################################
