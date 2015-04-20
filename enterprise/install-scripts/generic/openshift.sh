@@ -1544,7 +1544,7 @@ install_router_pkgs()
 # Set up the system express.conf so our broker will be used by default.
 configure_rhc()
 {
-  # set_conf expects there to be a new line.
+  # set_conf expects there to be a newline character on the last line.
   echo >> '/etc/openshift/express.conf'
 
   # Set up the system express.conf so this broker will be used by default.
@@ -1588,9 +1588,9 @@ configure_outgoing_http_proxy()
       > '/etc/openshift/skel/.npmrc'
 
     # Configure Maven for JBoss.
-    # So far all this fancy^H^H^H^H^Had hoc, good-enough parsing is needed only
-    # for Maven, but it could be moved earlier in the function if its results
-    # could be used elsewhere.
+    # So far we only need to parse the URL for Maven, but it could be moved
+    # earlier in this function if future additions to this function have some
+    # use for the URL components.
     local http_proxy_auth https_proxy_auth \
           http_proxy_user http_proxy_pass https_proxy_user https_proxy_pass \
           http_proxy_host_port https_proxy_host_port \
