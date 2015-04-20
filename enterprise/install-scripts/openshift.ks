@@ -1443,6 +1443,7 @@ configure_subscription()
    need_jbosseap_cartridge_repo && roles="$roles --role $jbosseap_yumvalidator_role"
    need_fuse_cartridge_repo && roles="$roles --role node-fuse"
    need_amq_cartridge_repo && roles="$roles --role node-amq"
+   # We want word-splitting on $roles.
    oo-admin-yum-validator -o 2.2 --fix-all $roles || : # when fixing, rc is always false
    oo-admin-yum-validator -o 2.2 $roles || abort_install # so check when fixes are done
 
@@ -1461,6 +1462,7 @@ configure_rhn_channels()
   if [[ -n "$rhn_reg_actkey" ]]
   then
     echo 'OpenShift: Register to RHN Classic using an activation key'
+    # We want word-splitting on $rhn_reg_opts.
     rhnreg_ks --force "--activationkey=$rhn_reg_actkey" "--profilename=$rhn_profile_name" $rhn_reg_opts || abort_install
   else
     if [[ -n "$rhn_creds_provided" ]]
@@ -1757,6 +1759,7 @@ install_broker_pkgs()
   # install policycoreutils-python.
   pkgs="$pkgs policycoreutils-python"
 
+  # We want word-splitting on $pkgs.
   yum_install_or_exit $pkgs
 }
 
@@ -1801,6 +1804,7 @@ YUM
       ;;
   esac
 
+  # We want word-splitting on $pkgs.
   yum_install_or_exit $pkgs
 }
 
@@ -1903,7 +1907,7 @@ parse_cartridges()
     then
       # Remove every package indicated by the cart_spec, or remove the package
       # with name equal to $cart_spec itself if the cart_spec does not map to
-      # anything in $p.
+      # anything in $p.  This means we want word-splitting, so don't quote it.
       for pkg in ${p[${cart_spec:1}]:-${cart_spec:1}}
       do
         for k in "${!pkgs[@]}"
@@ -1911,8 +1915,10 @@ parse_cartridges()
         done
       done
     else
-      # Append all packages indicated by the cart_spec, or append
-      # $cart_spec itself if it does not map to anything in $p.
+      # Append all packages indicated by the cart_spec, or append $cart_spec
+      # itself if it does not map to anything in $p.  We want word-splitting
+      # in case $cart_spec or ${p[$cart_spec]} maps to multiple cartridges, so
+      # don't quote it.
       pkgs+=( ${p[$cart_spec]:-$cart_spec} )
     fi
   done
@@ -1958,6 +1964,7 @@ install_cartridges()
   # still install as much as possible.
   #install_cart_pkgs="${install_cart_pkgs} --skip-broken"
 
+  # We want word-splitting on $install_cart_pkgs.
   yum_install_or_exit $install_cart_pkgs
 }
 
@@ -2281,7 +2288,8 @@ execute_mongodb()
   then userpass="-u $3 -p $4 admin"
   fi
 
-  local output="$( echo "$1" | mongo ${userpass} )"
+  # We want word-splitting on $userpass.
+  local output="$( echo "$1" | mongo $userpass )"
   echo "$output"
   if [[ -n "${2+x}" ]]
   then # test output against regex
@@ -3124,6 +3132,7 @@ configure_hosts_dns()
   then
     # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
     local host_ip
+    # We want word-splitting on $named_entries and $host_ip.
     for host_ip in ${named_entries//,/ }
     do add_host_to_zone ${host_ip//:/ }
     done
@@ -3664,6 +3673,7 @@ echo_installation_intentions()
   echo 'The following components should be installed:'
   local components='broker node named activemq datastore'
   local component
+  # We want word-splitting on $components.
   for component in $components
   do "$component" && printf '\t%s.\n' "$component"
   done
@@ -3711,6 +3721,7 @@ parse_args()
 # Parse the kernel command-line using parse_args.
 parse_kernel_cmdline()
 {
+  # We want word-splitting on the command substitution, so don't quote it.
   parse_args $(cat /proc/cmdline)
   : "${CONF_ABORT_ON_UNRECOGNIZED_SETTINGS:=false}"
 }
@@ -3861,6 +3872,7 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
 
   # If nothing is explicitly enabled, enable everything.
   local installing_something=0
+  # We want word-splitting on $components.
   for component in $components
   do
     if "$component"
@@ -4348,6 +4360,7 @@ install_rpms()
   echo 'OpenShift: Begin installing RPMs.'
   # We often rely on the latest SELinux policy and other updates.
   echo 'OpenShift: yum update'
+  # We want word-splitting (including null-argument removal) on $disable_plugin.
   yum $disable_plugin clean all
 
   local count=0
