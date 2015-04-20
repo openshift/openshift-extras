@@ -1159,7 +1159,7 @@ display_passwords()
 
 configure_repos()
 {
-  echo "OpenShift: Begin configuring repos."
+  echo 'OpenShift: Begin configuring repos.'
   # Determine which channels we need and define corresponding predicate
   # functions.
 
@@ -1232,7 +1232,7 @@ configure_repos()
       ;;
   esac
 
-  echo "OpenShift: Completed configuring repos."
+  echo 'OpenShift: Completed configuring repos.'
 }
 
 configure_yum_repos()
@@ -1646,15 +1646,15 @@ configure_outgoing_http_proxy()
     https_proxy_auth="${outgoing_https_proxy#*//}"
 
     # Split on '@' into (possibly) authentication credentials and the rest.
-    read http_proxy_auth http_proxy_host_port <<<"${http_proxy_auth//@/ }"
-    read https_proxy_auth https_proxy_host_port <<<"${https_proxy_auth//@/ }"
+    read http_proxy_auth http_proxy_host_port <<< "${http_proxy_auth//@/ }"
+    read https_proxy_auth https_proxy_host_port <<< "${https_proxy_auth//@/ }"
 
     if [[ -z "$http_proxy_host_port" ]]
     then # No credentials were specified.
       http_proxy_host_port="$http_proxy_auth"
       http_proxy_auth=
     else
-      read http_proxy_user http_proxy_pass <<<"${http_proxy_auth//:/ }"
+      read http_proxy_user http_proxy_pass <<< "${http_proxy_auth//:/ }"
     fi
 
     if [[ -z "$https_proxy_host_port" ]]
@@ -1662,7 +1662,7 @@ configure_outgoing_http_proxy()
       https_proxy_host_port="$https_proxy_auth"
       https_proxy_auth=
     else
-      read https_proxy_user https_proxy_pass <<<"${https_proxy_auth//:/ }"
+      read https_proxy_user https_proxy_pass <<< "${https_proxy_auth//:/ }"
     fi
 
     # Strip any trailing slashes (and possibly more, but there shouldn't be
@@ -1671,8 +1671,8 @@ configure_outgoing_http_proxy()
     https_proxy_host_port="${https_proxy_host_port%/*}"
 
     # Split on ':' into hostname and (possibly) port parts.
-    read http_proxy_hostname http_proxy_port <<<"${http_proxy_host_port//:/ }"
-    read https_proxy_hostname https_proxy_port <<<"${https_proxy_host_port//:/ }"
+    read http_proxy_hostname http_proxy_port <<< "${http_proxy_host_port//:/ }"
+    read https_proxy_hostname https_proxy_port <<< "${https_proxy_host_port//:/ }"
 
     local proxies_stanza="\
 <settings>
@@ -1809,7 +1809,7 @@ YUM
 # This only affects the python v2 cart
 remove_abrt_addon_python()
 {
-  if grep 'Enterprise Linux Server release 6.4' /etc/redhat-release && rpm -q abrt-addon-python && rpm -q openshift-origin-cartridge-python
+  if grep 'Enterprise Linux Server release 6.4' '/etc/redhat-release' && rpm -q abrt-addon-python && rpm -q openshift-origin-cartridge-python
   then yum $disable_plugin remove -y abrt-addon-python || abort_install
   fi
 }
@@ -1922,7 +1922,7 @@ parse_cartridges()
     local metapkg
     for metapkg in "${meta[@]}"
     do
-      if [[ "${pkgs[@]}" =~ "-${metapkg}" ]]
+      if [[ "${pkgs[@]}" =~ "-$metapkg" ]]
       then
         metapkgs_optional && pkgs+=( "openshift-origin-cartridge-dependencies-optional-$metapkg" )
         metapkgs_recommended && pkgs+=( "openshift-origin-cartridge-dependencies-recommended-$metapkg" )
@@ -2135,8 +2135,8 @@ configure_pam_on_node()
   # /dev/shm directories.  Above, we only enable pam_namespace for
   # OpenShift users, but to be safe, blacklist the root and adm users
   # to be sure we don't polyinstantiate their directories.
-  echo '/tmp        $HOME/.tmp/      user:iscript=/usr/sbin/oo-namespace-init root,adm' > /etc/security/namespace.d/tmp.conf
-  echo '/dev/shm  tmpfs  tmpfs:mntopts=size=5M:iscript=/usr/sbin/oo-namespace-init root,adm' > /etc/security/namespace.d/shm.conf
+  echo '/tmp        $HOME/.tmp/      user:iscript=/usr/sbin/oo-namespace-init root,adm' > '/etc/security/namespace.d/tmp.conf'
+  echo '/dev/shm  tmpfs  tmpfs:mntopts=size=5M:iscript=/usr/sbin/oo-namespace-init root,adm' > '/etc/security/namespace.d/shm.conf'
 }
 
 configure_cgroups_on_node()
@@ -2723,7 +2723,7 @@ configure_activemq()
 EOF
   fi
 
-  cat <<EOF > /etc/activemq/activemq.xml
+  cat <<EOF > '/etc/activemq/activemq.xml'
 <!--
     Licensed to the Apache Software Foundation (ASF) under one or more
     contributor license agreements.  See the NOTICE file distributed with
@@ -3146,7 +3146,7 @@ register_named_entries()
   local ip
   for host_ip in ${named_entries//,/ }
   do
-    read host ip <<<"${host_ip//:/ }"
+    read host ip <<< "${host_ip//:/ }"
     if [[ "$host" =~ $ip_regex || ! "$ip" =~ $ip_regex ]]
     then
       echo "Not adding DNS record to host zone: '$host' should be a hostname and '$ip' should be an IP address"
@@ -3187,9 +3187,9 @@ configure_dns_resolution()
   sed -i -e "/search/ d; 1i# The named we install for our OpenShift PaaS must appear first.\\nsearch ${hosts_domain}.\\nnameserver ${named_ip_addr}\\n" '/etc/resolv.conf'
 
   # Append resolution conf to the DHCP configuration.
-  sed -i -e "/prepend domain-name-servers ${named_ip_addr};/d" "/etc/dhcp/dhclient-$interface.conf"
-  sed -i -e "/prepend domain-search ${hosts_domain};/d" "/etc/dhcp/dhclient-$interface.conf"
-  cat <<EOF >> "/etc/dhcp/dhclient-$interface.conf"
+  sed -i -e "/prepend domain-name-servers ${named_ip_addr};/d" "/etc/dhcp/dhclient-${interface}.conf"
+  sed -i -e "/prepend domain-search ${hosts_domain};/d" "/etc/dhcp/dhclient-${interface}.conf"
+  cat <<EOF >> "/etc/dhcp/dhclient-${interface}.conf"
 
 prepend domain-name-servers ${named_ip_addr};
 prepend domain-search "${hosts_domain}";
@@ -3444,8 +3444,8 @@ configure_router()
       #
       # These files should be copies of /etc/pki/tls/certs/localhost.crt and
       # /etc/pki/tls/private/localhost.key, respectively, from a node host.
-      if [[ -e /etc/pki/tls/certs/node.example.com.crt &&
-            -e /etc/pki/tls/private/node.example.com.key ]]
+      if [[ -e '/etc/pki/tls/certs/node.example.com.crt' &&
+            -e '/etc/pki/tls/private/node.example.com.key' ]]
       then
         service nginx16-nginx start
       fi
@@ -3468,7 +3468,7 @@ configure_access_keys_on_broker()
 
   # Generate a key pair for moving gears between nodes from the broker.
   ssh-keygen -t rsa -b 2048 -P '' -f '/root/.ssh/rsync_id_rsa'
-  cp /root/.ssh/rsync_id_rsa* /etc/openshift/
+  cp /root/.ssh/rsync_id_rsa* '/etc/openshift/'
   # the .pub key needs to go on nodes. So, we provide it via a standard
   # location on httpd:
   cp '/root/.ssh/rsync_id_rsa.pub' '/var/www/html/'
@@ -3548,7 +3548,7 @@ configure_node()
      'allocated to all UIDs fit in the proxy port range.'
   fi
 
-  local conf=/etc/openshift/node.conf
+  local conf='/etc/openshift/node.conf'
   case "$node_apache_frontend" in
     mod_rewrite)
       sed -i -e "/OPENSHIFT_FRONTEND_HTTP_PLUGINS/ s/vhost/mod-rewrite/" "$conf"
@@ -3568,12 +3568,12 @@ configure_node()
     set_conf "$sniconf" PROXY_PORTS "$port_list"
   fi
 
-  echo "$broker_hostname" > /etc/openshift/env/OPENSHIFT_BROKER_HOST
-  echo "$domain" > /etc/openshift/env/OPENSHIFT_CLOUD_DOMAIN
+  echo "$broker_hostname" > '/etc/openshift/env/OPENSHIFT_BROKER_HOST'
+  echo "$domain" > '/etc/openshift/env/OPENSHIFT_CLOUD_DOMAIN'
 
   # Set the ServerName for httpd
   sed -i -e "s/ServerName .*$/ServerName ${hostname}/" \
-      /etc/httpd/conf.d/000001_openshift_origin_node_servername.conf
+      '/etc/httpd/conf.d/000001_openshift_origin_node_servername.conf'
 
   configure_node_logs
   RESTART_NEEDED=true
@@ -3594,7 +3594,7 @@ configure_node_logs()
 PLATFORM_LOG_CLASS=SyslogLogger\
 PLATFORM_SYSLOG_THRESHOLD=LOG_INFO\
 PLATFORM_SYSLOG_TRACE_ENABLED=1
-    ' /etc/openshift/node.conf
+    ' '/etc/openshift/node.conf'
     echo 'local0.*  /var/log/messages' > '/etc/rsyslog.d/openshift-node-platform.conf'
   fi
   if [[ "$log_to_syslog" = *frontend* ]]
@@ -4038,10 +4038,8 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
   # ActiveMQ service are assumed to be the current host if we are
   # installing the component now or the broker host otherwise.
   if named
-  then
-    named_ip_addr="${CONF_NAMED_IP_ADDR:-$cur_ip_addr}"
-  else
-    named_ip_addr="${CONF_NAMED_IP_ADDR:-$broker_ip_addr}"
+  then named_ip_addr="${CONF_NAMED_IP_ADDR:-$cur_ip_addr}"
+  else named_ip_addr="${CONF_NAMED_IP_ADDR:-$broker_ip_addr}"
   fi
 
   # The nameservers to which named on the broker will forward requests.
@@ -4105,10 +4103,10 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
   metrics_interval="${CONF_METRICS_INTERVAL-}"
 
   # Set $default_districts to $CONF_DEFAULT_DISTRICTS
-  broker && default_districts=${CONF_DEFAULT_DISTRICTS:-true}
+  broker && default_districts="${CONF_DEFAULT_DISTRICTS:-true}"
 
   # Set $district_mappings to $CONF_DISTRICT_MAPPINGS
-  broker && district_mappings=${CONF_DISTRICT_MAPPINGS-}
+  broker && district_mappings="${CONF_DISTRICT_MAPPINGS-}"
 
   local randomized
 
@@ -4553,7 +4551,7 @@ restart_services()
 run_diagnostics()
 {
   echo 'OpenShift: Begin running oo-diagnostics.'
-  date +%Y-%m-%d-%H:%M:%S
+  date '+%Y-%m-%d-%H:%M:%S'
   # prepending the output of oo-diagnostics breaks the ansi color coding
   # remove all ansi escape sequences from oo-diagnostics output
   oo-diagnostics |& sed -u -e 's/\x1B\[[0-9;]*[JKmsu]//g' -e 's/^/OpenShift: oo-diagnostics output - /g'
