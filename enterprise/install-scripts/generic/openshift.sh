@@ -1436,7 +1436,7 @@ configure_rhn_channels()
   then
     # Enable the node or infrastructure channel to enable installing the release
     # RPM.
-    local repos=('rhel-x86_64-server-6-rhscl-1')
+    local -a repos=('rhel-x86_64-server-6-rhscl-1')
     if ! need_node_repo || need_infra_repo
     then repos+=('rhel-x86_64-server-6-ose-2.2-infrastructure')
     fi
@@ -1852,7 +1852,7 @@ parse_cartridges()
   # cartridges that the user instructs us to install ($cartridges).  See
   # the documentation on the CONF_CARTRIDGES / cartridges options for
   # the rules governing how $cartridges will be passed.
-  local pkgs=( )
+  local -a pkgs=( )
   local pkg
   local cart_spec
   for cart_spec in ${cartridges//,/ }
