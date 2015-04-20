@@ -1658,6 +1658,7 @@ configure_outgoing_http_proxy()
     # an external tool instead?).
     shopt -s extglob # for *()
     proxies_stanza="${proxies_stanza//$'\n'*([[:space:]])$'\n'/$'\n'}"
+    shopt -u extglob
     mkdir -p '/etc/openshift/skel/.m2'
     local settings_xml='/etc/openshift/skel/.m2/settings.xml'
     if ! [[ -e "$settings_xml" ]] || ! grep -q '<proxies>' "$settings_xml"
