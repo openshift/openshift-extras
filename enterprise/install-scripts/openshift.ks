@@ -1465,7 +1465,8 @@ configure_rhn_channels()
   else
     if [[ -n "$rhn_creds_provided" ]]
     then
-      set +x # Don't log password.
+      # Don't log password.
+      set +x
       echo 'OpenShift: Register to RHN Classic with username and password'
       echo "rhnreg_ks --force \"--profilename=$rhn_profile_name\" --username \"${rhn_user}\" $rhn_reg_opts"
       rhnreg_ks --force "--profilename=$rhn_profile_name" --username "$rhn_user" --password "$rhn_pass" $rhn_reg_opts || abort_install
@@ -1489,7 +1490,8 @@ configure_rhn_channels()
     need_fuse_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.2-jbossfuse')
     need_amq_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.2-jbossamq')
 
-    set +x # Don't log password.
+    # Don't log password.
+    set +x
     local repo
     for repo in "${repos[@]}"
     do [[ "$(rhn-channel -l)" = *"$repo"* ]] || rhn-channel --add --channel "$repo" --user "$rhn_user" --password "$rhn_pass" || abort_install
@@ -1504,7 +1506,8 @@ configure_rhsm_channels()
 {
   if [[ -n "$rhn_creds_provided" ]]
   then
-    set +x # Don't log password.
+    # Don't log password.
+    set +x
     echo 'OpenShift: Register with RHSM'
     echo "subscription-manager register --force \"--username=${rhn_user}\" --name \"${rhn_profile_name}\" $rhn_reg_opts"
     subscription-manager register --force "--username=$rhn_user" "--password=$rhn_pass" --name "$rhn_profile_name" $rhn_reg_opts || abort_install
@@ -4009,7 +4012,8 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
     # Check for subscription parameters under all previously used setting
     # names.
     rhn_user="${CONF_RHN_USER:-${CONF_SM_REG_NAME:-${CONF_RHN_REG_NAME-}}}"
-    set +x # Don't log password.
+    # Don't log password.
+    set +x
     rhn_pass="${CONF_RHN_PASS:-${CONF_SM_REG_PASS:-${CONF_RHN_REG_PASS-}}}"
     if [[ -n "$rhn_user" && -n "$rhn_pass" ]]
     then rhn_creds_provided='true'
@@ -4279,7 +4283,8 @@ validate_preflight()
     # adding channels.
     if ! [[ -f '/etc/sysconfig/rhn/systemid' ]] || ! rhn-channel -l | grep -q '^rhel-x86_64-server-6-ose-2.2-\(node\|infrastructure\)'
     then
-      set +x # Don't log password.
+      # Don't log password.
+      set +x
       if [[ -z "$rhn_user" || -z "$rhn_pass" ]]
       then
         echo 'OpenShift: Install method rhn requires an RHN user and password.'
@@ -4298,7 +4303,8 @@ validate_preflight()
     # adding channels.
     if ! subscription-manager identity | grep -q 'identity is:'
     then
-      set +x # Don't log password.
+      # Don't log password.
+      set +x
       if [[ -z "$rhn_user" || -z "$rhn_pass" ]]
       then
         echo 'OpenShift: Install method rhsm requires an RHN user and password.'
