@@ -1599,11 +1599,6 @@ EOF
   chown 'apache:apache' "$mcollective_cfg"
   chmod 640 "$mcollective_cfg"
 
-  # Make sure the MCollective client log is created with proper ownership.
-  # If root owns it, the broker (apache user) can't log to it.
-  touch '/var/log/openshift/broker/ruby193-mcollective-client.log'
-  chown 'apache:root' '/var/log/openshift/broker/ruby193-mcollective-client.log'
-
   RESTART_NEEDED=true
 }
 
