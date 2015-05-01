@@ -1341,18 +1341,20 @@ configure_rhn_channels()
   if [ "x$CONF_RHN_REG_ACTKEY" != x ]; then
     echo "OpenShift: Register to RHN Classic using an activation key"
     rhnreg_ks --force "--activationkey=${CONF_RHN_REG_ACTKEY}" "--profilename=$profile_name" ${CONF_RHN_REG_OPTS} || abort_install
-  elif [[ "${CONF_RHN_USER}" && "${CONF_RHN_PASS}" ]]
-  then
-    echo "OpenShift: Register to RHN Classic with username and password"
-    set +x # don't log password
-    echo "rhnreg_ks --force \"--profilename=$profile_name\" --username \"${CONF_RHN_USER}\" ${CONF_RHN_REG_OPTS}"
-    rhnreg_ks --force "--profilename=$profile_name" --username "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" ${CONF_RHN_REG_OPTS} || abort_install
-    set -x
-  else
-    echo "OpenShift: No credentials given for RHN Classic; assuming already configured"
+  else 
+    if [ $rhn_creds_provided ]
+    then
+      set +x # don't log password
+      echo "OpenShift: Register to RHN Classic with username and password"
+      echo "rhnreg_ks --force \"--profilename=$profile_name\" --username \"${CONF_RHN_USER}\" ${CONF_RHN_REG_OPTS}"
+      rhnreg_ks --force "--profilename=$profile_name" --username "${CONF_RHN_USER}" --password "${CONF_RHN_PASS}" ${CONF_RHN_REG_OPTS} || abort_install
+      set -x
+    else
+      echo "OpenShift: No credentials given for RHN Classic; assuming already configured"
+    fi
   fi
 
-  if [[ "${CONF_RHN_USER}" && "${CONF_RHN_PASS}" ]]
+  if [ $rhn_creds_provided ]
   then
     # Enable the node or infrastructure channel to enable installing the release RPM
     repos=('rhel-x86_64-server-6-rhscl-1')
@@ -1377,7 +1379,7 @@ configure_rhn_channels()
 
 configure_rhsm_channels()
 {
-  if [[ "${CONF_RHN_USER}" && "${CONF_RHN_PASS}" ]]
+  if [ $rhn_creds_provided ]
   then
     set +x # don't log password
     echo "OpenShift: Register with RHSM"
@@ -3380,6 +3382,7 @@ set_defaults()
   #   echo declare -A valid_settings=\( $(grep -o 'CONF_[0-9A-Z_]\+' openshift.ks |sort -u |grep -v -F -e CONF_BAZ -e CONF_FOO |sed -e 's/.*/[&]=/') \)
 declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]= [CONF_ACTIVEMQ_ADMIN_PASSWORD]= [CONF_ACTIVEMQ_AMQ_USER_PASSWORD]= [CONF_ACTIVEMQ_HOSTNAME]= [CONF_ACTIVEMQ_REPLICANTS]= [CONF_AMQ_EXTRA_REPO]= [CONF_BIND_KEY]= [CONF_BIND_KEYALGORITHM]= [CONF_BIND_KEYSIZE]= [CONF_BIND_KEYVALUE]= [CONF_BIND_KRB_KEYTAB]= [CONF_BIND_KRB_PRINCIPAL]= [CONF_BROKER_AUTH_PRIV_KEY]= [CONF_BROKER_AUTH_SALT]= [CONF_BROKER_HOSTNAME]= [CONF_BROKER_IP_ADDR]= [CONF_BROKER_KRB_AUTH_REALMS]= [CONF_BROKER_KRB_SERVICE_NAME]= [CONF_BROKER_SESSION_SECRET]= [CONF_CARTRIDGES]= [CONF_CDN_LAYOUT]= [CONF_CDN_REPO_BASE]= [CONF_CONSOLE_SESSION_SECRET]= [CONF_DATASTORE_HOSTNAME]= [CONF_DATASTORE_REPLICANTS]= [CONF_DEFAULT_DISTRICTS]= [CONF_DEFAULT_GEAR_CAPABILITIES]= [CONF_DEFAULT_GEAR_SIZE]= [CONF_ISOLATE_GEARS]= [CONF_DISTRICT_FIRST_UID]= [CONF_DISTRICT_MAPPINGS]= [CONF_DOMAIN]= [CONF_ENABLE_SNI_PROXY]= [CONF_FORWARD_DNS]= [CONF_FUSE_EXTRA_REPO]= [CONF_HOSTS_DOMAIN]= [CONF_HOSTS_DOMAIN_KEYFILE]= [CONF_IDLE_INTERVAL]= [CONF_INSTALL_COMPONENTS]= [CONF_INSTALL_METHOD]= [CONF_INTERFACE]= [CONF_JBOSSEAP_EXTRA_REPO]= [CONF_JBOSSEWS_EXTRA_REPO]= [CONF_JBOSS_REPO_BASE]= [CONF_KEEP_HOSTNAME]= [CONF_KEEP_NAMESERVERS]= [CONF_MCOLLECTIVE_PASSWORD]= [CONF_MCOLLECTIVE_USER]= [CONF_METAPKGS]= [CONF_METRICS_INTERVAL]= [CONF_MONGODB_ADMIN_PASSWORD]= [CONF_MONGODB_ADMIN_USER]= [CONF_MONGODB_BROKER_PASSWORD]= [CONF_MONGODB_BROKER_USER]= [CONF_MONGODB_KEY]= [CONF_MONGODB_NAME]= [CONF_MONGODB_PASSWORD]= [CONF_MONGODB_REPLSET]= [CONF_NAMED_ENTRIES]= [CONF_NAMED_HOSTNAME]= [CONF_NAMED_IP_ADDR]= [CONF_NO_DATASTORE_AUTH_FOR_LOCALHOST]= [CONF_NODE_APACHE_FRONTEND]= [CONF_NODE_HOSTNAME]= [CONF_NODE_HOST_TYPE]= [CONF_NODE_IP_ADDR]= [CONF_NODE_LOG_CONTEXT]= [CONF_NODE_PROFILE]= [CONF_NODE_PROFILE_NAME]= [CONF_NO_NTP]= [CONF_NO_SCRAMBLE]= [CONF_OPENSHIFT_PASSWORD]= [CONF_OPENSHIFT_PASSWORD1]= [CONF_OPENSHIFT_USER]= [CONF_OPENSHIFT_USER1]= [CONF_OPTIONAL_REPO]= [CONF_OSE_ERRATA_BASE]= [CONF_OSE_EXTRA_REPO_BASE]= [CONF_OSE_REPO_BASE]= [CONF_PORTS_PER_GEAR]= [CONF_PROFILE_NAME]= [CONF_REPOS_BASE]= [CONF_RHEL_EXTRA_REPO]= [CONF_RHEL_OPTIONAL_REPO]= [CONF_RHEL_REPO]= [CONF_RHN_PASS]= [CONF_RHN_REG_ACTKEY]= [CONF_RHN_REG_NAME]= [CONF_RHN_REG_OPTS]= [CONF_RHN_REG_PASS]= [CONF_RHN_USER]= [CONF_RHSCL_EXTRA_REPO]= [CONF_RHSCL_REPO_BASE]= [CONF_ROUTING_PLUGIN]= [CONF_ROUTING_PLUGIN_PASS]= [CONF_ROUTING_PLUGIN_USER]= [CONF_SM_REG_NAME]= [CONF_SM_REG_PASS]= [CONF_SM_REG_POOL]= [CONF_SNI_FIRST_PORT]= [CONF_SNI_PROXY_PORTS]= [CONF_SYSLOG]= [CONF_VALID_GEAR_SIZES]= [CONF_YUM_EXCLUDE_PKGS]= )
 
+  set +x # don't log passwords
   for setting in "${!CONF_@}"
   do
     if ! [[ ${valid_settings[$setting]+1} ]]
@@ -3395,6 +3398,7 @@ declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS
       [[ ${!setting} ]] || abort_install "Setting is assigned an empty value: $setting"
     fi
   done
+  set -x
 
   # By default, we run do_all_actions, which performs all the steps of
   # a normal installation.
@@ -3486,6 +3490,11 @@ declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS
   CONF_RHN_USER="${CONF_RHN_USER:-${CONF_SM_REG_NAME:-$CONF_RHN_REG_NAME}}"
   set +x # don't log password
   CONF_RHN_PASS="${CONF_RHN_PASS:-${CONF_SM_REG_PASS:-$CONF_RHN_REG_PASS}}"
+  if [[ "${CONF_RHN_USER}" && "${CONF_RHN_PASS}" ]]; then
+    rhn_creds_provided=true
+  else
+    rhn_creds_provided=false
+  fi
   set -x
 
   # The domain name for the OpenShift Enterprise installation.
