@@ -27,7 +27,8 @@ SUBS_NAME = {UNKNOWN: '', RHSM: 'Red Hat Subscription Manager',
              RHN: 'RHN Classic or RHN Satellite', YUM: 'Yum'}
 VALID_SUBS = SUBS_NAME.keys()[1:]
 ATTACH_ENTITLEMENTS_URL = 'https://access.redhat.com/site/articles/522923'
-VALID_ROLES = ['node', 'broker', 'client', 'node-eap', 'node-eap-6.3', 'node-fuse', 'node-amq']
+EAP_ROLES = ['node-eap', 'node-eap-6.3', 'node-eap-6.4']
+VALID_ROLES = ['node', 'broker', 'client', 'node-fuse', 'node-amq'] + EAP_ROLES
 WORKING_YCM_NVR = ('yum', '3.2.29', '47.el6')
 
 def flatten_uniq(llist):
@@ -462,6 +463,8 @@ class OpenShiftYumValidator(object):
                                           (priority, repoid))
         self.committed_resolved_repos = self.resolved_repos.copy()
 
+    def _multiple_eap_roles(self):
+        return len(set(EAP_ROLES).intersection(self.opts.role)) > 1
 
     def _check_valid_pri(self, repos):
         bad_repos = [(repoid, self._get_pri(repoid)) for
@@ -506,30 +509,35 @@ class OpenShiftYumValidator(object):
             res = False
         return res
 
-    def _verify_jboss_eap63_priorities(self):
+    def _verify_jboss_eap_priorities(self):
         # Set non-specified/guessed EAP role to OTHER_PRIORITY since
         # they won't necessarily have package conflicts to trigger
         # priority shufflin' UNTIL IT'S TOO LATE!
         res = True
-        other_role = list(set(['node-eap', 'node-eap-6.3']).difference(set(self.opts.role)))
-        if len(other_role) > 1:
-            return res, []
-        try:
-            other_role = other_role[0]
-        except IndexError:
-            raise YumValidatorError('Both the node-eap and node-eap-6.3 roles '
-                                    'are set; they should be mutually '
-                                    'exclusive')
-        other_repos = set(self.rdb.find_repoids(role=other_role,
-                                              product='jboss'))
-        other_repos = list(other_repos.intersection(set(self.oscs.enabled_repoids())))
-        required_jboss_repos = self.blessed_repoids(enabled=True,
-                                                    required=True,
-                                                    product='jboss')
+        other_roles = list(set(EAP_ROLES).difference(self.opts.role))
+        d_cardinality = len(EAP_ROLES) - len(other_roles)
+        other_repos = set()
         repos_to_remove = []
-        for repoid in other_repos:
-            if not self.verify_repo_priority(repoid, required_jboss_repos):
-                repos_to_remove.append(repoid)
+        # more than 1 EAP role is selected
+        if d_cardinality > 1:
+            raise YumValidatorError('multiple node-eap* roles are set; these '
+                                    'roles are mutually exclusive')
+        # at least 1 EAP role is selected
+        elif d_cardinality > 0:
+            for other_role in other_roles:
+                other_repos = other_repos.union(self.rdb.find_repoids(
+                    role=other_role,
+                    product='jboss'))
+        # Don't do work if there's no repos to work on
+        if other_repos:
+            other_repos = list(other_repos.intersection(
+                self.oscs.enabled_repoids()))
+            required_jboss_repos = self.blessed_repoids(enabled=True,
+                                                        required=True,
+                                                        product='jboss')
+            for repoid in other_repos:
+                if not self.verify_repo_priority(repoid, required_jboss_repos):
+                    repos_to_remove.append(repoid)
         return res, repos_to_remove
 
     def verify_jboss_priorities(self, ose_repos, jboss_repos, rhel6_repos=None):
@@ -538,7 +546,7 @@ class OpenShiftYumValidator(object):
         advise accordingly
 
         """
-        res, repos_to_remove = self._verify_jboss_eap63_priorities()
+        res, repos_to_remove = self._verify_jboss_eap_priorities()
         jboss_repos = [repoid for repoid in jboss_repos if not (repoid in repos_to_remove)]
         min_pri = self._limit_pri(ose_repos)
         jboss_pri = self._limit_pri(jboss_repos, minpri=True)
@@ -830,31 +838,34 @@ class OpenShiftYumValidator(object):
             return False
         return True
 
-    def _guess_eap63(self):
-        # assume 'node-eap-6.3' role unless a 'node-eap' repo is
-        # already enabled and at higher (lower numeric) priority
-        eap_repos = set(self.rdb.find_repoids(role='node-eap',
-                                              product='jboss'))
-        eap63_repos = set(self.rdb.find_repoids(role='node-eap-6.3',
-                                                product='jboss'))
+    def _guess_eap(self):
+        en_eap_repos = {}
         enabled_rset = set(self.oscs.enabled_repoids())
-        eap_en = eap_repos.intersection(enabled_rset)
-        eap63_en = eap63_repos.intersection(enabled_rset)
-        if eap_en and eap63_en:
-            eap_repo_pri = self._limit_pri([self.oscs.repo_for_repoid(repoid)
-                                            for repoid in list(eap_en)], True)
-            eap63_repo_pri = self._limit_pri([self.oscs.repo_for_repoid(repoid)
-                                              for repoid in list(eap63_en)], True)
-            # eap63 has _lower_ (higher number) priority
-            if eap_repo_pri < eap63_repo_pri:
-                self.opts.role.remove('node-eap-6.3')
-            else:               # eap63 is equal or higher priority
-                self.opts.role.remove('node-eap')
-        elif eap_en:
-            self.opts.role.remove('node-eap-6.3')
-        else:                   # Neither repo is enabled, assume
-                                # node-eap-6.3
-            self.opts.role.remove('node-eap')
+        for role in EAP_ROLES:
+            repos = set(self.rdb.find_repoids(role=role, product='jboss'))
+            enabled = repos.intersection(enabled_rset)
+            if enabled:
+                en_eap_repos[role] = enabled
+        favored = None
+        # pick the role with the lowest-priority channel(s)
+        if len(en_eap_repos) > 1:
+            pri = {}
+            for role, enabled in en_eap_repos.iteritems():
+                pri[role] = self._limit_pri(
+                    [self.oscs.repo_for_repoid(repoid) for repoid in
+                     list(enabled)],
+                    True)
+            favored = min(pri, key=pri.get)
+        elif len(en_eap_repos) == 1: # pick the only role
+            favored = en_eap_repos.keys().pop()
+        else:
+            # pick the lowest-version pinned role detected
+            roles = [role for role in EAP_ROLES[1:] if role in en_eap_repos]
+            favored = roles[0]
+        unfavored = [role for role in EAP_ROLES if role != favored and
+                     role in self.opts.role]
+        for role in unfavored:
+            self.opts.role.remove(role)
 
     def guess_role(self):
         """Try to determine the system role by comparing installed packages to
@@ -886,9 +897,9 @@ class OpenShiftYumValidator(object):
             self.logger.error('No roles could be detected.')
             self.problem = True
             return False
-        elif 'node-eap-6.3' in self.opts.role and 'node-eap' in self.opts.role:
-            # We will detect both roles since they share a key_pkg
-            self._guess_eap63()
+        elif self._multiple_eap_roles():
+            # We will detect all EAP roles since they share a key_pkg
+            self._guess_eap()
         self.logger.warning('If the roles listed below are incorrect or '
                             'incomplete, please re-run this script with the '
                             'appropriate --role arguments')
@@ -899,7 +910,6 @@ class OpenShiftYumValidator(object):
     def validate_roles(self):
         """Check supplied roles against VALID_ROLES.
 
-        TODO: This probably isn't necessary any longer
         """
         if not self.opts.role:
             return True
@@ -909,13 +919,13 @@ class OpenShiftYumValidator(object):
                 self.logger.error('You have specified an invalid role: %s '
                                   'is not one of %s' % (role, VALID_ROLES))
                 return False
-        if 'node-eap-6.3' in self.opts.role and 'node-eap' in self.opts.role:
+        if self._multiple_eap_roles():
             # If the user has specified both, bail out
-            self.logger.info('You have specified --role=node-eap and '
-                             '--role=node-eap-6.3. Only one of these roles '
-                             'can be specified, as their associated '
-                             'repositories conflict. Please re-run the tool '
-                             'with only the appropriate roles specified.')
+            self.logger.info('You have specified multiple "node-eap" roles. '
+                             'Only one of these roles can be specified, as '
+                             'their associated repositories conflict. Please '
+                             're-run the tool with only the appropriate '
+                             'roles specified.')
             self.problem = True
             return False
         return True
@@ -959,7 +969,8 @@ class OpenShiftYumValidator(object):
             self.guess_role()
         if self.opts.role:
             self.opts.role = [xx.lower() for xx in self.opts.role]
-            for role in ['node-eap', 'node-eap-6.3', 'node-fuse', 'node-amq']:
+            for role in [nrole for nrole in VALID_ROLES
+                         if nrole[:4] == 'node']:
                 if role in self.opts.role and not 'node' in self.opts.role:
                     self.opts.role.append('node')
             if 'broker' in self.opts.role and not 'client' in self.opts.role:
