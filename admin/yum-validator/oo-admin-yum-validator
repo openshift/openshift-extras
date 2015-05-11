@@ -27,7 +27,7 @@ SUBS_NAME = {UNKNOWN: '', RHSM: 'Red Hat Subscription Manager',
              RHN: 'RHN Classic or RHN Satellite', YUM: 'Yum'}
 VALID_SUBS = SUBS_NAME.keys()[1:]
 ATTACH_ENTITLEMENTS_URL = 'https://access.redhat.com/site/articles/522923'
-EAP_ROLES = ['node-eap', 'node-eap-6.3', 'node-eap-6.4']
+EAP_ROLES = ['node-eap-6.3', 'node-eap-6.4'] + ['node-eap']
 VALID_ROLES = ['node', 'broker', 'client', 'node-fuse', 'node-amq'] + EAP_ROLES
 WORKING_YCM_NVR = ('yum', '3.2.29', '47.el6')
 
@@ -839,6 +839,9 @@ class OpenShiftYumValidator(object):
         return True
 
     def _guess_eap(self):
+        # This method depends on EAP_ROLES being ordered from
+        # lowest-version to highest-version pinned roles first, then
+        # the unpinned "current" role at the end.
         en_eap_repos = {}
         enabled_rset = set(self.oscs.enabled_repoids())
         for role in EAP_ROLES:
@@ -847,7 +850,8 @@ class OpenShiftYumValidator(object):
             if enabled:
                 en_eap_repos[role] = enabled
         favored = None
-        # pick the role with the lowest-priority channel(s)
+        # pick the lowest-version role with the lowest-priority
+        # channel(s)
         if len(en_eap_repos) > 1:
             pri = {}
             for role, enabled in en_eap_repos.iteritems():
@@ -855,13 +859,21 @@ class OpenShiftYumValidator(object):
                     [self.oscs.repo_for_repoid(repoid) for repoid in
                      list(enabled)],
                     True)
-            favored = min(pri, key=pri.get)
+                minpri = min(pri.itervalues())
+            # EAP_ROLES is ordered from lowest-version to highest,
+            # then "current"
+            for role in EAP_ROLES:
+                if role in pri and pri[role] == minpri:
+                    favored = role
+                    break
         elif len(en_eap_repos) == 1: # pick the only role
             favored = en_eap_repos.keys().pop()
         else:
             # pick the lowest-version pinned role detected
-            roles = [role for role in EAP_ROLES[1:] if role in en_eap_repos]
-            favored = roles[0]
+            for role in EAP_ROLES:
+                if role in self.opts.role:
+                    favored = role
+                    break
         unfavored = [role for role in EAP_ROLES if role != favored and
                      role in self.opts.role]
         for role in unfavored:
