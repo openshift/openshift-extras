@@ -1258,7 +1258,7 @@ YUM
 configure_cart_repos()
 { # add cartridge (or dependency) repo as needed
   local -A url=(
-          [jbosseap]="${jboss_repo_base}/jbeap/${jbosseap_version:-6}/os"
+          [jbosseap]="${jboss_repo_base}/jbeap/${jbosseap_version}/os"
           [jbossews]="${jboss_repo_base}/jbews/2/os"
     [fuse_cartridge]="${jboss_repo_base}/ose-jbossfuse/2.2/os"
      [amq_cartridge]="${jboss_repo_base}/ose-jbossamq/2.2/os"
@@ -1332,9 +1332,7 @@ configure_subscription()
    need_infra_repo && roles="$roles --role broker"
    need_client_tools_repo && roles="$roles --role client"
    need_node_repo && roles="$roles --role node"
-   need_jbosseap_cartridge_repo && { [[ -n "${jbosseap_version}" ]] && \
-                                         roles="$roles --role node-eap-${jbosseap_version}" || \
-                                             roles="$roles --role node-eap" ; }
+   need_jbosseap_cartridge_repo && roles="$roles --role ${jbosseap_yumvalidator_role}"
    need_fuse_cartridge_repo && roles="$roles --role node-fuse"
    need_amq_cartridge_repo && roles="$roles --role node-amq"
    oo-admin-yum-validator -o 2.2 --fix-all $roles # when fixing, rc is always false
@@ -1375,7 +1373,7 @@ configure_rhn_channels()
     fi
     need_node_repo && repos+=('rhel-x86_64-server-6-ose-2.2-node' 'jb-ews-2-x86_64-server-6-rpm')
     need_client_tools_repo && repos+=('rhel-x86_64-server-6-ose-2.2-rhc')
-    need_jbosseap_cartridge_repo && repos+=("rhel-x86_64-server-${jbosseap_version:-6}-ose-2.2-jbosseap" "jbappplatform-${jbosseap_version:-6}-x86_64-server-6-rpm")
+    need_jbosseap_cartridge_repo && repos+=("rhel-x86_64-server-${jbosseap_version}-ose-2.2-jbosseap" "jbappplatform-${jbosseap_version}-x86_64-server-6-rpm")
     need_fuse_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.2-jbossfuse')
     need_amq_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.2-jbossamq')
 
@@ -3461,8 +3459,14 @@ declare -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS
   jbosseap_version="${CONF_JBOSSEAP_VERSION:-6.3}"
   # Check jbosseap_version for validity
   case "${jbosseap_version}" in
-    (6.3|6.4) jbosseap_version="${jbosseap_version}" ;;
-    (current|6) jbosseap_version="" ;;
+      (6.3|6.4)
+          jbosseap_version="${jbosseap_version}"
+          jbosseap_yumvalidator_role="node-eap-${jbosseap_version}"
+          ;;
+      (current|6)
+          jbosseap_version="6"
+          jbosseap_yumvalidator_role="node-eap"
+          ;;
     (*) abort_install "Unrecognized JBoss EAP channel version: ${CONF_JBOSSEAP_VERSION}" ;;
   esac
 
