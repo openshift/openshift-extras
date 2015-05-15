@@ -1327,7 +1327,7 @@ configure_rhn_channels()
     fi
     need_node_repo && repos+=('rhel-x86_64-server-6-ose-2.2-node' 'jb-ews-2-x86_64-server-6-rpm')
     need_client_tools_repo && repos+=('rhel-x86_64-server-6-ose-2.2-rhc')
-    need_jbosseap_cartridge_repo && repos+=("rhel-x86_64-server-${jbosseap_version}-ose-2.2-jbosseap" "jbappplatform-${jbosseap_version}-x86_64-server-6-rpm")
+    need_jbosseap_cartridge_repo && repos+=("rhel-x86_64-server-6-ose-2.2-jbosseap" "jbappplatform-${jbosseap_version}-x86_64-server-6-rpm")
     need_fuse_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.2-jbossfuse')
     need_amq_cartridge_repo && repos+=('rhel-x86_64-server-6-ose-2.2-jbossamq')
 
