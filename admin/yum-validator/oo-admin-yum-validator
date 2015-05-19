@@ -75,7 +75,7 @@ class OpenShiftYumValidator(object):
     def _setup_logger(self):
         self.opts.loglevel = logging.INFO
         # TODO: log to file if specified, with requested severity
-        self.logger = logging.getLogger()
+        self.logger = logging.getLogger(name='oo-admin-yum-validator')
         self.logger.setLevel(self.opts.loglevel)
         ch = logging.StreamHandler(sys.stdout)
         ch.setLevel(self.opts.loglevel)
