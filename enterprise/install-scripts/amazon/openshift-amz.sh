@@ -2106,7 +2106,7 @@ configure_hosts_dns()
     node && add_host_to_zone "$node_hostname" "$node_ip_addr"
     activemq && add_host_to_zone "$activemq_hostname" "$cur_ip_addr"
     datastore && add_host_to_zone "$datastore_hostname" "$cur_ip_addr"
-    router && add_host_to_zone "$router_hostname" "$cur_ip_addr"
+    router && add_host_to_zone "$router_hostname" "$cur_ip_addr" "$domain"
   elif [[ "$named_entries" =~ : ]]
   then
     # Add any A records for host:ip pairs passed in via CONF_NAMED_ENTRIES
@@ -2366,6 +2366,8 @@ configure_routing_daemon()
   set_routing_daemon CLOUD_DOMAIN "$domain"
 
   [[ "$router" = nginx ]] && service openshift-routing-daemon start
+
+  return 0
 }
 
 configure_routing_plugin()
@@ -2866,6 +2868,13 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
     do
       eval "$component() { :; }"
     done
+  fi
+
+  if router
+  then
+    if broker || node
+    then abort_install 'The router component cannot be installed on the same host as the broker or node components.'
+    fi
   fi
 
   # Following are some settings used in subsequent steps.
