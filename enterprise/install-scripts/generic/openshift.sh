@@ -1694,6 +1694,8 @@ EOF
   # which the broker uses for both HTTP and HTTPS connetions.  Usually, one will
   # use an https: URL for downloadable cartridges, so we put that here.
   broker && set_broker HTTP_PROXY "$outgoing_https_proxy"
+
+  return 0
 }
 
 # Install broker-specific packages.
