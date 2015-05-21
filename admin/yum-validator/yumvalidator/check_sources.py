@@ -365,9 +365,13 @@ class CheckSources(object):
                         init_dep_injection()
                     from subscription_manager.repolib import RepoActionInvoker
                     self._repo_act_invoker = RepoActionInvoker()
+                    # Check if is_managed() works
+                    self._repo_act_invoker.is_managed('this_is-not_a-real_repo')
             except ImportError:
                 self._repo_act_invoker = None
             except SubscriptionManagerNotRegisteredError:
+                self._repo_act_invoker = None
+            except AttributeError: # work around broken repolib implementations
                 self._repo_act_invoker = None
         return self._repo_act_invoker
 
