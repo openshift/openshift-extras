@@ -403,7 +403,7 @@ gpgcheck=0
 sslverify=false
 priority=${priority[$repo]}
 sslverify=false
-exclude=${exclude[$repo]} $yum_exclude_pkgs
+exclude=${exclude[$repo]-} $yum_exclude_pkgs
 
 YUM
     fi

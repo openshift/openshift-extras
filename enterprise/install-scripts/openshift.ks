@@ -1422,7 +1422,7 @@ enabled=1
 gpgcheck=0
 priority=${priority[$repo]}
 sslverify=false
-exclude=${exclude[$repo]} $yum_exclude_pkgs
+exclude=${exclude[$repo]-} $yum_exclude_pkgs
 
 YUM
     fi
