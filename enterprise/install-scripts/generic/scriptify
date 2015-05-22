@@ -4,7 +4,8 @@
 # and make sure that the last command returns true.
 sed -e '1i #!/bin/bash -x
 /^#Begin Kickstart Script/,/^set -x/ d
-/^%end/ c:
+/^%end/ c \
+exit 0
 ' $1 > $2
 
 sed -i -e 's/^\s*environment=ks/environment=sh/' $2

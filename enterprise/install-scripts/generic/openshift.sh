@@ -4687,5 +4687,5 @@ date +%Y-%m-%d-%H:%M:%S
 
 "$PASSWORDS_TO_DISPLAY" && display_passwords
 
-:
+exit 0
 
