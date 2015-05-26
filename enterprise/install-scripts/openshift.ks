@@ -522,7 +522,8 @@
 # routing_plugin / CONF_ROUTING_PLUGIN
 # routing_plugin_user / CONF_ROUTING_PLUGIN_USER
 # routing_plugin_pass / CONF_ROUTING_PLUGIN_PASS
-#   Default: do not install the sample routing plugin
+#   Default: install the routing plugin if CONF_INSTALL_COMPONENTS includes
+#   "broker" and CONF_ROUTER is non-empty; otherwise, do not install it.
 #   When enabled, the routing plugin publishes routing events to a topic
 #   on the ActiveMQ instance(s) used by OpenShift Enterprise.
 #   For more info: http://red.ht/1eG9lHr
@@ -3384,9 +3385,13 @@ configure_routing_daemon()
   set_routing_daemon ACTIVEMQ_PASSWORD "$routing_plugin_pass"
   set_routing_daemon CLOUD_DOMAIN "$domain"
 
-  [[ "$router" = nginx ]] && service openshift-routing-daemon start
+  # Comment out any settings that are not related to the configured
+  # load-balancer.
+  [[ "$router" != f5 ]] && sed -i -e 's/^\(UPDATE_INTERVAL\|MONITOR_\|VIRTUAL_\|BIGIP_\|LBAAS_\)/#&/' '/etc/openshift/routing-daemon.conf'
+  [[ "$router" != nginx ]] && sed -i -e 's/^NGINX_/#&/' '/etc/openshift/routing-daemon.conf'
 
-  return 0
+  chkconfig openshift-routing-daemon on
+  RESTART_NEEDED=true
 }
 
 configure_routing_plugin()
@@ -3447,17 +3452,8 @@ configure_router()
       firewall_allow[https]='tcp:443'
       firewall_allow[http]='tcp:80'
       setsebool -P httpd_can_network_connect=true
-      # Don't try to start nginx unless /etc/pki/tls/certs/node.example.com.crt
-      # and /etc/pki/tls/private/node.example.com.key exist because nginx will
-      # fail to start without them.
-      #
-      # These files should be copies of /etc/pki/tls/certs/localhost.crt and
-      # /etc/pki/tls/private/localhost.key, respectively, from a node host.
-      if [[ -e '/etc/pki/tls/certs/node.example.com.crt' &&
-            -e '/etc/pki/tls/private/node.example.com.key' ]]
-      then
-        service nginx16-nginx start
-      fi
+      chkconfig nginx16-nginx on
+      RESTART_NEEDED=true
       ;;
   esac
 }
@@ -4224,8 +4220,13 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
   broker && openshift_user1="${CONF_OPENSHIFT_USER1:-demo}"
   broker && assign_pass openshift_password1 changeme CONF_OPENSHIFT_PASSWORD1
 
+  enable_ha="${CONF_ENABLE_HA-false}"
+  router="${CONF_ROUTER-}"
+
   # auth info for the topic from the sample routing SPI plugin
-  enable_routing_plugin="${CONF_ROUTING_PLUGIN:-false}"
+  local default_enable_routing_plugin=false
+  broker && [[ -n "$router" ]] && default_enable_routing_plugin=true
+  enable_routing_plugin="${CONF_ROUTING_PLUGIN:-$default_enable_routing_plugin}"
   routing_plugin_user="${CONF_ROUTING_PLUGIN_USER:-routinginfo}"
   assign_pass routing_plugin_pass routinginfopasswd CONF_ROUTING_PLUGIN_PASS
 
@@ -4234,9 +4235,6 @@ local -A valid_settings=( [CONF_ABORT_ON_UNRECOGNIZED_SETTINGS]= [CONF_ACTIONS]=
 
   outgoing_http_proxy="${CONF_HTTP_PROXY-}"
   outgoing_https_proxy="${CONF_HTTPS_PROXY-}"
-
-  enable_ha="${CONF_ENABLE_HA-false}"
-  router="${CONF_ROUTER-}"
 
   # cartridge dependency metapackages
   metapkgs="${CONF_METAPKGS:-recommended}"
@@ -4561,6 +4559,23 @@ restart_services()
   node && service openshift-node-web-proxy restart
   node && is_true "$enable_sni_proxy" && service openshift-sni-proxy restart
   node && service openshift-watchman restart
+
+  if router && [[ "$router" = nginx ]]
+  then
+    service openshift-routing-daemon restart
+
+    # Don't try to start nginx unless /etc/pki/tls/certs/node.example.com.crt
+    # and /etc/pki/tls/private/node.example.com.key exist because nginx will
+    # fail to start without them.
+    #
+    # These files should be copies of /etc/pki/tls/certs/localhost.crt and
+    # /etc/pki/tls/private/localhost.key, respectively, from a node host.
+    if [[ -e '/etc/pki/tls/certs/node.example.com.crt' &&
+          -e '/etc/pki/tls/private/node.example.com.key' ]]
+    then
+      service nginx16-nginx restart
+    fi
+  fi
 
   # Ensure OpenShift facts are updated.
   node && '/etc/cron.minutely/openshift-facts'
