@@ -3718,7 +3718,7 @@ do
   [[ "$(type -t "$action")" = function ]] || abort_install "Invalid action: $action"
   "$action"
 done
-date +%Y-%m-%d-%H:%M:%S
+date '+%Y-%m-%d-%H:%M:%S'
 
 # In the case of a kickstart, some services will not be able to start, and the
 # host will automatically reboot anyway after the kickstart script completes.
