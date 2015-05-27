@@ -454,7 +454,7 @@
 
 # interface / CONF_INTERFACE
 #   Default: eth0
-#   The network device to configure.  Used by configure_network, 
+#   The network device to configure.  Used by configure_network,
 #   configure_dns_resolution, and configure_node
 #CONF_INTERFACE="eth0"
 
@@ -2866,7 +2866,7 @@ $routingPolicy
 
         Take a look at \${ACTIVEMQ_HOME}/conf/jetty.xml for more details
 
-        If enabling the web console, you should make sure to require 
+        If enabling the web console, you should make sure to require
         authentication in jetty.xml and configure the admin/user
         passwords in jetty-realm.properties.
 
@@ -3295,7 +3295,7 @@ configure_httpd_auth()
     do
       sed -e "s#KrbServiceName.*#KrbServiceName ${broker_krb_service_name}#" \
           -e "s#KrbAuthRealms.*#KrbAuthRealms ${broker_krb_auth_realms}#" \
-	        "$d/openshift-origin-auth-remote-user-kerberos.conf.sample" \
+          "$d/openshift-origin-auth-remote-user-kerberos.conf.sample" \
           > "$d/openshift-origin-auth-remote-user-kerberos.conf"
     done
     return
