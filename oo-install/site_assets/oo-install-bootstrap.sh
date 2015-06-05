@@ -60,6 +60,7 @@ cd ${TMPDIR}/INSTALLPKGNAME
 source ./bin/activate
 echo "Preparing to install.  This can take a minute or two..."
 pip install --no-index -f file:///$(readlink -f deps) ansible 2>&1 > $OO_INSTALL_LOG
+virtualenv --relocatable .
 echo "Done!"
 
 ansible --version
@@ -71,7 +72,5 @@ else
   echo "oo-install exited; removing temporary assets."
   rm -rf ${TMPDIR}INSTALLPKGNAME*
 fi
-
-
 
 exit

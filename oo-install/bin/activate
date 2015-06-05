@@ -39,7 +39,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="/root/ootest/oo-install"
+VIRTUAL_ENV=$( cd "$( dirname "${BASH_SOURCE[0]}" )"/../ && pwd )
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"

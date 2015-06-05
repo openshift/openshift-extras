@@ -1,4 +1,7 @@
-#!/root/ootest/oo-install/bin/python
+#!/usr/bin/env python2.7
+
+import os; activate_this=os.path.join(os.path.dirname(os.path.realpath(__file__)), 'activate_this.py'); exec(compile(open(activate_this).read(), activate_this, 'exec'), dict(__file__=activate_this)); del os, activate_this
+
 # EASY-INSTALL-ENTRY-SCRIPT: 'setuptools==0.9.8','console_scripts','easy_install'
 __requires__ = 'setuptools==0.9.8'
 import sys
