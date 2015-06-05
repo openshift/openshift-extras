@@ -54,8 +54,6 @@ else
   clear
 fi
 
-echo "Hello, OpenShift..."
-
 cd ${TMPDIR}/INSTALLPKGNAME
 source ./bin/activate
 echo "Preparing to install.  This can take a minute or two..."
