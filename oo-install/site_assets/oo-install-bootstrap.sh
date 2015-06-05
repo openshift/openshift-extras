@@ -6,6 +6,7 @@ cmdlnargs="$@"
 : ${OO_INSTALL_KEEP_ASSETS:="false"}
 : ${OO_INSTALL_CONTEXT:="INSTALLCONTEXT"}
 : ${TMPDIR:=/tmp}
+: ${OO_INSTALL_LOG:=${TMPDIR}/INSTALLPKGNAME.log}
 [[ $TMPDIR != */ ]] && TMPDIR="${TMPDIR}/"
 
 if [ $OO_INSTALL_CONTEXT != 'origin_vm' ]
@@ -53,6 +54,22 @@ else
   clear
 fi
 
-# TODO
-echo "Hello, OpenShift"
+echo "Hello, OpenShift..."
+
+cd ${TMPDIR}/INSTALLPKGNAME
+source ./bin/activate
+echo "Preparing to install.  This can take a minute or two..."
+pip install --no-index -f file:///$(readlink -f deps) ansible 2>&1 > $OO_INSTALL_LOG
+echo "Done!"
+
+if [ $OO_INSTALL_KEEP_ASSETS == 'true' ]
+then
+  echo "oo-install exited; keeping temporary assets in ${TMPDIR}"
+else
+  echo "oo-install exited; removing temporary assets."
+  rm -rf ${TMPDIR}INSTALLPKGNAME*
+fi
+
+
+
 exit
