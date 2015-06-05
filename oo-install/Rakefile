@@ -64,13 +64,13 @@ task :package do
     },
     { :version => 'ose',
       :version_text => 'OpenShift Enterprise 3.0',
-      #:ose_launcher => 'https://raw.githubusercontent.com/openshift/openshift-extras/enterprise-2.2/enterprise/install-scripts/generic/openshift.sh',
+      :ansible_code => 'https://github.com/detiber/openshift-ansible/archive/v3-beta4.tar.gz',
       :context => :ose,
       :branch => 'enterprise-3.0',
     },
     { :version => 'ose-3.0',
       :version_text => 'OpenShift Enterprise 3.0',
-      #:ose_launcher => 'https://raw.githubusercontent.com/openshift/openshift-extras/enterprise-2.2/enterprise/install-scripts/generic/openshift.sh',
+      :ansible_code => 'https://github.com/detiber/openshift-ansible/archive/v3-beta4.tar.gz',
       :context => :ose,
       :branch => 'enterprise-3.0',
     },
@@ -180,6 +180,15 @@ task :package do
       end
       File.open(ose_launcher_path, 'w') { |file| file.write(@ose_launchers[launcher_url]) }
       File.chmod(0755, ose_launcher_path)
+    end
+
+    if (not build[:ansible_code].nil?)
+      puts "Fetching ansible code from: #{build[:ansible_code]}"
+      `curl -L #{build[:ansible_code]} | tar -C #{@tmpdir}/#{pkgname} -xvz`
+      if not $?.exitstatus == 0
+        puts "Failed to get #{build[:ansible_code]}\nExiting."
+        exit 1
+      end
     end
 
     # Zip up the source and copy it to the package dir
