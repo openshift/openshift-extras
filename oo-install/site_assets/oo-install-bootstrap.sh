@@ -62,6 +62,8 @@ echo "Preparing to install.  This can take a minute or two..."
 pip install --no-index -f file:///$(readlink -f deps) ansible 2>&1 > $OO_INSTALL_LOG
 echo "Done!"
 
+ansible --version
+
 if [ $OO_INSTALL_KEEP_ASSETS == 'true' ]
 then
   echo "oo-install exited; keeping temporary assets in ${TMPDIR}"
