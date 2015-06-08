@@ -57,9 +57,9 @@ fi
 cd ${TMPDIR}/INSTALLPKGNAME
 source ./bin/activate
 echo "Preparing to install.  This can take a minute or two..."
-pip install --no-index -f file:///$(readlink -f deps) ansible 2>&1 > $OO_INSTALL_LOG
-pip install --no-index src 2>&1 > $OO_INSTALL_LOG
-virtualenv --relocatable . 2>&1 > $OO_INSTALL_LOG
+pip install --no-index -f file:///$(readlink -f deps) ansible 2>&1 >> $OO_INSTALL_LOG
+pip install --no-index src 2>&1 >> $OO_INSTALL_LOG
+virtualenv --relocatable . 2>&1 >> $OO_INSTALL_LOG
 echo "Done!"
 
 oo-install
