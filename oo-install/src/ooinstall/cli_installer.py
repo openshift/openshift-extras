@@ -2,7 +2,6 @@ import click
 import re
 import install_transactions
 
-# Shamelessly stolen from http://stackoverflow.com/a/2532344
 def is_valid_hostname(hostname):
     if len(hostname) > 255:
         return False
