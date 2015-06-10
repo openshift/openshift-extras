@@ -1,5 +1,4 @@
 import click
-import netaddr
 import re
 import install_transactions
 
