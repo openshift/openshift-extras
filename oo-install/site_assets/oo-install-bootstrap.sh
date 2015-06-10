@@ -60,6 +60,9 @@ virtualenv ${TMPDIR}/INSTALLPKGNAME 2>&1 >> $OO_INSTALL_LOG
 cd ${TMPDIR}/INSTALLPKGNAME 2>&1 >> $OO_INSTALL_LOG
 source ./bin/activate 2>&1 >> $OO_INSTALL_LOG
 pip install --no-index -f file:///$(readlink -f deps) ansible 2>&1 >> $OO_INSTALL_LOG
+
+# TODO: these deps should technically be handled as part of installing ooinstall
+pip install --no-index -f file:///$(readlink -f deps) click 2>&1 >> $OO_INSTALL_LOG
 pip install --no-index ./src/ 2>&1 >> $OO_INSTALL_LOG
 echo "Done!"
 
