@@ -61,6 +61,9 @@ class CLIInstaller:
         install_transactions.default_facts(self.hosts)
 
 
-if __name__ == '__main__':
+def main():
     cli_installer = CLIInstaller()
     cli_installer.main()
+
+if __name__ == '__main__':
+    main()

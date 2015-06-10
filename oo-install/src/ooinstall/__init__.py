@@ -1,4 +1,6 @@
+import cli_installer
 
 def main():
     """Entry point for the application script"""
-    print("Call your main application code here")
+    print("Here goes nothing!")
+    cli_installer.main()
