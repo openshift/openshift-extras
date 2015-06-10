@@ -7,6 +7,7 @@ cmdlnargs="$@"
 : ${OO_INSTALL_CONTEXT:="INSTALLCONTEXT"}
 : ${TMPDIR:=/tmp}
 : ${OO_INSTALL_LOG:=${TMPDIR}/INSTALLPKGNAME.log}
+: ${OO_ANSIBLE_DIRECTORY:=${TMPDIR}/INSTALLPKGNAME/openshift-ansible-3-beta4/}
 [[ $TMPDIR != */ ]] && TMPDIR="${TMPDIR}/"
 
 if [ $OO_INSTALL_CONTEXT != 'origin_vm' ]
@@ -62,8 +63,8 @@ pip install --no-index -f file:///$(readlink -f deps) ansible 2>&1 >> $OO_INSTAL
 pip install --no-index ./src/ 2>&1 >> $OO_INSTALL_LOG
 echo "Done!"
 
-oo-install
 ansible --version
+oo-install
 
 if [ $OO_INSTALL_KEEP_ASSETS == 'true' ]
 then
