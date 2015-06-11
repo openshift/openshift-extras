@@ -2,6 +2,7 @@ import click
 import re
 import os
 from ooinstall import install_transactions
+from ooinstall import OOConfig
 
 def validate_ansible_dir(ctx, param, path):
     if not path:
@@ -79,6 +80,7 @@ def collect_hosts():
 #     cli_installer.main()
 
 @click.command()
+@click.option('--configuration', '-c', type=click.Path(file_okay=True, dir_okay=False, writable=True, readable=True), default='~/.openshift/v3/installer.cfg.yml')
 @click.option('--ansible-directory',
               '-a',
               type=click.Path(exists=True,
@@ -86,13 +88,22 @@ def collect_hosts():
                               dir_okay=True,
                               writable=True,
                               readable=True),
-              callback=validate_ansible_dir,
+              # callback=validate_ansible_dir,
               envvar='OO_ANSIBLE_DIRECTORY')
 @click.option('--host', '-h', multiple=True, callback=validate_hostname)
-def main(ansible_directory, host):
+def main(configuration, ansible_directory, host):
+    print 'configuration! {}'.format(configuration)
+    oo_cfg = OOConfig(configuration)
+    print oo_cfg
+    if not ansible_directory:
+        ansible_directory = oo_cfg.ansible_directory
+    validate_ansible_dir(None, None, ansible_directory)
     install_transactions.set_ansible_dir(ansible_directory)
     if not host:
-        host = collect_hosts()
+        if oo_cfg.hosts:
+            host = oo_cfg.hosts
+        else:
+            host = collect_hosts()
     install_transactions.default_facts(host)
 
 if __name__ == '__main__':
