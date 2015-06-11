@@ -1,7 +1,8 @@
 import subprocess
 
-import os
-ANSIBLE_DIR=os.environ['OO_ANSIBLE_DIRECTORY'] # DO THIS BETTER
+def set_ansible_dir(ansible_dir):
+    global ANSIBLE_DIR
+    ANSIBLE_DIR = ansible_dir
 
 def default_facts(hosts):
     global ANSIBLE_DIR
