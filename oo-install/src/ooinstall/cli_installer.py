@@ -1,6 +1,7 @@
 import click
 import re
 import os
+import sys
 from ooinstall import install_transactions
 from ooinstall import OOConfig
 
@@ -80,7 +81,12 @@ def collect_hosts():
 #     cli_installer.main()
 
 @click.command()
-@click.option('--configuration', '-c', type=click.Path(file_okay=True, dir_okay=False, writable=True, readable=True), default='~/.openshift/v3/installer.cfg.yml')
+@click.option('--configuration', '-c',
+              type=click.Path(file_okay=True,
+                              dir_okay=False,
+                              writable=True,
+                              readable=True),
+              default=None)
 @click.option('--ansible-directory',
               '-a',
               type=click.Path(exists=True,
@@ -92,16 +98,18 @@ def collect_hosts():
               envvar='OO_ANSIBLE_DIRECTORY')
 @click.option('--host', '-h', multiple=True, callback=validate_hostname)
 def main(configuration, ansible_directory, host):
+    print 'sys.prefix: {}'.format(sys.prefix)
+    print 'os.path.dirname(__file__): {}'.format(os.path.dirname(__file__))
     print 'configuration! {}'.format(configuration)
     oo_cfg = OOConfig(configuration)
-    print oo_cfg
+    print oo_cfg.settings
     if not ansible_directory:
-        ansible_directory = oo_cfg.ansible_directory
+        ansible_directory = oo_cfg.settings.get('ansible_directory', '')
     validate_ansible_dir(None, None, ansible_directory)
     install_transactions.set_ansible_dir(ansible_directory)
     if not host:
-        if oo_cfg.hosts:
-            host = oo_cfg.hosts
+        if oo_cfg.settings.get('hosts'):
+            host = oo_cfg.settings['hosts']
         else:
             host = collect_hosts()
     install_transactions.default_facts(host)
