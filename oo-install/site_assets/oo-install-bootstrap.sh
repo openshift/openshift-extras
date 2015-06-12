@@ -7,7 +7,7 @@ cmdlnargs="$@"
 : ${OO_INSTALL_CONTEXT:="INSTALLCONTEXT"}
 : ${TMPDIR:=/tmp}
 : ${OO_INSTALL_LOG:=${TMPDIR}/INSTALLPKGNAME.log}
-: ${OO_ANSIBLE_DIRECTORY:=${TMPDIR}/INSTALLPKGNAME/openshift-ansible-3-beta4/}
+: ${OO_ANSIBLE_DIRECTORY:=${TMPDIR}/INSTALLPKGNAME/openshift-ansible-rc/}
 export OO_ANSIBLE_DIRECTORY
 [[ $TMPDIR != */ ]] && TMPDIR="${TMPDIR}/"
 
