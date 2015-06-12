@@ -98,20 +98,22 @@ def collect_hosts():
               envvar='OO_ANSIBLE_DIRECTORY')
 @click.option('--host', '-h', multiple=True, callback=validate_hostname)
 def main(configuration, ansible_directory, host):
-    print 'sys.prefix: {}'.format(sys.prefix)
-    print 'os.path.dirname(__file__): {}'.format(os.path.dirname(__file__))
-    print 'configuration! {}'.format(configuration)
     oo_cfg = OOConfig(configuration)
     print oo_cfg.settings
+    # TODO - Config settings precedence needs to be handled more generally
     if not ansible_directory:
         ansible_directory = oo_cfg.settings.get('ansible_directory', '')
+    else:
+        oo_cfg.settings['ansible_directory'] = ansible_directory
     validate_ansible_dir(None, None, ansible_directory)
-    install_transactions.set_ansible_dir(ansible_directory)
+    install_transactions.set_config(oo_cfg)
     if not host:
         if oo_cfg.settings.get('hosts'):
             host = oo_cfg.settings['hosts']
         else:
             host = collect_hosts()
+    oo_cfg.settings['hosts'] = host
+    oo_cfg.save_to_disk()
     install_transactions.default_facts(host)
 
 if __name__ == '__main__':
