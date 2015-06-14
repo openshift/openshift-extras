@@ -76,10 +76,6 @@ def collect_hosts():
             break
     return hosts
 
-# def main():
-#     cli_installer = CLIInstaller()
-#     cli_installer.main()
-
 @click.command()
 @click.option('--configuration', '-c',
               type=click.Path(file_okay=True,
@@ -96,25 +92,47 @@ def collect_hosts():
                               readable=True),
               # callback=validate_ansible_dir,
               envvar='OO_ANSIBLE_DIRECTORY')
-@click.option('--host', '-h', multiple=True, callback=validate_hostname)
-def main(configuration, ansible_directory, host):
+@click.option('--ansible-config',
+              type=click.Path(file_okay=True,
+                              dir_okay=False,
+                              writable=True,
+                              readable=True),
+              default=None)
+@click.option('--unattended', '-u', is_flag=True, default=False)
+# Note - the 'hosts' argument (str with no leading dash) sets the name
+# of the parameter passed to main(). THIS WAS NOT CLEAR in the click
+# documentation (or I'm too silly to find it)
+@click.option('--host', '-h', 'hosts', multiple=True, callback=validate_hostname)
+def main(configuration, ansible_directory, ansible_config, unattended, hosts):
+    # print 'configuration: {}'.format(configuration)
+    # print 'ansible_directory: {}'.format(ansible_directory)
+    # print 'ansible_config: {}'.format(ansible_config)
+    # print 'unattended: {}'.format(unattended)
+    # print 'hosts: {}'.format(hosts)
+
     oo_cfg = OOConfig(configuration)
-    print oo_cfg.settings
     # TODO - Config settings precedence needs to be handled more generally
+    print oo_cfg
     if not ansible_directory:
         ansible_directory = oo_cfg.settings.get('ansible_directory', '')
     else:
         oo_cfg.settings['ansible_directory'] = ansible_directory
     validate_ansible_dir(None, None, ansible_directory)
+    oo_cfg.ansible_directory = ansible_directory
     install_transactions.set_config(oo_cfg)
-    if not host:
-        if oo_cfg.settings.get('hosts'):
-            host = oo_cfg.settings['hosts']
+    hosts = oo_cfg.settings.setdefault('hosts', hosts)
+    if not hosts:
+        if unattended:
+            raise click.BadOptionUsage('host',
+                                       'For unattended installs, hosts must '
+                                       'be specified on the command line or '
+                                       'from the config file '
+                                       '{}'.format(oo_cfg.config_path))
         else:
-            host = collect_hosts()
-    oo_cfg.settings['hosts'] = host
+            hosts = collect_hosts()
+    oo_cfg.settings['hosts'] = hosts
     oo_cfg.save_to_disk()
-    install_transactions.default_facts(host)
+    install_transactions.default_facts(hosts)
 
 if __name__ == '__main__':
     main()
