@@ -154,9 +154,9 @@ def main(configuration, ansible_playbook_directory, ansible_config, unattended, 
     oo_cfg.settings['masters'] = masters
     oo_cfg.settings['nodes'] = nodes
     oo_cfg.save_to_disk()
-    # TODO: Is this the best way to get a unique concatenation of two lists?
-    hosts = list(set(masters + nodes))
-    install_transactions.default_facts(hosts)
+    install_transactions.default_facts(masters, nodes)
+    install_transactions.generate_default_master_vars(masters)
+    #install_transactions.generate_default_node_vars(nodes)
 
 if __name__ == '__main__':
     main()
