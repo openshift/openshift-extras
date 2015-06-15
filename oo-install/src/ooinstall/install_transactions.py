@@ -12,11 +12,14 @@ def default_facts(masters, nodes):
     base_inventory = open(base_inventory_path, 'w')
     base_inventory.write('# This is the base inventory used for obtaining \n'
                          '# default facts from target systems\n')
-    base_inventory.write('\n[masters]')
+    base_inventory.write('\n[OSEv3:children]\nmasters\nnodes\n')
+    base_inventory.write('\n[OSEv3:vars]\n')
+    base_inventory.write('ansible_ssh_user={}\n'.format(CFG.ansible_ssh_user))
+    base_inventory.write('\n[masters]\n')
     for hostname in masters:
         base_inventory.write('{}\n'.format(hostname))
 
-    base_inventory.write('\n[nodes]')
+    base_inventory.write('\n[nodes]\n')
     for hostname in nodes:
         base_inventory.write('{}\n'.format(hostname))
     base_inventory.close()

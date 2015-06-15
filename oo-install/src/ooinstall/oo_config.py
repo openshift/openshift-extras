@@ -25,6 +25,7 @@ class OOConfig(object):
         os.environ.get('XDG_CONFIG_HOME',
                        os.environ['HOME'] + '/.config/') + '/openshift/')
     default_file = '/installer.cfg.yml'
+    ansible_ssh_user = 'root'
 
     def __init__(self, config_path):
         if config_path:
