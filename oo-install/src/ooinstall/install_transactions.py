@@ -14,7 +14,8 @@ def default_facts(masters, nodes):
                          '# default facts from target systems\n')
     base_inventory.write('\n[OSEv3:children]\nmasters\nnodes\n')
     base_inventory.write('\n[OSEv3:vars]\n')
-    base_inventory.write('ansible_ssh_user={}\n'.format(CFG.ansible_ssh_user))
+    base_inventory.write('ansible_ssh_user={}\n'.format(CFG.settings['ansible_ssh_user']))
+    base_inventory.write('deployment_type={}\n'.format(CFG.deployment_type))
     base_inventory.write('\n[masters]\n')
     for hostname in masters:
         base_inventory.write('{}\n'.format(hostname))

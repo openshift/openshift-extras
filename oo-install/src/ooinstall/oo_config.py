@@ -10,6 +10,9 @@ PERSIST_SETTINGS=[
     'Version',
     'masters',
     'nodes',
+#    TODO
+#   'deployment_type',
+    'ansible_ssh_user',
     'ansible_config',
     ]
 
@@ -25,7 +28,6 @@ class OOConfig(object):
         os.environ.get('XDG_CONFIG_HOME',
                        os.environ['HOME'] + '/.config/') + '/openshift/')
     default_file = '/installer.cfg.yml'
-    ansible_ssh_user = 'root'
 
     def __init__(self, config_path):
         if config_path:
@@ -41,6 +43,8 @@ class OOConfig(object):
             self.settings['ansible_config'] = resource_filename(__name__, 'ansible.cfg')
         if not 'ansible_inventory_directory' in self.settings:
             self.settings['ansible_inventory_directory'] = os.path.normpath(os.path.dirname(self.config_path) + "/.ansible")
+        if not 'ansible_ssh_user' in self.settings:
+            self.settings['ansible_ssh_user'] = 'root'
         # clean up any empty sets
         for setting in self.settings.keys():
             if not self.settings[setting]:

@@ -43,6 +43,9 @@ def get_hosts(hosts):
     hosts = list(set(hosts)) # uniquify
     return hosts
 
+def get_ansible_ssh_user():
+    return click.prompt('User for ssh access', default='root')
+
 def list_hosts(hosts):
     hosts_idx = range(len(hosts))
     for idx in hosts_idx:
@@ -106,15 +109,21 @@ def collect_hosts():
                               writable=True,
                               readable=True),
               default=None)
+@click.option('--deployment-type',
+              '-t',
+              type=click.Choice(['enterprise', 'origin']),
+	      default='enterprise')
 @click.option('--unattended', '-u', is_flag=True, default=False)
 # Note - the 'hosts' argument (str with no leading dash) sets the name
 # of the parameter passed to main(). THIS WAS NOT CLEAR in the click
 # documentation (or I'm too silly to find it)
+# TODO: This probably needs to be updated now that hosts -> masters/nodes
 @click.option('--host', '-h', 'hosts', multiple=True, callback=validate_hostname)
-def main(configuration, ansible_playbook_directory, ansible_config, unattended, hosts):
+def main(configuration, ansible_playbook_directory, ansible_config, deployment_type, unattended, hosts):
     # print 'configuration: {}'.format(configuration)
     # print 'ansible_playbook_directory: {}'.format(ansible_playbook_directory)
     # print 'ansible_config: {}'.format(ansible_config)
+    # print 'deployment_type: {}'.format(deployment_type)
     # print 'unattended: {}'.format(unattended)
     # print 'masters: {}'.format(masters)
     # print 'nodes: {}'.format(nodes)
@@ -128,6 +137,7 @@ def main(configuration, ansible_playbook_directory, ansible_config, unattended, 
         oo_cfg.settings['ansible_playbook_directory'] = ansible_playbook_directory
     validate_ansible_dir(None, None, ansible_playbook_directory)
     oo_cfg.ansible_playbook_directory = ansible_playbook_directory
+    oo_cfg.deployment_type = deployment_type
     install_transactions.set_config(oo_cfg)
     masters = oo_cfg.settings.setdefault('masters', hosts)
     nodes = oo_cfg.settings.setdefault('nodes', hosts)
@@ -153,6 +163,7 @@ def main(configuration, ansible_playbook_directory, ansible_config, unattended, 
             nodes = collect_nodes()
     oo_cfg.settings['masters'] = masters
     oo_cfg.settings['nodes'] = nodes
+    oo_cfg.settings['ansible_ssh_user'] = get_ansible_ssh_user()
     oo_cfg.save_to_disk()
     install_transactions.default_facts(masters, nodes)
     install_transactions.generate_default_master_vars(masters)
