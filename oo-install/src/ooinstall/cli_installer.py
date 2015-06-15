@@ -166,8 +166,7 @@ def main(configuration, ansible_playbook_directory, ansible_config, deployment_t
     oo_cfg.settings['ansible_ssh_user'] = get_ansible_ssh_user()
     oo_cfg.save_to_disk()
     install_transactions.default_facts(masters, nodes)
-    install_transactions.generate_default_master_vars(masters)
-    #install_transactions.generate_default_node_vars(nodes)
+    install_transactions.run_main_playbook()
 
 if __name__ == '__main__':
     main()

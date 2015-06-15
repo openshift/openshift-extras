@@ -7,7 +7,7 @@ def set_config(cfg):
 def default_facts(masters, nodes):
     global CFG
     ansible_inventory_directory = CFG.settings['ansible_inventory_directory']
-    base_inventory_path = '{}/hosts'.format(ansible_inventory_directory)
+    base_inventory_path = CFG.settings['ansible_inventory_path']
     os_facts_path = '{}/playbooks/byo/openshift_facts.yml'.format(CFG.ansible_playbook_directory)
     base_inventory = open(base_inventory_path, 'w')
     base_inventory.write('# This is the base inventory used for obtaining \n'
@@ -25,11 +25,15 @@ def default_facts(masters, nodes):
         base_inventory.write('{}\n'.format(hostname))
     base_inventory.close()
     subprocess.call(['ansible-playbook',
-                     '--user=root',
+                     '--user={}'.format(CFG.settings['ansible_ssh_user']),
                      '--inventory-file={}'.format(base_inventory_path),
                      os_facts_path])
 
-def generate_default_master_vars(masters):
+def run_main_playbook():
     global CFG
-    ansible_inventory_directory = CFG.settings['ansible_inventory_directory']
+    main_playbook_path = '{}/playbooks/byo/config.yml'.format(CFG.ansible_playbook_directory)
+    subprocess.call(['ansible-playbook',
+                     '--user={}'.format(CFG.settings['ansible_ssh_user']),
+                     '--inventory-file={}'.format(CFG.settings['ansible_inventory_path']),
+                     main_playbook_path])
     return
