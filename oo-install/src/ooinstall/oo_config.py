@@ -38,6 +38,8 @@ class OOConfig(object):
     def set_defaults(self):
         if not 'ansible_config' in self.settings:
             self.settings['ansible_config'] = resource_filename(__name__, 'ansible.cfg')
+        if not 'ansible_inventory_directory' in self.settings:
+            self.settings['ansible_inventory_directory'] = os.path.normpath(os.path.dirname(self.config_path) + "/.ansible")
         # clean up any empty sets
         for setting in self.settings.keys():
             if not self.settings[setting]:

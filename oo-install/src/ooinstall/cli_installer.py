@@ -91,7 +91,7 @@ def collect_hosts():
                               writable=True,
                               readable=True),
               default=None)
-@click.option('--ansible-directory',
+@click.option('--ansible-playbook-directory',
               '-a',
               type=click.Path(exists=True,
                               file_okay=False,
@@ -99,7 +99,7 @@ def collect_hosts():
                               writable=True,
                               readable=True),
               # callback=validate_ansible_dir,
-              envvar='OO_ANSIBLE_DIRECTORY')
+              envvar='OO_ANSIBLE_PLAYBOOK_DIRECTORY')
 @click.option('--ansible-config',
               type=click.Path(file_okay=True,
                               dir_okay=False,
@@ -111,9 +111,9 @@ def collect_hosts():
 # of the parameter passed to main(). THIS WAS NOT CLEAR in the click
 # documentation (or I'm too silly to find it)
 @click.option('--host', '-h', 'hosts', multiple=True, callback=validate_hostname)
-def main(configuration, ansible_directory, ansible_config, unattended, hosts):
+def main(configuration, ansible_playbook_directory, ansible_config, unattended, hosts):
     # print 'configuration: {}'.format(configuration)
-    # print 'ansible_directory: {}'.format(ansible_directory)
+    # print 'ansible_playbook_directory: {}'.format(ansible_playbook_directory)
     # print 'ansible_config: {}'.format(ansible_config)
     # print 'unattended: {}'.format(unattended)
     # print 'masters: {}'.format(masters)
@@ -122,12 +122,12 @@ def main(configuration, ansible_directory, ansible_config, unattended, hosts):
     oo_cfg = OOConfig(configuration)
     # TODO - Config settings precedence needs to be handled more generally
     print oo_cfg
-    if not ansible_directory:
-        ansible_directory = oo_cfg.settings.get('ansible_directory', '')
+    if not ansible_playbook_directory:
+        ansible_playbook_directory = oo_cfg.settings.get('ansible_playbook_directory', '')
     else:
-        oo_cfg.settings['ansible_directory'] = ansible_directory
-    validate_ansible_dir(None, None, ansible_directory)
-    oo_cfg.ansible_directory = ansible_directory
+        oo_cfg.settings['ansible_playbook_directory'] = ansible_playbook_directory
+    validate_ansible_dir(None, None, ansible_playbook_directory)
+    oo_cfg.ansible_playbook_directory = ansible_playbook_directory
     install_transactions.set_config(oo_cfg)
     masters = oo_cfg.settings.setdefault('masters', hosts)
     nodes = oo_cfg.settings.setdefault('nodes', hosts)

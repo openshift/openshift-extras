@@ -7,8 +7,6 @@ cmdlnargs="$@"
 : ${OO_INSTALL_CONTEXT:="INSTALLCONTEXT"}
 : ${TMPDIR:=/tmp}
 : ${OO_INSTALL_LOG:=${TMPDIR}/INSTALLPKGNAME.log}
-: ${OO_ANSIBLE_DIRECTORY:=${TMPDIR}/INSTALLPKGNAME/openshift-ansible-rc/}
-export OO_ANSIBLE_DIRECTORY
 [[ $TMPDIR != */ ]] && TMPDIR="${TMPDIR}/"
 
 if [ $OO_INSTALL_CONTEXT != 'origin_vm' ]
@@ -68,7 +66,7 @@ pip install --no-index ./src/ 2>&1 >> $OO_INSTALL_LOG
 echo "Done!"
 
 ansible --version
-oo-install
+oo-install --ansible-playbook-directory ${TMPDIR}/INSTALLPKGNAME/openshift-ansible-rc/
 
 if [ $OO_INSTALL_KEEP_ASSETS == 'true' ]
 then
