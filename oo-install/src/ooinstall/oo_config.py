@@ -8,7 +8,8 @@ PERSIST_SETTINGS=[
     'Subscription',
     'Vendor',
     'Version',
-    'hosts',
+    'masters',
+    'nodes',
     'ansible_config',
     ]
 

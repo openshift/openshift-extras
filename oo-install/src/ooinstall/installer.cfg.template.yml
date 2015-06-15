@@ -3,6 +3,7 @@ Name: OpenShift Ansible-Based Installer Configuration
 Vendor: OpenShift Community
 Description: This is the configuration file for the OpenShift Ansible-Based Installer.
 Version: 0.0.1
-hosts:
+masters:
+nodes:
 Subscription:
   type: none

@@ -67,6 +67,14 @@ def delete_hosts(hosts):
                 click.echo("\"{}\" doesn't coorespond to any valid input.".format(del_idx))
     return hosts, None
 
+def collect_masters():
+    click.echo('***Master Configuration***')
+    return collect_hosts()
+
+def collect_nodes():
+    click.echo('***Node Configuration***')
+    return collect_hosts()
+
 def collect_hosts():
     hosts = []
     while True:
@@ -108,7 +116,8 @@ def main(configuration, ansible_directory, ansible_config, unattended, hosts):
     # print 'ansible_directory: {}'.format(ansible_directory)
     # print 'ansible_config: {}'.format(ansible_config)
     # print 'unattended: {}'.format(unattended)
-    # print 'hosts: {}'.format(hosts)
+    # print 'masters: {}'.format(masters)
+    # print 'nodes: {}'.format(nodes)
 
     oo_cfg = OOConfig(configuration)
     # TODO - Config settings precedence needs to be handled more generally
@@ -120,18 +129,33 @@ def main(configuration, ansible_directory, ansible_config, unattended, hosts):
     validate_ansible_dir(None, None, ansible_directory)
     oo_cfg.ansible_directory = ansible_directory
     install_transactions.set_config(oo_cfg)
-    hosts = oo_cfg.settings.setdefault('hosts', hosts)
-    if not hosts:
+    masters = oo_cfg.settings.setdefault('masters', hosts)
+    nodes = oo_cfg.settings.setdefault('nodes', hosts)
+    # TODO: Remove duplicate logic here
+    if not masters:
         if unattended:
-            raise click.BadOptionUsage('host',
-                                       'For unattended installs, hosts must '
+            raise click.BadOptionUsage('masters',
+                                       'For unattended installs, masters must '
                                        'be specified on the command line or '
                                        'from the config file '
                                        '{}'.format(oo_cfg.config_path))
         else:
-            hosts = collect_hosts()
-    oo_cfg.settings['hosts'] = hosts
+            masters = collect_masters()
+
+    if not nodes:
+        if unattended:
+            raise click.BadOptionUsage('nodes',
+                                       'For unattended installs, nodes must '
+                                       'be specified on the command line or '
+                                       'from the config file '
+                                       '{}'.format(oo_cfg.config_path))
+        else:
+            nodes = collect_nodes()
+    oo_cfg.settings['masters'] = masters
+    oo_cfg.settings['nodes'] = nodes
     oo_cfg.save_to_disk()
+    # TODO: Is this the best way to get a unique concatenation of two lists?
+    hosts = list(set(masters + nodes))
     install_transactions.default_facts(hosts)
 
 if __name__ == '__main__':
