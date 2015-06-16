@@ -87,6 +87,28 @@ def collect_hosts():
             break
     return hosts
 
+def confirm_hosts_facts(hosts, callback_facts):
+    validated_facts={}
+    for h in hosts:
+        validated_facts[h] = {}
+        if callback_facts[h]["common"]["ip"]:
+            ip = click.prompt('Detected ip for {}'.format(h), default=callback_facts[h]["common"]["ip"])
+            validated_facts[h]["ip"] = ip
+        if callback_facts[h]["common"]["public_ip"]:
+            public_ip = click.prompt('Detected public_ip for {}'.format(h), default=callback_facts[h]["common"]["public_ip"])
+            validated_facts[h]["public_ip"] = public_ip
+        if h == callback_facts[h]["common"]["hostname"]:
+            validated_facts[h]["hostname"] = h
+        else:
+            hostname = click.prompt('Detected non-public hostname for {}'.format(h), default=callback_facts[h]["common"]["hostname"])
+            validated_facts[h]["hostname"] = hostname
+        if h == callback_facts[h]["common"]["public_hostname"]:
+            validated_facts[h]["public_hostname"] = h
+        else:
+            public_hostname = click.prompt('Detected public hostname for {}'.format(h), default=callback_facts[h]["common"]["public_hostname"])
+            validated_facts[h].append({"public_hostname": public_hostname})
+    return validated_facts
+
 @click.command()
 @click.option('--configuration', '-c',
               type=click.Path(file_okay=True,
@@ -164,9 +186,10 @@ def main(configuration, ansible_playbook_directory, ansible_config, deployment_t
     oo_cfg.settings['masters'] = masters
     oo_cfg.settings['nodes'] = nodes
     oo_cfg.settings['ansible_ssh_user'] = get_ansible_ssh_user()
+    callback_facts = install_transactions.default_facts(masters, nodes)
+    oo_cfg.settings['validated_facts'] = confirm_hosts_facts(list(set(masters + nodes)), callback_facts)
     oo_cfg.save_to_disk()
-    install_transactions.default_facts(masters, nodes)
-    install_transactions.run_main_playbook()
+    install_transactions.run_main_playbook(masters, nodes)
 
 if __name__ == '__main__':
     main()

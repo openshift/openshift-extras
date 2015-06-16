@@ -69,7 +69,7 @@ setup(
     # installed, specify them here.  If using Python 2.6 or less, then these
     # have to be included in MANIFEST.in as well.
     package_data={
-        'ooinstall': ['installer.cfg.template.yml', 'ansible.cfg'],
+        'ooinstall': ['installer.cfg.template.yml', 'ansible.cfg', 'ansible_plugins/*'],
     },
 
     # Although 'package_data' is the preferred approach, in some case you may

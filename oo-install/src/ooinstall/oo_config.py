@@ -14,6 +14,9 @@ PERSIST_SETTINGS=[
 #   'deployment_type',
     'ansible_ssh_user',
     'ansible_config',
+    'ansible_plugins_directory',
+    'ansible_inventory_directory',
+    'validated_facts',
     ]
 
 class OOConfigFileError(Exception):
@@ -41,10 +44,14 @@ class OOConfig(object):
     def set_defaults(self):
         if not 'ansible_config' in self.settings:
             self.settings['ansible_config'] = resource_filename(__name__, 'ansible.cfg')
+        if not 'ansible_plugins_directory' in self.settings:
+            self.settings['ansible_plugins_directory'] = resource_filename(__name__, 'ansible_plugins')
         if not 'ansible_inventory_directory' in self.settings:
             self.settings['ansible_inventory_directory'] = os.path.normpath(os.path.dirname(self.config_path) + "/.ansible")
         if not os.path.exists(self.settings['ansible_inventory_directory']):
             os.makedirs(self.settings['ansible_inventory_directory'])
+        if not 'ansible_callback_facts_yaml' in self.settings:
+            self.settings['ansible_callback_facts_yaml'] = '{}/callback_facts.yaml'.format(self.settings['ansible_inventory_directory'])
         self.settings['ansible_inventory_path'] = '{}/hosts'.format(self.settings['ansible_inventory_directory'])
         if not 'ansible_ssh_user' in self.settings:
             self.settings['ansible_ssh_user'] = 'root'
