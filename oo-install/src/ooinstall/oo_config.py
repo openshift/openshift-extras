@@ -10,12 +10,11 @@ PERSIST_SETTINGS=[
     'Version',
     'masters',
     'nodes',
-#    TODO
-#   'deployment_type',
     'ansible_ssh_user',
     'ansible_config',
     'ansible_plugins_directory',
     'ansible_inventory_directory',
+    'ansible_log_path',
     'validated_facts',
     ]
 
@@ -52,9 +51,11 @@ class OOConfig(object):
             os.makedirs(self.settings['ansible_inventory_directory'])
         if not 'ansible_callback_facts_yaml' in self.settings:
             self.settings['ansible_callback_facts_yaml'] = '{}/callback_facts.yaml'.format(self.settings['ansible_inventory_directory'])
-        self.settings['ansible_inventory_path'] = '{}/hosts'.format(self.settings['ansible_inventory_directory'])
         if not 'ansible_ssh_user' in self.settings:
             self.settings['ansible_ssh_user'] = 'root'
+
+        self.settings['ansible_inventory_path'] = '{}/hosts'.format(self.settings['ansible_inventory_directory'])
+
         # clean up any empty sets
         for setting in self.settings.keys():
             if not self.settings[setting]:

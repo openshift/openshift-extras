@@ -29,11 +29,15 @@ def generate_inventory(masters, nodes):
 def write_host(host, inventory):
     global CFG
     if 'validated_facts' in CFG.settings and host in CFG.settings['validated_facts']:
-        ip = CFG.settings['validated_facts'][host]["ip"]
-        public_ip = CFG.settings['validated_facts'][host]["public_ip"]
-        hostname = CFG.settings['validated_facts'][host]["hostname"]
-        public_hostname = CFG.settings['validated_facts'][host]["public_hostname"]
-        inventory.write('{} ip={} public_ip={} hostname={} public_hostname={}\n'.format(host, ip, public_ip, hostname, public_hostname))
+        if 'ip' in CFG.settings['validated_facts'][host]:
+            ip = 'ip={}'.format(CFG.settings['validated_facts'][host]["ip"])
+        if 'public_ip' in CFG.settings['validated_facts'][host]:
+            public_ip = 'public_ip={}'.format(CFG.settings['validated_facts'][host]["public_ip"])
+        if 'hostname' in CFG.settings['validated_facts'][host]:
+            hostname = 'hostname={}'.format(CFG.settings['validated_facts'][host]["hostname"])
+        if 'public_hostname' in CFG.settings['validated_facts'][host]:
+            public_hostname = 'public_hostname={}'.format(CFG.settings['validated_facts'][host]["public_hostname"])
+        inventory.write('{} {} {} {} {}\n'.format(host, ip, public_ip, hostname, public_hostname))
     else:
         inventory.write('{}\n'.format(host))
     return
@@ -50,22 +54,32 @@ def default_facts(masters, nodes):
     facts_env = os.environ.copy()
     facts_env["OO_INSTALL_CALLBACK_FACTS_YAML"] = CFG.settings['ansible_callback_facts_yaml']
     facts_env["ANSIBLE_CALLBACK_PLUGINS"] = CFG.settings['ansible_plugins_directory']
-    subprocess.call(['ansible-playbook',
+    if 'ansible_log_path' in CFG.settings:
+        facts_env["ANSIBLE_LOG_PATH"] = CFG.settings['ansible_log_path']
+    FNULL = open(os.devnull, 'w')
+    status = subprocess.call(['ansible-playbook',
                      '--user={}'.format(CFG.settings['ansible_ssh_user']),
                      '--inventory-file={}'.format(inventory_file),
                      os_facts_path],
-                     env=facts_env)
+                     env=facts_env,
+                     stdout=FNULL)
+    if not status == 0:
+        return [], 1
     callback_facts_file = open(CFG.settings['ansible_callback_facts_yaml'], 'r')
     callback_facts = yaml.load(callback_facts_file)
     callback_facts_file.close()
-    return callback_facts
+    return callback_facts, 0
 
 def run_main_playbook(masters, nodes):
     global CFG
     inventory_file = generate_inventory(masters, nodes)
     main_playbook_path = '{}/playbooks/byo/config.yml'.format(CFG.ansible_playbook_directory)
+    facts_env = os.environ.copy()
+    if 'ansible_log_path' in CFG.settings:
+        facts_env["ANSIBLE_LOG_PATH"] = CFG.settings['ansible_log_path']
     subprocess.call(['ansible-playbook',
                      '--user={}'.format(CFG.settings['ansible_ssh_user']),
                      '--inventory-file={}'.format(inventory_file),
-                     main_playbook_path])
+                     main_playbook_path],
+                     env=facts_env)
     return

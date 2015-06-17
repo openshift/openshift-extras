@@ -71,42 +71,89 @@ def delete_hosts(hosts):
     return hosts, None
 
 def collect_masters():
+    click.clear()
     click.echo('***Master Configuration***')
-    return collect_hosts()
+    message = """
+The OpenShift Master serves the API and web console.  It also coordinates the
+jobs that have to run across the environment.  It can even run the datastore.
+For wizard based installations the database will be embedded.  It's possible to
+change this later using etcd from Red Hat Enterprise Linux 7.
+
+http://docs.openshift.com/enterprise/latest/architecture/infrastructure_components/kubernetes_infrastructure.html#master
+    """
+    click.echo(message)
+    return collect_hosts('masters')
 
 def collect_nodes():
+    click.clear()
     click.echo('***Node Configuration***')
-    return collect_hosts()
+    message = """
+The OpenShift Node provides the runtime environments for containers.  It will
+host the required services to be managed by the Master.
 
-def collect_hosts():
+http://docs.openshift.org/latest/architecture/infrastructure_components/kubernetes_infrastructure.html#node
+    """
+    click.echo(message)
+    return collect_hosts('nodes')
+
+def collect_hosts(host_type):
+    message = """
+Next we will launch an editor for entering {}.  The default editor in your
+environment can be overridden exporting the VISUAL environment variable.
+    """.format(host_type)
+    click.echo(message)
+    click.pause()
     hosts = []
     while True:
-        get_hosts(hosts)
-        hosts, confirm = delete_hosts(hosts)
-        if 'y' == confirm:
-            break
+        MARKER = '# Please enter {} one per line.  Everything after this line is ignored.\n'.format(host_type)
+        message = click.edit("\n".join(hosts) + '\n\n' + MARKER)
+        if message is not None:
+            msg = message.split(MARKER, 1)[0].rstrip('\n')
+            hosts = msg.splitlines()
+            if hosts:
+                # TODO: A lot more error handling needs to happen here.
+                hosts = filter(None, hosts)
+            else:
+                click.echo('Empty message!')
+        else:
+            click.echo('You did not enter anything!')
+
+        click.clear()
+        if hosts:
+            for i, h in enumerate(hosts):
+                click.echo("{}) ".format(i+1) + h)
+            response = click.prompt("Please confirm the following {}.  y/Y to confirm, or n/N to edit".format(host_type), default='n')
+            response = response.lower()
+            if response == 'y':
+                break
+        else:
+            response = click.prompt("No {} entered.  y/Y to confirm, or n/N to edit".format(host_type), default='n')
+            response = response.lower()
+            if response == 'y':
+                break
+        click.clear()
+
     return hosts
 
 def confirm_hosts_facts(hosts, callback_facts):
     validated_facts={}
     for h in hosts:
         validated_facts[h] = {}
-        if callback_facts[h]["common"]["ip"]:
+        if not callback_facts[h]["common"]["ip"] == callback_facts[h]["common"]["public_ip"]:
             ip = click.prompt('Detected ip for {}'.format(h), default=callback_facts[h]["common"]["ip"])
             validated_facts[h]["ip"] = ip
-        if callback_facts[h]["common"]["public_ip"]:
             public_ip = click.prompt('Detected public_ip for {}'.format(h), default=callback_facts[h]["common"]["public_ip"])
             validated_facts[h]["public_ip"] = public_ip
-        if h == callback_facts[h]["common"]["hostname"]:
-            validated_facts[h]["hostname"] = h
-        else:
+        if not callback_facts[h]["common"]["hostname"] == callback_facts[h]["common"]["public_hostname"]:
             hostname = click.prompt('Detected non-public hostname for {}'.format(h), default=callback_facts[h]["common"]["hostname"])
             validated_facts[h]["hostname"] = hostname
-        if h == callback_facts[h]["common"]["public_hostname"]:
-            validated_facts[h]["public_hostname"] = h
-        else:
             public_hostname = click.prompt('Detected public hostname for {}'.format(h), default=callback_facts[h]["common"]["public_hostname"])
             validated_facts[h].append({"public_hostname": public_hostname})
+
+        # We want validated_facts to be empty unless the user has confirmed their is
+        # a need to use them.
+        if not validated_facts[h]:
+            del validated_facts[h]
     return validated_facts
 
 @click.command()
@@ -131,28 +178,22 @@ def confirm_hosts_facts(hosts, callback_facts):
                               writable=True,
                               readable=True),
               default=None)
+@click.option('--ansible-log-path',
+              type=click.Path(file_okay=True,
+                              dir_okay=False,
+                              writable=True,
+                              readable=True),
+              default="/tmp/ansible.log")
 @click.option('--deployment-type',
               '-t',
               type=click.Choice(['enterprise', 'origin']),
-	      default='enterprise')
+              default='enterprise')
 @click.option('--unattended', '-u', is_flag=True, default=False)
-# Note - the 'hosts' argument (str with no leading dash) sets the name
-# of the parameter passed to main(). THIS WAS NOT CLEAR in the click
-# documentation (or I'm too silly to find it)
 # TODO: This probably needs to be updated now that hosts -> masters/nodes
 @click.option('--host', '-h', 'hosts', multiple=True, callback=validate_hostname)
-def main(configuration, ansible_playbook_directory, ansible_config, deployment_type, unattended, hosts):
-    # print 'configuration: {}'.format(configuration)
-    # print 'ansible_playbook_directory: {}'.format(ansible_playbook_directory)
-    # print 'ansible_config: {}'.format(ansible_config)
-    # print 'deployment_type: {}'.format(deployment_type)
-    # print 'unattended: {}'.format(unattended)
-    # print 'masters: {}'.format(masters)
-    # print 'nodes: {}'.format(nodes)
-
-    oo_cfg = OOConfig(configuration)
+def main(configuration, ansible_playbook_directory, ansible_config, ansible_log_path, deployment_type, unattended, hosts):
     # TODO - Config settings precedence needs to be handled more generally
-    print oo_cfg
+    oo_cfg = OOConfig(configuration)
     if not ansible_playbook_directory:
         ansible_playbook_directory = oo_cfg.settings.get('ansible_playbook_directory', '')
     else:
@@ -160,7 +201,33 @@ def main(configuration, ansible_playbook_directory, ansible_config, deployment_t
     validate_ansible_dir(None, None, ansible_playbook_directory)
     oo_cfg.ansible_playbook_directory = ansible_playbook_directory
     oo_cfg.deployment_type = deployment_type
+    oo_cfg.settings['ansible_log_path'] = ansible_log_path
     install_transactions.set_config(oo_cfg)
+
+    click.clear()
+    message = """
+Welcome to the OpenShift Enterprise 3 installation.
+
+This installation method assumes that you have already provisioned Red Hat
+Enterprise Linux 7 hosts and that they are consuming an OpenShift Enterprise
+subscription.  In addition 'docker-storage-setup' must have been run.
+
+Part of this installation process will involve entering the host names of these
+systems.  The system where this installer is run must have ssh access to all of
+the hosts entered.
+
+For more information please see:
+http://docs.openshift.com/enterprise/latest/admin_guide/install/setup.html
+"""
+    click.echo(message)
+    response = click.prompt("Are you ready to continue?  y/Y to confirm, or n/N to abort", default='n')
+    response = response.lower()
+    if not response == 'y':
+        sys.exit()
+
+    oo_cfg.settings['ansible_ssh_user'] = get_ansible_ssh_user()
+    click.clear()
+
     masters = oo_cfg.settings.setdefault('masters', hosts)
     nodes = oo_cfg.settings.setdefault('nodes', hosts)
     # TODO: Remove duplicate logic here
@@ -183,12 +250,24 @@ def main(configuration, ansible_playbook_directory, ansible_config, deployment_t
                                        '{}'.format(oo_cfg.config_path))
         else:
             nodes = collect_nodes()
+
+    # TODO: Technically if we're in interactive mode they could have not
+    # specified any masters or nodes.
+
     oo_cfg.settings['masters'] = masters
     oo_cfg.settings['nodes'] = nodes
-    oo_cfg.settings['ansible_ssh_user'] = get_ansible_ssh_user()
-    callback_facts = install_transactions.default_facts(masters, nodes)
-    oo_cfg.settings['validated_facts'] = confirm_hosts_facts(list(set(masters + nodes)), callback_facts)
+    click.echo("Gathering information from hosts...")
+    callback_facts, error = install_transactions.default_facts(masters, nodes)
+    if error:
+        click.echo("There was a problem fetching the required information.  Please see {} for details.".format(oo_cfg.settings['ansible_log_path']))
+        sys.exit()
+    validated_facts = confirm_hosts_facts(list(set(masters + nodes)), callback_facts)
+    if validated_facts:
+        oo_cfg.settings['validated_facts'] = validated_facts
     oo_cfg.save_to_disk()
+
+    click.echo("Ready to run installation process.")
+    click.pause()
     install_transactions.run_main_playbook(masters, nodes)
 
 if __name__ == '__main__':
