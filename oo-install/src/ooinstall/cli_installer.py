@@ -280,6 +280,7 @@ http://docs.openshift.com/enterprise/latest/admin_guide/install/setup.html
     oo_cfg.settings['ansible_ssh_user'] = get_ansible_ssh_user()
     click.clear()
 
+    # TODO: figure out what this does
     masters = oo_cfg.settings.setdefault('masters', hosts)
     nodes = oo_cfg.settings.setdefault('nodes', hosts)
     # TODO: Remove duplicate logic here
@@ -305,21 +306,24 @@ http://docs.openshift.com/enterprise/latest/admin_guide/install/setup.html
 
     # TODO: Technically if we're in interactive mode they could have not
     # specified any masters or nodes.
-
     oo_cfg.settings['masters'] = masters
     # TODO: Until the Master can run the SDN itself we have to configure the Masters
     # as Nodes too.
     oo_cfg.settings['nodes'] = list(set(masters + nodes))
-    click.echo("Gathering information from hosts...")
-    callback_facts, error = install_transactions.default_facts(masters, nodes)
-    if error:
-        click.echo("There was a problem fetching the required information.  Please see {} for details.".format(oo_cfg.settings['ansible_log_path']))
-        sys.exit()
-    validated_facts = confirm_hosts_facts(list(set(masters + nodes)), callback_facts)
-    if validated_facts:
-        oo_cfg.settings['validated_facts'] = validated_facts
-    oo_cfg.save_to_disk()
 
+    # TODO: Technically we should make sure all the hosts are listed in the
+    # validated facts.
+    if not 'validated_facts' in oo_cfg.settings:
+        click.echo("Gathering information from hosts...")
+        callback_facts, error = install_transactions.default_facts(masters, nodes)
+        if error:
+            click.echo("There was a problem fetching the required information.  Please see {} for details.".format(oo_cfg.settings['ansible_log_path']))
+            sys.exit()
+        validated_facts = confirm_hosts_facts(list(set(masters + nodes)), callback_facts)
+        if validated_facts:
+            oo_cfg.settings['validated_facts'] = validated_facts
+
+    oo_cfg.save_to_disk()
     click.echo("Ready to run installation process.")
     click.pause()
     install_transactions.run_main_playbook(masters, nodes)
