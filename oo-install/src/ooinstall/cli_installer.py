@@ -79,31 +79,37 @@ jobs that have to run across the environment.  It can even run the datastore.
 For wizard based installations the database will be embedded.  It's possible to
 change this later using etcd from Red Hat Enterprise Linux 7.
 
+Any Masters configured as part of the this installation process will also be
+configured as Nodes.  This is so that the Master will be able to proxy to Pods
+from API.  By default this Node will be unscheduleable but this can be changed
+after installation with 'oadm manage-node'.
+
 http://docs.openshift.com/enterprise/latest/architecture/infrastructure_components/kubernetes_infrastructure.html#master
     """
     click.echo(message)
     return collect_hosts('masters')
 
-def collect_nodes():
+def collect_nodes(nodes):
     click.clear()
     click.echo('***Node Configuration***')
     message = """
 The OpenShift Node provides the runtime environments for containers.  It will
 host the required services to be managed by the Master.
 
+By default all Masters will be configured as Nodes.
+
 http://docs.openshift.org/latest/architecture/infrastructure_components/kubernetes_infrastructure.html#node
     """
     click.echo(message)
-    return collect_hosts('nodes')
+    return collect_hosts('nodes', nodes)
 
-def collect_hosts(host_type):
+def collect_hosts(host_type, hosts=[]):
     message = """
 Next we will launch an editor for entering {}.  The default editor in your
 environment can be overridden exporting the VISUAL environment variable.
     """.format(host_type)
     click.echo(message)
     click.pause()
-    hosts = []
     while True:
         MARKER = '# Please enter {} one per line.  Everything after this line is ignored.\n'.format(host_type)
         message = click.edit("\n".join(hosts) + '\n\n' + MARKER)
@@ -136,24 +142,70 @@ environment can be overridden exporting the VISUAL environment variable.
     return hosts
 
 def confirm_hosts_facts(hosts, callback_facts):
-    validated_facts={}
-    for h in hosts:
-        validated_facts[h] = {}
-        if not callback_facts[h]["common"]["ip"] == callback_facts[h]["common"]["public_ip"]:
-            ip = click.prompt('Detected ip for {}'.format(h), default=callback_facts[h]["common"]["ip"])
-            validated_facts[h]["ip"] = ip
-            public_ip = click.prompt('Detected public_ip for {}'.format(h), default=callback_facts[h]["common"]["public_ip"])
-            validated_facts[h]["public_ip"] = public_ip
-        if not callback_facts[h]["common"]["hostname"] == callback_facts[h]["common"]["public_hostname"]:
-            hostname = click.prompt('Detected non-public hostname for {}'.format(h), default=callback_facts[h]["common"]["hostname"])
-            validated_facts[h]["hostname"] = hostname
-            public_hostname = click.prompt('Detected public hostname for {}'.format(h), default=callback_facts[h]["common"]["public_hostname"])
-            validated_facts[h].append({"public_hostname": public_hostname})
+    click.clear()
+    message = """
+You'll now be asked to edit a file that will be used to validate settings
+gathered from the Masters and Nodes.  Since it's often the case that the
+hostname for a system inside the cluster is different from the hostname that is
+resolveable from commandline or web clients these settings cannot be validated
+automatically..
 
-        # We want validated_facts to be empty unless the user has confirmed their is
-        # a need to use them.
-        if not validated_facts[h]:
-            del validated_facts[h]
+For some cloud providers the installer is able to gather metadata exposed in
+the instance so reasonable defaults will be provided.
+"""
+    notes = """
+Format:
+
+installation host,IP,public IP,hostname,public hostname
+
+Notes:
+ * The installation host is the hostname from the installer's perspective.  In
+   most cases it will either match the hostname of the public hostname depending
+   on whether on where the installer is run from.
+ * The IP of the host should be the internal IP of the instance.
+ * The public IP should be the externally accessible IP associated with the instance
+ * The hostname should resolve to the internal IP from the instances
+   themselves.  Optionally an IP address can be used.
+ * The public hostname should resolve to the external ip from hosts outside of
+   the cloud. Optionally an IP address can be used.
+"""
+
+    click.echo(message)
+    click.pause()
+
+    default_facts_lines = []
+    default_facts = {}
+    validated_facts = {}
+    for h in hosts:
+        default_facts[h] = {}
+        default_facts[h]["ip"] = callback_facts[h]["common"]["ip"]
+        default_facts[h]["public_ip"] = callback_facts[h]["common"]["public_ip"]
+        default_facts[h]["hostname"] = callback_facts[h]["common"]["hostname"]
+        default_facts[h]['public_hostname'] = callback_facts[h]["common"]["public_hostname"]
+
+        validated_facts[h] = {}
+        default_facts_lines.append(",".join([h,
+                                      callback_facts[h]["common"]["ip"],
+                                      callback_facts[h]["common"]["public_ip"],
+                                      callback_facts[h]["common"]["hostname"],
+                                      callback_facts[h]["common"]["public_hostname"]]))
+
+    MARKER = '# Everything after this line is ignored.\n'
+    message = click.edit("\n".join(default_facts_lines) + '\n\n' + MARKER + notes)
+    if message is not None:
+        facts = message.split(MARKER, 1)[0].rstrip('\n')
+        facts_lines = facts.splitlines()
+        # TODO: A lot more error handling needs to happen here.
+        facts_lines = filter(None, facts_lines)
+        for l in facts_lines:
+            h, ip, public_ip, hostname, public_hostname = l.split(',')
+            validated_facts[h]["ip"] = ip.strip()
+            validated_facts[h]["public_ip"] = public_ip.strip()
+            validated_facts[h]["hostname"] = hostname.strip()
+            validated_facts[h]['public_hostname'] = public_hostname.strip()
+    else:
+        click.echo('No changes made.  Returning the defaults.')
+        return default_facts
     return validated_facts
 
 @click.command()
@@ -214,7 +266,7 @@ subscription.  In addition 'docker-storage-setup' must have been run.
 
 Part of this installation process will involve entering the host names of these
 systems.  The system where this installer is run must have ssh access to all of
-the hosts entered.
+the hosts entered and all hostnames entered must resolve.
 
 For more information please see:
 http://docs.openshift.com/enterprise/latest/admin_guide/install/setup.html
@@ -249,13 +301,15 @@ http://docs.openshift.com/enterprise/latest/admin_guide/install/setup.html
                                        'from the config file '
                                        '{}'.format(oo_cfg.config_path))
         else:
-            nodes = collect_nodes()
+            nodes = collect_nodes(masters)
 
     # TODO: Technically if we're in interactive mode they could have not
     # specified any masters or nodes.
 
     oo_cfg.settings['masters'] = masters
-    oo_cfg.settings['nodes'] = nodes
+    # TODO: Until the Master can run the SDN itself we have to configure the Masters
+    # as Nodes too.
+    oo_cfg.settings['nodes'] = list(set(masters + nodes))
     click.echo("Gathering information from hosts...")
     callback_facts, error = install_transactions.default_facts(masters, nodes)
     if error:

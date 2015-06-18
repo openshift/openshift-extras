@@ -14,30 +14,42 @@ def generate_inventory(masters, nodes):
     base_inventory.write('\n[OSEv3:children]\nmasters\nnodes\n')
     base_inventory.write('\n[OSEv3:vars]\n')
     base_inventory.write('ansible_ssh_user={}\n'.format(CFG.settings['ansible_ssh_user']))
+    if not CFG.settings['ansible_ssh_user'] == 'root':
+        base_inventory.write('ansible_sudo=true\n')
     base_inventory.write('deployment_type={}\n'.format(CFG.deployment_type))
     base_inventory.write('oreg_url=docker-buildvm-rhose.usersys.redhat.com:5000/openshift3/ose-${component}:${version}\n')
     base_inventory.write("openshift_additional_repos=[{'id': 'ose-devel', 'name': 'ose-devel', 'baseurl': 'http://buildvm-devops.usersys.redhat.com/puddle/build/OpenShiftEnterprise/3.0/latest/RH7-RHOSE-3.0/$basearch/os', 'enabled': 1, 'gpgcheck': 0}]\n")
     base_inventory.write('\n[masters]\n')
-    for h in masters:
-        write_host(h, base_inventory)
+    for m in masters:
+        write_host(m, base_inventory)
     base_inventory.write('\n[nodes]\n')
-    for h in nodes:
-        write_host(h, base_inventory)
+    for n in nodes:
+        # TODO: Until the Master can run the SDN itself we have to configure the Masters
+        # as Nodes too.
+        scheduleable = True
+        if n in masters:
+            scheduleable = False
+        write_host(n, base_inventory, scheduleable)
     base_inventory.close()
     return base_inventory_path
 
-def write_host(host, inventory):
+def write_host(host, inventory, scheduleable=True):
     global CFG
     if 'validated_facts' in CFG.settings and host in CFG.settings['validated_facts']:
+        facts = ''
         if 'ip' in CFG.settings['validated_facts'][host]:
-            ip = 'ip={}'.format(CFG.settings['validated_facts'][host]["ip"])
+            facts += ' openshift_ip={}'.format(CFG.settings['validated_facts'][host]["ip"])
         if 'public_ip' in CFG.settings['validated_facts'][host]:
-            public_ip = 'public_ip={}'.format(CFG.settings['validated_facts'][host]["public_ip"])
+            facts += ' openshift_public_ip={}'.format(CFG.settings['validated_facts'][host]["public_ip"])
         if 'hostname' in CFG.settings['validated_facts'][host]:
-            hostname = 'hostname={}'.format(CFG.settings['validated_facts'][host]["hostname"])
+            facts += ' openshift_hostname={}'.format(CFG.settings['validated_facts'][host]["hostname"])
         if 'public_hostname' in CFG.settings['validated_facts'][host]:
-            public_hostname = 'public_hostname={}'.format(CFG.settings['validated_facts'][host]["public_hostname"])
-        inventory.write('{} {} {} {} {}\n'.format(host, ip, public_ip, hostname, public_hostname))
+            facts += ' openshift_public_hostname={}'.format(CFG.settings['validated_facts'][host]["public_hostname"])
+        # TODO: For not write_host is handles both master and nodes.
+        # Technically only nodes will never need this.
+        if not scheduleable:
+            facts += ' openshift_scheduleable=false'
+        inventory.write('{} {}\n'.format(host, facts))
     else:
         inventory.write('{}\n'.format(host))
     return
@@ -58,7 +70,6 @@ def default_facts(masters, nodes):
         facts_env["ANSIBLE_LOG_PATH"] = CFG.settings['ansible_log_path']
     FNULL = open(os.devnull, 'w')
     status = subprocess.call(['ansible-playbook',
-                     '--user={}'.format(CFG.settings['ansible_ssh_user']),
                      '--inventory-file={}'.format(inventory_file),
                      os_facts_path],
                      env=facts_env,
@@ -78,7 +89,6 @@ def run_main_playbook(masters, nodes):
     if 'ansible_log_path' in CFG.settings:
         facts_env["ANSIBLE_LOG_PATH"] = CFG.settings['ansible_log_path']
     subprocess.call(['ansible-playbook',
-                     '--user={}'.format(CFG.settings['ansible_ssh_user']),
                      '--inventory-file={}'.format(inventory_file),
                      main_playbook_path],
                      env=facts_env)
