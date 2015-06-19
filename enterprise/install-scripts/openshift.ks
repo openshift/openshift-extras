@@ -1014,7 +1014,7 @@ selinux --enforcing
 bootloader --location=mbr --driveorder=vda --append=" rhgb crashkernel=auto quiet console=ttyS0"
 
 zerombr
-clearpart --all --initlabel
+clearpart --all 
 firstboot --disable
 reboot
 
