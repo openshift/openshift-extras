@@ -327,7 +327,7 @@ http://docs.openshift.com/enterprise/latest/admin_guide/install/setup.html
     # TODO: Technically we should make sure all the hosts are listed in the
     # validated facts.
     if not 'validated_facts' in oo_cfg.settings:
-        click.echo("Gathering information from hosts...")
+        click.echo('Gathering information from hosts...')
         callback_facts, error = install_transactions.default_facts(masters, nodes)
         if error:
             click.echo("There was a problem fetching the required information.  Please see {} for details.".format(oo_cfg.settings['ansible_log_path']))
@@ -337,8 +337,17 @@ http://docs.openshift.com/enterprise/latest/admin_guide/install/setup.html
             oo_cfg.settings['validated_facts'] = validated_facts
 
     oo_cfg.save_to_disk()
-    click.echo("Ready to run installation process.")
-    click.pause()
+
+    click.echo('Ready to run installation process.')
+    message = """
+If changes are needed to the values recorded by the installer please update {}.
+""".format(oo_cfg.config_path)
+    click.echo(message)
+    response = click.prompt('Proceed? y/Y to confirm, or n/N to exit', default='y')
+    response = response.lower()
+    if not response == 'y':
+        sys.exit()
+
     error = install_transactions.run_main_playbook(masters, nodes)
     if error:
         # The bootstrap script will print out the log location.
