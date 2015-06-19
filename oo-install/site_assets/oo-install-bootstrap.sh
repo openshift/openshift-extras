@@ -14,9 +14,16 @@ then
   clear
   echo "Checking for necessary tools..."
 fi
-for i in python virtualenv ssh
+if [ -e /etc/redhat-release  ]
+then
+  for i in python python-virtualenv openssh-clients gcc
+  do
+    rpm -q $i  >/dev/null 2>&1 || { echo >&2 "Missing installation dependency detected.  Please run \"yum install ${i}\"."; exit 1; }
+  done
+fi
+for i in python virtualenv ssh gcc
 do
-  command -v $i >/dev/null 2>&1 || { echo >&2 "OpenShift installation requires $i but it does not appear to be available. Correct this and rerun the installer."; exit 1; }
+  command -v $i >/dev/null 2>&1 || { echo >&2 "OpenShift installation requires $i on the PATH but it does not appear to be available. Correct this and rerun the installer."; exit 1; }
 done
 
 # All instances of INSTALLPKGNAME are replaced during packaging with the actual package name.
