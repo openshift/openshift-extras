@@ -204,7 +204,7 @@ Notes:
             validated_facts[h]["hostname"] = hostname.strip()
             validated_facts[h]['public_hostname'] = public_hostname.strip()
     else:
-        click.echo('No changes made.  Returning the defaults.')
+        click.echo('No changes made.  Using the defaults.')
         return default_facts
     return validated_facts
 
