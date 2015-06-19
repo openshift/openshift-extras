@@ -88,8 +88,7 @@ def run_main_playbook(masters, nodes):
     facts_env = os.environ.copy()
     if 'ansible_log_path' in CFG.settings:
         facts_env["ANSIBLE_LOG_PATH"] = CFG.settings['ansible_log_path']
-    subprocess.call(['ansible-playbook',
-                     '--inventory-file={}'.format(inventory_file),
-                     main_playbook_path],
-                     env=facts_env)
-    return
+    return subprocess.call(['ansible-playbook',
+                             '--inventory-file={}'.format(inventory_file),
+                             main_playbook_path],
+                             env=facts_env)

@@ -44,6 +44,13 @@ def get_hosts(hosts):
     return hosts
 
 def get_ansible_ssh_user():
+    click.clear()
+    message = """
+This installation process will involve connecting to remote hosts via ssh.  Any
+account may be used however if a non-root account is used it must have
+passwordless sudo access.
+"""
+    click.echo(message)
     return click.prompt('User for ssh access', default='root')
 
 def list_hosts(hosts):
@@ -260,15 +267,21 @@ def main(configuration, ansible_playbook_directory, ansible_config, ansible_log_
     message = """
 Welcome to the OpenShift Enterprise 3 installation.
 
-This installation method assumes that you have already provisioned Red Hat
-Enterprise Linux 7 hosts and that they are consuming an OpenShift Enterprise
-subscription.  In addition 'docker-storage-setup' must have been run.
+Please confirm that following prerequisites have been met:
 
-Part of this installation process will involve entering the host names of these
-systems.  The system where this installer is run must have ssh access to all of
-the hosts entered and all hostnames entered must resolve.
+* All systems where OpenShift will be installed are running Red Hat Enterprise
+  Linux 7.
+* All systems are properly subscribed to the required OpenShift Enterprise 3
+  repositories.
+* All systems have run docker-storage-setup (part of the Red Hat docker RPM).
+* All systems have working DNS that resolves not only from the perspective of
+  the installer but also from within the cluster.
 
-For more information please see:
+When the process completes you will have a default configuration for Masters
+and Nodes.  For ongoing environment maintenance it's recommended that the
+official Ansible playbooks be used.
+
+For more information on installation prerequisites please see:
 http://docs.openshift.com/enterprise/latest/admin_guide/install/setup.html
 """
     click.echo(message)
@@ -326,7 +339,26 @@ http://docs.openshift.com/enterprise/latest/admin_guide/install/setup.html
     oo_cfg.save_to_disk()
     click.echo("Ready to run installation process.")
     click.pause()
-    install_transactions.run_main_playbook(masters, nodes)
+    error = install_transactions.run_main_playbook(masters, nodes)
+    if error:
+        # The bootstrap script will print out the log location.
+        message = """
+An error was detected.  After resolving the problem please relaunch the
+installtion process.
+"""
+        click.echo(message)
+    else:
+        message = """
+The installation was successful!
+
+If this is your first time installing please take a look at the Administrator
+Guide for advanced options related to routing, storage, authentication and much
+more:
+
+http://docs.openshift.com/enterprise/latest/admin_guide/overview.html
+"""
+        click.echo(message)
+        click.pause()
 
 if __name__ == '__main__':
     main()

@@ -74,9 +74,9 @@ oo-install --ansible-playbook-directory ${TMPDIR}/INSTALLPKGNAME/openshift-ansib
 
 if [ $OO_INSTALL_KEEP_ASSETS == 'true' ]
 then
-  echo "oo-install exited; keeping temporary assets in ${TMPDIR}"
+  echo "Keeping temporary assets in ${TMPDIR}"
 else
-  echo "oo-install exited; removing temporary assets."
+  echo "Removing temporary assets."
   rm -rf ${TMPDIR}INSTALLPKGNAME
   rm -rf ${TMPDIR}INSTALLPKGNAME.tgz
 fi
