@@ -70,7 +70,7 @@ then
 else
   clear
 fi
-oo-install --ansible-playbook-directory ${TMPDIR}/INSTALLPKGNAME/openshift-ansible-3.0.0-rc/ --ansible-log-path $OO_INSTALL_LOG
+oo-install --ansible-playbook-directory ${TMPDIR}/INSTALLPKGNAME/openshift-ansible-*/ --ansible-log-path $OO_INSTALL_LOG
 
 if [ $OO_INSTALL_KEEP_ASSETS == 'true' ]
 then
