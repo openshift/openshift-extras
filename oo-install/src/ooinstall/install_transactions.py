@@ -48,7 +48,7 @@ def write_host(host, inventory, scheduleable=True):
         # TODO: For not write_host is handles both master and nodes.
         # Technically only nodes will never need this.
         if not scheduleable:
-            facts += ' openshift_scheduleable=false'
+            facts += ' openshift_scheduleable=False'
         inventory.write('{} {}\n'.format(host, facts))
     else:
         inventory.write('{}\n'.format(host))
