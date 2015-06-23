@@ -5,7 +5,7 @@ cmdlnargs="$@"
 
 : ${OO_INSTALL_KEEP_ASSETS:="false"}
 : ${OO_INSTALL_CONTEXT:="INSTALLCONTEXT"}
-: ${TMPDIR:=`pwd`}
+: ${TMPDIR:=/tmp}
 : ${OO_INSTALL_LOG:=${TMPDIR}/INSTALLPKGNAME.log}
 [[ $TMPDIR != */ ]] && TMPDIR="${TMPDIR}/"
 
