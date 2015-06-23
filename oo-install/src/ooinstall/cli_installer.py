@@ -322,7 +322,8 @@ http://docs.openshift.com/enterprise/latest/admin_guide/install/setup.html
     oo_cfg.settings['masters'] = masters
     # TODO: Until the Master can run the SDN itself we have to configure the Masters
     # as Nodes too.
-    oo_cfg.settings['nodes'] = list(set(masters + nodes))
+    nodes = list(set(masters + nodes))
+    oo_cfg.settings['nodes'] = nodes
 
     # TODO: Technically we should make sure all the hosts are listed in the
     # validated facts.
