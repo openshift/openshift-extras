@@ -119,7 +119,7 @@
         <div class="col-md-12">
           <img src="/openshift-logo-horizontal-99a90035cbd613be7b6293335eb05563.svg" alt="OpenShift" />
           <h1>Get ready to rock with <a href="http://www.openshift.com/">OpenShift</a>.</h1>
-          <p class="lead">You're one shell command away from deploying the OpenShift Platform-as-a-Service into your own network environment.</p>
+          <p class="lead">You're one shell command away from deploying your own Platform as a Service.</p>
         </div>
       </div>
     </div>
@@ -146,48 +146,13 @@
 
   <div class="container" id="versions">
       <div id="origin_m4" class="hide">
-        <div class="container">
-          <h2>Origin m4</h2>
-          <p>This is some text....</p>
-        </div>
-      </div>
-      <div id="origin_latest" class="hide">
-        <div class="container">
-          <h2>Origin Latest</h2>
-          <p>This is some other text....</p>
-        </div>
-      </div>
-      <div id="e_v2.0" class="hide">
-        <div class="container">
-          <h2>Enterprise v2.0</h2>
-          <p>This is text....</p>
-        </div>
-      </div>
-      <div id="e_v2.1" class="hide">
-        <div class="container">
-          <h2>Enterprise v2.1</h2>
-          <p>This is text....</p>
-        </div>
-      </div>
-      <div id="e_v2.2" class="hide">
-        <div class="container">
-          <h2>Enterprise v2.2</h2>
-          <p>This is some dummy text....</p>
-        </div>
-      </div>
-      <div id="e_v3.0">
         <section class="curl-options">
           <div class="container">
             <div class="row">
                 <div class="col-md-6">
-                  <h2>Enterprise v3.0</h2>
-                  <p>Copy this command and run it from a bash shell:</p>
-                  <pre>sh <(curl -s https://install.openshift.com/)</pre>
-                </div>
-                <div class="col-md-6">
-                  <h2>OpenShift Enterprise</h2>
-                  <p>Grab the latest OpenShift Enterprise installer here:</p>
-                  <pre>sh <(curl -s https://install.openshift.com/ose)</pre>
+                  <h2>OpenShift Origin M4</h2>
+                  <p>Grab the latest OpenShift Enterprise M4 installer here:</p>
+                  <pre>sh <(curl -s https://install.openshift.com/origin-m4)</pre>
                 </div>
             </div>
           </div>
@@ -212,7 +177,151 @@
               <h3>Take It With You</h3>
               <p>You can also download the installer and run it from a CD or USB drive. Unpack one of these packages onto your portable media and you are good to go:
               <ul>
-                <li>OpenShift Origin Portable: <a href="https://install.openshift.com/portable/oo-install-origin.tgz">https://install.openshift.com/portable/oo-install-origin.tgz</a></li>
+                <li>OpenShift Origin Portable: <a href="https://install.openshift.com/portable/oo-install-origin.tgz">https://install.openshift.com/portable/oo-install-origin-m4.tgz</a></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div><!-- /#m4 -->
+      <div id="origin_latest" class="hide">
+        <div class="container">
+          <h2>Origin</h2>
+	  <p>Origin is the upstream community project for OpenShift Enterprise. There's no better place to develop your new feature and have it battle tested.  The best way to try out the latest code is with the all-in-one <a href="https://github.com/openshift/origin/blob/master/README.md#getting-started">Docker image</a>.</p>
+        </div>
+      </div>
+      <div id="e_v2.0" class="hide">
+        <section class="curl-options">
+          <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                  <h2>OpenShift Enterprise 2.0</h2>
+                  <p>Grab the latest OpenShift Enterprise 2.0 installer here:</p>
+                  <pre>sh <(curl -s https://install.openshift.com/ose-2.0)</pre>
+                </div>
+            </div>
+          </div>
+        </section>
+        <div class="container">
+          <div class="row">
+            <div class="col-md-12">
+              <hr />
+              <h3>Popular Options</h3>
+              <p>Want to get fancy? You can pass options to the installer by adding them to the end of the command, like this:</p>
+              <pre>sh <(curl -s https://install.openshift.com/) -e -s rhsm -u user@company.com</pre>
+              <p>Here are some useful settings:</p>
+              <pre>
+            -a, --advanced-mode              Enable access to message server and db server customization.
+            -c, --config-file FILEPATH       The path to an alternate config file
+            -w, --workflow WORKFLOW_ID       The installer workflow for unattended deployment.
+            -e, --enterprise-mode            Show OpenShift Enterprise options (ignored in unattended mode)
+            -s, --subscription-type TYPE     The software source for installation packages.
+            -u, --username USERNAME          Red Hat Login username
+            -p, --password PASSWORD          Red Hat Login password
+            -d, --debug                      Enable debugging messages</pre>
+              <h3>Take It With You</h3>
+              <p>You can also download the installer and run it from a CD or USB drive. Unpack one of these packages onto your portable media and you are good to go:
+              <ul>
+                <li>OpenShift Enterprise Portable: <a href="https://install.openshift.com/portable/oo-install-ose.tgz">https://install.openshift.com/portable/oo-install-ose-2.0.tgz</a></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div><!-- /#v2.0 -->
+      <div id="e_v2.1" class="hide">
+        <section class="curl-options">
+          <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                  <h2>OpenShift Enterprise 2.1</h2>
+                  <p>Grab the latest OpenShift Enterprise 2.1 installer here:</p>
+                  <pre>sh <(curl -s https://install.openshift.com/ose-2.1)</pre>
+                </div>
+            </div>
+          </div>
+        </section>
+        <div class="container">
+          <div class="row">
+            <div class="col-md-12">
+              <hr />
+              <h3>Popular Options</h3>
+              <p>Want to get fancy? You can pass options to the installer by adding them to the end of the command, like this:</p>
+              <pre>sh <(curl -s https://install.openshift.com/) -e -s rhsm -u user@company.com</pre>
+              <p>Here are some useful settings:</p>
+              <pre>
+            -a, --advanced-mode              Enable access to message server and db server customization.
+            -c, --config-file FILEPATH       The path to an alternate config file
+            -w, --workflow WORKFLOW_ID       The installer workflow for unattended deployment.
+            -e, --enterprise-mode            Show OpenShift Enterprise options (ignored in unattended mode)
+            -s, --subscription-type TYPE     The software source for installation packages.
+            -u, --username USERNAME          Red Hat Login username
+            -p, --password PASSWORD          Red Hat Login password
+            -d, --debug                      Enable debugging messages</pre>
+              <h3>Take It With You</h3>
+              <p>You can also download the installer and run it from a CD or USB drive. Unpack one of these packages onto your portable media and you are good to go:
+              <ul>
+                <li>OpenShift Enterprise Portable: <a href="https://install.openshift.com/portable/oo-install-ose.tgz">https://install.openshift.com/portable/oo-install-ose-2.1.tgz</a></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div><!-- /#v2.1 -->
+      <div id="e_v2.2" class="hide">
+        <section class="curl-options">
+          <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                  <h2>OpenShift Enterprise 2.2</h2>
+                  <p>Grab the latest OpenShift Enterprise 2.2 installer here:</p>
+                  <pre>sh <(curl -s https://install.openshift.com/ose-2.2)</pre>
+                </div>
+            </div>
+          </div>
+        </section>
+        <div class="container">
+          <div class="row">
+            <div class="col-md-12">
+              <hr />
+              <h3>Popular Options</h3>
+              <p>Want to get fancy? You can pass options to the installer by adding them to the end of the command, like this:</p>
+              <pre>sh <(curl -s https://install.openshift.com/) -e -s rhsm -u user@company.com</pre>
+              <p>Here are some useful settings:</p>
+              <pre>
+            -a, --advanced-mode              Enable access to message server and db server customization.
+            -c, --config-file FILEPATH       The path to an alternate config file
+            -w, --workflow WORKFLOW_ID       The installer workflow for unattended deployment.
+            -e, --enterprise-mode            Show OpenShift Enterprise options (ignored in unattended mode)
+            -s, --subscription-type TYPE     The software source for installation packages.
+            -u, --username USERNAME          Red Hat Login username
+            -p, --password PASSWORD          Red Hat Login password
+            -d, --debug                      Enable debugging messages</pre>
+              <h3>Take It With You</h3>
+              <p>You can also download the installer and run it from a CD or USB drive. Unpack one of these packages onto your portable media and you are good to go:
+              <ul>
+                <li>OpenShift Enterprise Portable: <a href="https://install.openshift.com/portable/oo-install-ose.tgz">https://install.openshift.com/portable/oo-install-ose-2.2.tgz</a></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div><!-- /#v2.2 -->
+      <div id="e_v3.0">
+        <section class="curl-options">
+          <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                  <h2>OpenShift Enterprise 3.0</h2>
+                  <p>Grab the latest OpenShift Enterprise installer here:</p>
+                  <pre>sh <(curl -s https://install.openshift.com/ose)</pre>
+                </div>
+            </div>
+          </div>
+        </section>
+        <div class="container">
+          <div class="row">
+            <div class="col-md-12">
+              <hr />
+              <h3>Take It With You</h3>
+              <p>You can also download the installer and run it from a CD or USB drive. Unpack one of these packages onto your portable media and you are good to go:
+              <ul>
                 <li>OpenShift Enterprise Portable: <a href="https://install.openshift.com/portable/oo-install-ose.tgz">https://install.openshift.com/portable/oo-install-ose.tgz</a></li>
               </ul>
             </div>
@@ -232,7 +341,8 @@
     <hr />
       <h3>Need more help? We're here for you.</h3>
       <ul>
-        <li>The <a href="http://openshift.github.io/documentation/oo_install_users_guide.html">oo-install User's Guide</a> is available at the <a href="http://openshift.github.io/documentation/">OpenShift Origin documentation site</a>.</li>
+	<li>The <a href="https://access.redhat.com/site/documentation/en-US/OpenShift_Enterprise/2/html-single/Deployment_Guide/index.html#Using_the_Installation_Utility">OpenShift Enterprise Deployment Guide</a> is available at the <a href="https://access.redhat.com/site/documentation/en-US/OpenShift_Enterprise/2">OpenShift Enterprise documentation site</a>.</li>
+	<li>Customers can open <a href="https://access.redhat.com/support/cases/">support cases</a> as well as browse a wealth of subscribers only <a href="https://access.redhat.com/search/#/">solutions, articles and much more.</a></li>
         <li>Familiar with IRC? OpenShift superstars can be found on the <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift&uio=d4">#openshift</a> and <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift-dev&uio=d4">#openshift-dev</a> channels on <a href="http://www.freenode.net/">FreeNode</a>.</li>
         <li>You can also join the <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/users">Users</a> or <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/dev">Developers</a> mailing list.</li>
       </ul>
