@@ -3,7 +3,6 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Install OpenShift Today!</title>
-  <link rel="icon" href="https://www.openshift.com/sites/all/themes/openshift-theme/favicon.ico" type="image/x-icon" />
   <link href="/bootstrap.min.css" rel="stylesheet">
   <style type="text/css">
   html, body {
@@ -35,11 +34,9 @@
   h2, h3 {
     margin-top: 25px;
   }
+  
   .lead {
     font-size: 1.3em;
-  }
-  .curl-options {
-    padding: 15px 0 10px 0;
   }
   pre {
     display: block;
@@ -61,6 +58,7 @@
   pre + h3 {
     margin-top: 35px;
   }
+  .curl-options {}
   .curl-options pre {
     font-size: 1em;
     color: #111;
@@ -77,87 +75,230 @@
       font-size: 1.3em;
     }
   }
+
+  .disable {
+    cursor: pointer;
+     /*pointer-events:none; not below IE11 */
+    opacity: 0.65;
+    filter: alpha(opacity=65);
+    box-shadow: none;
+    color: #333;
+    text-decoration: none;
+  }
+  #version-menu {
+    border-radius: 0px;
+    background-color: transparent; /* #fdfdfd; 
+    border-left: 2px solid rgba(120,120,120,0.45);*/
+    text-align: right;
+  }
+
+  /* updating theme.... */
+  body.os3 {
+    background-color: #fff; /* #F0F0EF */
+  }
+  body.os3 header {
+    background-color: #00171d;
+  }
+  body.os3 footer {
+    border-bottom: none;
+  }
+  body.os3 pre {
+    border: 0px;
+    background-color: #F0F3F5;
+    -webkit-border-radius: 5px;
+    border-radius: 5px;
+    padding: 0.75em 0.5em;
+    word-wrap: break-word;
+    color: #003d6e;
+  }
   </style> 
-<body>
-<header>
+<body class="os3">
+  <header>
+    <div class="container">
+      <div class="row">
+        <div class="col-md-12">
+          <img src="/openshift-logo-horizontal-99a90035cbd613be7b6293335eb05563.svg" alt="OpenShift" />
+          <h1>Get ready to rock with <a href="http://www.openshift.com/">OpenShift</a>.</h1>
+          <p class="lead">You're one shell command away from deploying the OpenShift Platform-as-a-Service into your own network environment.</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+
   <div class="container">
+    <!-- breadcrumb style version links -->
     <div class="row">
       <div class="col-md-12">
-        <img src="/openshift-logo-horizontal-99a90035cbd613be7b6293335eb05563.svg" alt="OpenShift" />
-        <h1>Get ready to rock with <a href="https://www.openshift.com/products/enterprise">OpenShift Enterprise 3</a>.</h1>
-        <p class="lead">You're one shell command away from deploying your own Platform as a Service.</p>
+        <ol class="breadcrumb" id="version-menu">
+          <li class="versions">Origin</li>
+          <li class="version-toggle"><a href="#" data-toggle="origin_m4">m4</a></li>
+          <li class="version-toggle"><a href="#" data-toggle="origin_latest">latest</a></li>
+          <li class="versions">Enterprise</li>
+          <li class="version-toggle"><a href="#" data-toggle="e_v2.0">2.0</a></li>
+          <li class="version-toggle"><a href="#" data-toggle="e_v2.1">2.1</a></li>
+          <li class="version-toggle"><a href="#" data-toggle="e_v2.2">2.2</a></li>
+          <li class="active version-toggle"><a class="disable" data-toggle="e_v3.0">3.0</a></li>
+        </ol>
       </div>
     </div>
   </div>
-</header>
-<section class="curl-options">
-  <div class="container">
-    <div class="row">
-        <div class="col-md-6">
-          <h2>Run the installer:</h2>
-          <pre>sh <(curl -s https://install.openshift.com/ose)</pre>
+
+  <div class="container" id="versions">
+      <div id="origin_m4" class="hide">
+        <div class="container">
+          <h2>Origin m4</h2>
+          <p>This is some text....</p>
         </div>
-    </div>
+      </div>
+      <div id="origin_latest" class="hide">
+        <div class="container">
+          <h2>Origin Latest</h2>
+          <p>This is some other text....</p>
+        </div>
+      </div>
+      <div id="e_v2.0" class="hide">
+        <div class="container">
+          <h2>Enterprise v2.0</h2>
+          <p>This is text....</p>
+        </div>
+      </div>
+      <div id="e_v2.1" class="hide">
+        <div class="container">
+          <h2>Enterprise v2.1</h2>
+          <p>This is text....</p>
+        </div>
+      </div>
+      <div id="e_v2.2" class="hide">
+        <div class="container">
+          <h2>Enterprise v2.2</h2>
+          <p>This is some dummy text....</p>
+        </div>
+      </div>
+      <div id="e_v3.0">
+        <section class="curl-options">
+          <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                  <h2>Enterprise v3.0</h2>
+                  <p>Copy this command and run it from a bash shell:</p>
+                  <pre>sh <(curl -s https://install.openshift.com/)</pre>
+                </div>
+                <div class="col-md-6">
+                  <h2>OpenShift Enterprise</h2>
+                  <p>Grab the latest OpenShift Enterprise installer here:</p>
+                  <pre>sh <(curl -s https://install.openshift.com/ose)</pre>
+                </div>
+            </div>
+          </div>
+        </section>
+        <div class="container">
+          <div class="row">
+            <div class="col-md-12">
+              <hr />
+              <h3>Popular Options</h3>
+              <p>Want to get fancy? You can pass options to the installer by adding them to the end of the command, like this:</p>
+              <pre>sh <(curl -s https://install.openshift.com/) -e -s rhsm -u user@company.com</pre>
+              <p>Here are some useful settings:</p>
+              <pre>
+            -a, --advanced-mode              Enable access to message server and db server customization.
+            -c, --config-file FILEPATH       The path to an alternate config file
+            -w, --workflow WORKFLOW_ID       The installer workflow for unattended deployment.
+            -e, --enterprise-mode            Show OpenShift Enterprise options (ignored in unattended mode)
+            -s, --subscription-type TYPE     The software source for installation packages.
+            -u, --username USERNAME          Red Hat Login username
+            -p, --password PASSWORD          Red Hat Login password
+            -d, --debug                      Enable debugging messages</pre>
+              <h3>Take It With You</h3>
+              <p>You can also download the installer and run it from a CD or USB drive. Unpack one of these packages onto your portable media and you are good to go:
+              <ul>
+                <li>OpenShift Origin Portable: <a href="https://install.openshift.com/portable/oo-install-origin.tgz">https://install.openshift.com/portable/oo-install-origin.tgz</a></li>
+                <li>OpenShift Enterprise Portable: <a href="https://install.openshift.com/portable/oo-install-ose.tgz">https://install.openshift.com/portable/oo-install-ose.tgz</a></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div><!-- /#v3.0 -->
+
   </div>
-</section>
-<div class="container">
-  <div class="row">
-    <div class="col-md-12">
-      <hr />
-      <h3>Looking for Origin?</h3>
-      <p>Origin is the upstream community project for OpenShift Enterprise.
-      There's no better place to develop your new feature and have it battle
-      tested.  Check out the <a href="https://github.com/openshift/origin/blob/master/README.md#getting-started">Getting Started</a>
-      to see how easy it is to run the platform inside a container.
-    </div>
-  </div>
-</div>
-<div class="container">
-  <div class="row">
-    <div class="col-md-12">
-      <hr />
-      <h3>Take It With You</h3>
-      <p>You can also download the installer and run it from a CD or USB drive. Unpack one of these packages onto your portable media and you are good to go:
+
+
+
+
+
+
+  <footer>
+    <div class="container">
+    <hr />
+      <h3>Need more help? We're here for you.</h3>
       <ul>
-        <li>OpenShift Enterprise Portable: <a href="https://install.openshift.com/portable/oo-install-ose.tgz">https://install.openshift.com/portable/oo-install-ose.tgz</a></li>
+        <li>The <a href="http://openshift.github.io/documentation/oo_install_users_guide.html">oo-install User's Guide</a> is available at the <a href="http://openshift.github.io/documentation/">OpenShift Origin documentation site</a>.</li>
+        <li>Familiar with IRC? OpenShift superstars can be found on the <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift&uio=d4">#openshift</a> and <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift-dev&uio=d4">#openshift-dev</a> channels on <a href="http://www.freenode.net/">FreeNode</a>.</li>
+        <li>You can also join the <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/users">Users</a> or <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/dev">Developers</a> mailing list.</li>
       </ul>
     </div>
-  </div>
-</div>
-<footer>
-  <div class="container">
-  <hr />
-    <h3>Need more help? We're here for you.</h3>
-    <ul>
-      <li>The <a href="http://docs.openshift.com/enterprise/latest/admin_guide/overview.html">OpenShift Enterprise Administror Guide</a> is available at the <a href="http://docs.openshift.com/enterprise/latest/welcome/index.html">OpenShift Enterprise documentation site</a>.</li>
-      <li>Familiar with IRC? OpenShift superstars can be found on the <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift&uio=d4">#openshift</a> and <a href="http://webchat.freenode.net/?randomnick=1&channels=openshift-dev&uio=d4">#openshift-dev</a> channels on <a href="http://www.freenode.net/">FreeNode</a>.</li>
-      <li>You can also join the <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/users">Users</a> or <a href="http://lists.openshift.redhat.com/openshiftmm/listinfo/dev">Developers</a> mailing list.</li>
-    </ul>
-  </div>
-</footer>
-<!-- Google Analytics -->
-<script type="text/javascript">
-var _gaq = _gaq || [];
-_gaq.push(['_setAccount', 'UA-40375612-1']);
-_gaq.push(['_setDomainName', 'install.openshift.com']);
-_gaq.push(['_trackPageview', '/install']);
+  </footer>
 
-(function() {
-    var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-    ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
-    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-})();
 
-$(document).ready(function() {
-    _gaq.push(function() {
-        $('a[href^="http"]').on("click", function(e) {
-			e.preventDefault();
-			var link = $(this).attr("href");
-			_gaq.push(["_trackEvent", "Outbound Links", "click", link]);
-			setTimeout('document.location = "' + link + '"', 100);
-		});
-	});
-});
-</script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+          
+      var // imports
+          unbind = Function.prototype.bind.bind(Function.prototype.call),
+          each = unbind(Array.prototype.forEach),
+          filter = unbind(Array.prototype.filter),            
+          // functions
+          hideEls = function(els) {
+            each(els, function(el) {
+              el.classList.add('hide');
+            });
+          },
+          showEl = function(el) {
+            el.classList.remove('hide');
+            return el;
+          },
+          fadeInEl = function(el) {
+            // you might not need jQuery...
+            el.style.opacity = 0;
+            var last = +new Date();
+            var tick = function() {
+              el.style.opacity = +el.style.opacity + (new Date() - last) / 400;
+              last = +new Date();
+              if (+el.style.opacity < 1) {
+                (window.requestAnimationFrame && requestAnimationFrame(tick)) || setTimeout(tick, 16)
+              }
+            };
+            tick();
+            return el;
+          },
+          toggleBreadcrumbs = function(selectedEl, allEls) {
+            each(allEls, function(el) {
+              el.classList.remove('active');
+              el.querySelector('a').classList.remove('disable');
+            });
+            selectedEl.classList.add('active');
+            selectedEl.querySelector('a').classList.add('disable');
+          };
+
+          // init
+          (function() {
+            var // dom nodes
+              toggles = document.querySelectorAll('.version-toggle'),
+              versions = document.querySelectorAll('#versions')[0].children;
+            
+            each(toggles, function(el, i) {
+              el.querySelector('a').addEventListener('click',function(e) {
+                var elem = document.getElementById(this.getAttribute('data-toggle'));
+                hideEls(versions);
+                fadeInEl(showEl(elem));
+                toggleBreadcrumbs(this.parentNode, toggles);
+              });
+            });
+
+          })();
+
+    });
+  </script>
+
 </body>
 </html>
