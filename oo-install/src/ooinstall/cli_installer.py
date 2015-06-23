@@ -155,7 +155,7 @@ You'll now be asked to edit a file that will be used to validate settings
 gathered from the Masters and Nodes.  Since it's often the case that the
 hostname for a system inside the cluster is different from the hostname that is
 resolveable from commandline or web clients these settings cannot be validated
-automatically..
+automatically.
 
 For some cloud providers the installer is able to gather metadata exposed in
 the instance so reasonable defaults will be provided.
@@ -166,15 +166,13 @@ Format:
 installation host,IP,public IP,hostname,public hostname
 
 Notes:
- * The installation host is the hostname from the installer's perspective.  In
-   most cases it will either match the hostname of the public hostname depending
-   on whether on where the installer is run from.
+ * The installation host is the hostname from the installer's perspective.
  * The IP of the host should be the internal IP of the instance.
  * The public IP should be the externally accessible IP associated with the instance
  * The hostname should resolve to the internal IP from the instances
-   themselves.  Optionally an IP address can be used.
+   themselves.
  * The public hostname should resolve to the external ip from hosts outside of
-   the cloud. Optionally an IP address can be used.
+   the cloud.
 """
 
     click.echo(message)
