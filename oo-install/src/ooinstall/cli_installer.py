@@ -118,7 +118,7 @@ environment can be overridden exporting the VISUAL environment variable.
     click.echo(message)
     click.pause()
     while True:
-        MARKER = '# Please enter {} hostnames or IPs one per line.  Everything after this line is ignored.\n'.format(host_type)
+        MARKER = '# Please enter {} one per line.  Hostnames or IPs are valid.\n'.format(host_type)
         message = click.edit("\n".join(hosts) + '\n\n' + MARKER)
         if message is not None:
             msg = message.split(MARKER, 1)[0].rstrip('\n')
