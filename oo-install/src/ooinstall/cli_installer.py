@@ -280,7 +280,7 @@ and Nodes.  For ongoing environment maintenance it's recommended that the
 official Ansible playbooks be used.
 
 For more information on installation prerequisites please see:
-http://docs.openshift.com/enterprise/latest/admin_guide/install/setup.html
+https://docs.openshift.com/enterprise/latest/admin_guide/install/prerequisites.html
 """
     click.echo(message)
     response = click.prompt("Are you ready to continue?  y/Y to confirm, or n/N to abort", default='n')
