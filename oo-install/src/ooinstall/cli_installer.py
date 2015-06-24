@@ -86,9 +86,9 @@ jobs that have to run across the environment.  It can even run the datastore.
 For wizard based installations the database will be embedded.  It's possible to
 change this later using etcd from Red Hat Enterprise Linux 7.
 
-Any Masters configured as part of the this installation process will also be
+Any Masters configured as part of this installation process will also be
 configured as Nodes.  This is so that the Master will be able to proxy to Pods
-from API.  By default this Node will be unscheduleable but this can be changed
+from the API.  By default this Node will be unscheduleable but this can be changed
 after installation with 'oadm manage-node'.
 
 http://docs.openshift.com/enterprise/latest/architecture/infrastructure_components/kubernetes_infrastructure.html#master
@@ -118,7 +118,7 @@ environment can be overridden exporting the VISUAL environment variable.
     click.echo(message)
     click.pause()
     while True:
-        MARKER = '# Please enter {} one per line.  Everything after this line is ignored.\n'.format(host_type)
+        MARKER = '# Please enter {} hostnames or IPs one per line.  Everything after this line is ignored.\n'.format(host_type)
         message = click.edit("\n".join(hosts) + '\n\n' + MARKER)
         if message is not None:
             msg = message.split(MARKER, 1)[0].rstrip('\n')
