@@ -14,6 +14,8 @@ def generate_inventory(masters, nodes):
     base_inventory.write('\n[OSEv3:children]\nmasters\nnodes\n')
     base_inventory.write('\n[OSEv3:vars]\n')
     base_inventory.write('ansible_ssh_user={}\n'.format(CFG.settings['ansible_ssh_user']))
+    if not CFG.settings['ansible_ssh_user'] == 'root':
+        base_inventory.write('ansible_sudo=true\n')
     base_inventory.write('deployment_type={}\n'.format(CFG.deployment_type))
     if 'OO_INSTALL_DEVEL_REGISTRY' in os.environ:
         base_inventory.write('oreg_url=docker-buildvm-rhose.usersys.redhat.com:5000/openshift3/ose-${component}:${version}\n')
