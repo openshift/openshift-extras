@@ -105,7 +105,7 @@ host the required services to be managed by the Master.
 
 By default all Masters will be configured as Nodes.
 
-http://docs.openshift.org/latest/architecture/infrastructure_components/kubernetes_infrastructure.html#node
+https://docs.openshift.com/enterprise/3.0/architecture/infrastructure_components/kubernetes_infrastructure.html#node
     """
     click.echo(message)
     return collect_hosts('nodes', nodes)
