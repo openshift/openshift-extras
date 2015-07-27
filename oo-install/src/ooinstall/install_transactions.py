@@ -18,7 +18,7 @@ def generate_inventory(masters, nodes):
         base_inventory.write('ansible_sudo=true\n')
     base_inventory.write('deployment_type={}\n'.format(CFG.deployment_type))
     if 'OO_INSTALL_DEVEL_REGISTRY' in os.environ:
-        base_inventory.write('oreg_url=docker-buildvm-rhose.usersys.redhat.com:5000/openshift3/ose-${component}:${version}\n')
+        base_inventory.write('oreg_url=rcm-img-docker01.build.eng.bos.redhat.com:5001/openshift3/ose-${component}:${version}\n')
     if 'OO_INSTALL_PUDDLE_REPO_ENABLE' in os.environ:
         base_inventory.write("openshift_additional_repos=[{'id': 'ose-devel', 'name': 'ose-devel', 'baseurl': 'http://buildvm-devops.usersys.redhat.com/puddle/build/OpenShiftEnterprise/3.0/latest/RH7-RHOSE-3.0/$basearch/os', 'enabled': 1, 'gpgcheck': 0}]\n")
     if 'OO_INSTALL_STAGE_REGISTRY' in os.environ:
