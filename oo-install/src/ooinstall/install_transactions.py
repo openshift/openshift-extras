@@ -17,6 +17,8 @@ def generate_inventory(masters, nodes):
     if not CFG.settings['ansible_ssh_user'] == 'root':
         base_inventory.write('ansible_sudo=true\n')
     base_inventory.write('deployment_type={}\n'.format(CFG.deployment_type))
+    # TODO: Support AEP!
+    base_inventory.write('product_type=openshift\n')
     if 'OO_INSTALL_DEVEL_REGISTRY' in os.environ:
         base_inventory.write('oreg_url=rcm-img-docker01.build.eng.bos.redhat.com:5001/openshift3/ose-${component}:${version}\n')
     if 'OO_INSTALL_PUDDLE_REPO_ENABLE' in os.environ:
