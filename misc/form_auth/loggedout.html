@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html class="no-js"><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8"><style type="text/css">@charset "UTF-8";[ng\:cloak],[ng-cloak],[data-ng-cloak],[x-ng-cloak],.ng-cloak,.x-ng-cloak,.ng-hide:not(.ng-hide-animate){display:none !important;}ng\:form{display:block;}</style>
+<meta charset="utf-8">
+<!-- base href="https://kubernetes.default:8443/console/" -->
+<title>OpenShift Web Console</title>
+<meta name="description" content="">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" href="/console/images/favicon.png">
+<link rel="icon" type="image/x-icon" href="/console/images/favicon.ico">
+<link rel="apple-touch-icon-precomposed" sizes="144x144" href="/console/images/apple-touch-icon-precomposed.png">
+<meta name="application-name" content="OpenShift">
+<meta name="msapplication-TileColor" content="#000000">
+<meta name="msapplication-TileImage" content="images/mstile-144x144.png">
+<link rel="stylesheet" href="console/styles/vendor.css">
+<link rel="stylesheet" href="console/styles/main.css">
+<link rel="stylesheet" type="text/css" href="console/styles/extensions.css">
+<style type="text/css"></style>
+</head>
+<body class="console-os">
+
+<nav class="navbar navbar-default navbar-pf" role="navigation">
+<div class="navbar-header">
+<button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse-1">
+<span class="sr-only">Toggle navigation</span>
+<span class="icon-bar"></span>
+<span class="icon-bar"></span>
+<span class="icon-bar"></span>
+</button>
+<a class="navbar-brand" id="openshift-logo" href="/console/">
+<div class="brand-logo"></div>
+</a>
+</div>
+<div class="collapse navbar-collapse navbar-collapse-1">
+<ul class="nav navbar-nav navbar-utility">
+<li>
+<a href="http://docs.openshift.org/latest/welcome/index.html">
+<span class="fa fa-files-o fa-fw"></span> Documentation</a>
+</li>
+<!-- ngIf: user -->
+</ul>
+</div>
+</nav>
+<!-- ngView:  --><div class="ng-scope" ng-view="" id="content-wrap"><div class="container ng-scope">
+<div>
+<h1 style="margin-top: 10px">Log out</h1>
+<div class="ng-binding" ng-bind-html="logoutMessage">You are logged out. Return to the <a href="/console/">console</a>.</div>
+</div>
+</div></div>
+<noscript class="attention-message"><h1>To use OpenShift, please enable JavaScript.</h1></noscript>
+<script src="console/styles/config.json"></script>
+<!--[if lt IE 9]><script src="scripts/oldieshim.js"></script><![endif]-->
+<script src="console/styles/vendor.js"></script>
+<script src="console/styles/scripts.js"></script>
+
+<script src="console/styles/extensions.js"></script>
+
+</body></html>
