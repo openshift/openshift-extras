@@ -990,7 +990,7 @@ set_conf()
   local longcomment=
   (( $# > 0 )) && printf -v longcomment '# %s\\\n' "$@"
 
-  sed -i -e "
+  sed -i --follow-symlinks -e "
     :a
       # Check whether the setting already exists with the specified value.  If
       # it does, jump to :b.
