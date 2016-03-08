@@ -61,13 +61,19 @@ elif [[ $RUBYVER == ruby\ 2\.* ]]
 then
   RUBYDIR=''
 fi
-GEM_PATH="${TMPDIR}INSTALLPKGNAME/vendor/bundle/ruby/${RUBYDIR}gems/"
+
+OOINSTALL_GEM_PATH="${TMPDIR}INSTALLPKGNAME/vendor/bundle/ruby/${RUBYDIR}gems/"
+
+# Prepend the oo-install GEM_PATH to the existing GEM_PATH
+GEM_PATH=$OOINSTALL_GEM_PATH${GEM_PATH:+:$GEM_PATH}
+
 RUBYLIB="${TMPDIR}INSTALLPKGNAME/lib:${TMPDIR}oo-install/vendor/bundle"
-for i in `ls $GEM_PATH`
-do
-  RUBYLIB="${RUBYLIB}:${GEM_PATH}${i}/lib/"
+# For each directory in GEM_PATH, add any subdirectories's ./lib directories to RUBYLIB
+for path in $(find ${GEM_PATH//:/ } -maxdepth 2 -type d -name lib 2>/dev/null); do 
+  RUBYLIB+=":${path}/"
 done
-GEM_PATH=$GEMPATH RUBYLIB=$RUBYLIB OO_INSTALL_CONTEXT=INSTALLCONTEXT OO_VERSION='OPENSHIFTVERSION' OO_INSTALL_VERSION='INSTALLVERSION' sh -c "${TMPDIR}INSTALLPKGNAME/bin/oo-install ${cmdlnargs}"
+
+GEM_PATH=$GEM_PATH RUBYLIB=$RUBYLIB OO_INSTALL_CONTEXT=INSTALLCONTEXT OO_VERSION='OPENSHIFTVERSION' OO_INSTALL_VERSION='INSTALLVERSION' sh -c "${TMPDIR}INSTALLPKGNAME/bin/oo-install ${cmdlnargs}"
 
 if [ $OO_INSTALL_CONTEXT != 'origin_vm' ]
 then
