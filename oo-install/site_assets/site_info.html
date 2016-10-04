@@ -75,6 +75,10 @@
       font-size: 1.3em;
     }
   }
+  .container-wide {
+    margin: 0 auto;
+    width: 80%;
+  }
 
   .disable {
     cursor: pointer;
@@ -154,7 +158,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
     </div>
   </div>
 
-  <div class="container" id="versions">
+  <div class="container-wide" id="versions">
       <div id="origin_m4" class="hide">
         <section class="curl-options">
           <div class="container">
@@ -301,10 +305,41 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         <section class="curl-options">
           <div class="container">
             <div class="row">
-                <!-- <div class="col-md-6"> -->
                 <div class="col-md-12">
-                  <h2>Try the new <a href="https://docs.openshift.com/enterprise/latest/install_config/install/quick_install.html">Quick Install</a> for OpenShift Container Platform 3 or install the <a href="https://access.redhat.com/downloads/content/290">client tools</a></h2>
-                  <p></p>
+                  <h2>Pick the installation that's right for you.</h2>
+                  <hr />
+                </div>
+            </div>
+          </div>
+          <div class="container-fluid">
+            <div class="row">
+                <div class="col-md-4">
+                  <h4><a href="https://github.com/openshift/origin/blob/master/docs/cluster_up_down.md">Latest development release</a>
+                    <pre>oc cluster up</pre>
+                  </h4>
+                  <ul>
+                    <li>Cross platform; Runs anywhere you can run Docker</li>
+                  </ul>
+                </div>
+                <div class="col-md-4">
+                  <h4><a href="http://developers.redhat.com/products/cdk/get-started/">Container Development Kit</a>
+                     <pre>vagrant up (On Mac/Linux)</pre>
+                  </h4>
+                     <p>(Run the <a href="http://developers.redhat.com/products/cdk/get-started/#tab-windowsTab">devsuite installer</a> exe on Windows)</p>
+                  <ul>
+                    <li>Most full featured all-in-one host environment</li>
+                    <li>Cross platform; Runs in a virtual machine</li>
+                    <li>Ideal for all levels of container experience</li>
+                  </ul>
+                </div>
+                <div class="col-md-4">
+                  <h4><a href="https://docs.openshift.com/container-platform/latest/install_config/install/quick_install.html">OpenShift Container Platform</a>
+                     <pre>atomic-openshift-installer install</pre>
+                  </h4>
+                  <ul>
+                    <li>Enterprise grade, fully supported for production workloads in your datacenter or the cloud</li>
+                    <li>Highly configurable</li>
+                  </ul>
                 </div>
             </div>
           </div>
